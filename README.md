@@ -1,11 +1,11 @@
+# SenTic React Native app
 
-  # 제목 없음
+This project has been converted from the original Vite React prototype into an Expo React Native app.
 
-  This is a code bundle for 제목 없음. The original project is available at https://www.figma.com/design/TKyrZgWCD40YIniP952SyS/%EC%A0%9C%EB%AA%A9-%EC%97%86%EC%9D%8C.
+## Run
 
-  ## Running the code
+```bash
+npm start
+```
 
-  Run `npm i` to install the dependencies.
-
-  Run `npm run dev` to start the development server.
-  
+Then open the app in Expo Go, an Android emulator, an iOS simulator, or the web preview from the Expo terminal menu.

@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "SenTic",
+    "slug": "sentic",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "sentic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#4F46E5"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

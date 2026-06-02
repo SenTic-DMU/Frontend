@@ -1,0 +1,13 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true
+  },
+  "include": [
+    "App.tsx"
+  ],
+  "exclude": [
+    "src",
+    "vite.config.ts"
+  ]
+}

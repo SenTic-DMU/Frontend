@@ -1,0 +1,10 @@
+
+> sentic-native@1.0.0 start
+> expo start --port 8082 --clear
+
+Starting project at C:\Users\yume1\Downloads\sentic
+Using src/app as the root directory for Expo Router.
+Starting Metro Bundler
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+Waiting on http://localhost:8082
+Logs for your project will appear below.
