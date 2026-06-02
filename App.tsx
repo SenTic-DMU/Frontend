@@ -2,6 +2,7 @@ import { StatusBar } from "expo-status-bar";
 import { useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   SafeAreaView,
@@ -11,6 +12,11 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { WebView } from "react-native-webview";
+
+const KAKAO_REST_API_KEY = "5775a3641d33077c7adf61cbcc01d0a9";
+const KAKAO_REDIRECT_URI = "https://localhost/kakao";
+const KAKAO_AUTH_URL = `https://kauth.kakao.com/oauth/authorize?response_type=code&client_id=${KAKAO_REST_API_KEY}&redirect_uri=${encodeURIComponent(KAKAO_REDIRECT_URI)}`;
 
 type Screen =
   | "login"
@@ -65,13 +71,39 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [selectedRoom, setSelectedRoom] = useState<PracticeRoom>(voiceRooms[0]);
   const [selectedMode, setSelectedMode] = useState<"voice" | "text">("voice");
+  const [kakaoWebViewVisible, setKakaoWebViewVisible] = useState(false);
 
   const go = (next: Screen) => setScreen(next);
+
+  const handleKakaoLogin = () => setKakaoWebViewVisible(true);
+
+  const handleWebViewNavChange = (navState: { url: string }) => {
+    if (navState.url.startsWith(KAKAO_REDIRECT_URI)) {
+      setKakaoWebViewVisible(false);
+      const code = new URL(navState.url).searchParams.get("code");
+      if (code) {
+        // TODO: 인증 코드를 백엔드로 전송해서 토큰 교환
+        console.log("카카오 인증 코드:", code);
+        go("mode");
+      }
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="dark" />
-      {screen === "login" && <LoginScreen go={go} />}
+      <Modal visible={kakaoWebViewVisible} animationType="slide">
+        <SafeAreaView style={{ flex: 1 }}>
+          <Pressable style={styles.webViewClose} onPress={() => setKakaoWebViewVisible(false)}>
+            <Text style={styles.webViewCloseText}>✕ 닫기</Text>
+          </Pressable>
+          <WebView
+            source={{ uri: KAKAO_AUTH_URL }}
+            onNavigationStateChange={handleWebViewNavChange}
+          />
+        </SafeAreaView>
+      </Modal>
+      {screen === "login" && <LoginScreen go={go} onKakaoLogin={handleKakaoLogin} />}
       {screen === "signup" && <SimpleFormScreen title="회원가입" subtitle="SenTic 계정을 만들고 학습을 시작하세요." go={go} />}
       {screen === "findAccount" && <SimpleFormScreen title="계정 찾기" subtitle="가입한 이메일로 아이디와 비밀번호 안내를 받을 수 있어요." go={go} />}
       {screen === "mode" && <ModeScreen go={go} />}
@@ -112,7 +144,7 @@ export default function App() {
   );
 }
 
-function LoginScreen({ go }: { go: (screen: Screen) => void }) {
+function LoginScreen({ go, onKakaoLogin }: { go: (screen: Screen) => void; onKakaoLogin: () => void }) {
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -156,7 +188,7 @@ function LoginScreen({ go }: { go: (screen: Screen) => void }) {
           </View>
 
           <View style={styles.socialRow}>
-            <Pressable style={[styles.socialButton, styles.kakao]} onPress={() => go("mode")}>
+            <Pressable style={[styles.socialButton, styles.kakao]} onPress={onKakaoLogin}>
               <Text style={styles.socialText}>카카오</Text>
             </Pressable>
             <Pressable style={styles.socialButton} onPress={() => go("mode")}>
@@ -578,6 +610,8 @@ function RoundButton({ label, onPress }: { label: string; onPress: () => void })
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#FFFFFF" },
+  webViewClose: { padding: 14, borderBottomWidth: 1, borderBottomColor: "#E5E7EB" },
+  webViewCloseText: { color: "#6B7280", fontSize: 14 },
   screen: { flex: 1, backgroundColor: "#FFFFFF" },
   screenSoft: { flex: 1, backgroundColor: softBg },
   flex: { flex: 1 },
