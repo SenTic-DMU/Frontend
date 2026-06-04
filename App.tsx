@@ -1,6 +1,7 @@
 import { StatusBar } from "expo-status-bar";
 import { useMemo, useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -44,10 +45,50 @@ type PracticeRoom = {
   level?: string;
 };
 
+type UserInfo = {
+  loginId: string;
+  nickname: string;
+  email: string;
+};
+
+type LevelId = "초급" | "중급" | "고급";
+
+type LevelOption = {
+  id: LevelId;
+  eng: string;
+  desc: string;
+  detail: string[];
+  color: string;
+  bg: string;
+  border: string;
+  dot: string;
+};
+
 const primary = "#4F46E5";
 const darkPrimary = "#4338CA";
 const softBg = "#F5F5F7";
 const border = "#E5E7EB";
+const apiBaseUrl = process.env.EXPO_PUBLIC_BASE_URL ?? "";
+const signupPath = process.env.EXPO_PUBLIC_SIGNUP_PATH ?? "/api/auth/signup";
+const loginPath = process.env.EXPO_PUBLIC_LOGIN_PATH ?? "/api/auth/login";
+
+function apiUrl(path: string) {
+  if (!apiBaseUrl) {
+    return "";
+  }
+  return `${apiBaseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
+}
+
+function getNestedString(value: unknown, keys: string[]) {
+  let current = value;
+  for (const key of keys) {
+    if (!current || typeof current !== "object" || !(key in current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === "string" ? current : undefined;
+}
 
 const voiceRooms = [
   { id: "cafe", title: "카페에서 주문하기", desc: "바리스타와 자연스럽게 말하기", level: "초급" },
@@ -61,18 +102,66 @@ const chatRooms = [
   { id: "work", title: "업무 메시지", desc: "짧고 공손한 비즈니스 채팅" },
 ];
 
+const levelOptions: LevelOption[] = [
+  {
+    id: "초급",
+    eng: "Beginner",
+    desc: "기초 단어/문장 구사 가능",
+    detail: ["짧고 쉬운 문장", "천천히 대화", "모르는 단어 설명"],
+    color: "#047857",
+    bg: "#ECFDF5",
+    border: "#34D399",
+    dot: "#34D399",
+  },
+  {
+    id: "중급",
+    eng: "Intermediate",
+    desc: "일상 대화 가능",
+    detail: ["일반 속도로 대화", "일상 표현 학습", "다양한 주제 토론"],
+    color: "#B45309",
+    bg: "#FFFBEB",
+    border: "#F59E0B",
+    dot: "#F59E0B",
+  },
+  {
+    id: "고급",
+    eng: "Advanced",
+    desc: "자유롭게 대화 가능",
+    detail: ["빠른 속도 대화", "관용어/슬랭 사용", "복잡한 문장 구사"],
+    color: "#4338CA",
+    bg: "#EEF2FF",
+    border: "#6366F1",
+    dot: "#6366F1",
+  },
+];
+
+const studyData = [
+  { id: "mon", day: "Mon", minutes: 45, date: "04/07" },
+  { id: "tue", day: "Tue", minutes: 60, date: "04/08" },
+  { id: "wed", day: "Wed", minutes: 30, date: "04/09" },
+  { id: "thu", day: "Thu", minutes: 75, date: "04/10" },
+  { id: "fri", day: "Fri", minutes: 50, date: "04/11" },
+  { id: "sat", day: "Sat", minutes: 90, date: "04/12" },
+  { id: "sun", day: "Sun", minutes: 65, date: "04/13" },
+];
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [selectedRoom, setSelectedRoom] = useState<PracticeRoom>(voiceRooms[0]);
   const [selectedMode, setSelectedMode] = useState<"voice" | "text">("voice");
+  const [userInfo, setUserInfo] = useState<UserInfo>({
+    loginId: "",
+    nickname: "영어마스터",
+    email: "user@example.com",
+  });
 
   const go = (next: Screen) => setScreen(next);
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="dark" />
-      {screen === "login" && <LoginScreen go={go} />}
-      {screen === "signup" && <SimpleFormScreen title="회원가입" subtitle="SenTic 계정을 만들고 학습을 시작하세요." go={go} />}
+      {screen === "login" && <LoginScreen go={go} onAuthenticated={setUserInfo} />}
+      {screen === "signup" && <SimpleFormScreen title="회원가입" subtitle="SenTic 계정을 만들고 학습을 시작하세요." go={go} onAuthenticated={setUserInfo} />}
       {screen === "findAccount" && <SimpleFormScreen title="계정 찾기" subtitle="가입한 이메일로 아이디와 비밀번호 안내를 받을 수 있어요." go={go} />}
       {screen === "mode" && <ModeScreen go={go} />}
       {screen === "voiceRooms" && (
@@ -102,7 +191,7 @@ export default function App() {
       {screen === "situation" && <SituationScreen mode={selectedMode} room={selectedRoom} go={go} />}
       {screen === "voiceChat" && <VoiceChatScreen room={selectedRoom} go={go} />}
       {screen === "textChat" && <TextChatScreen room={selectedRoom} go={go} />}
-      {screen === "mypage" && <InfoScreen title="마이페이지" go={go} />}
+      {screen === "mypage" && <MyPageScreen go={go} userInfo={userInfo} />}
       {screen === "settings" && <InfoScreen title="설정" go={go} />}
       {screen === "payment" && <InfoScreen title="프리미엄" go={go} />}
       {screen === "bookmarks" && <InfoScreen title="저장한 표현" go={go} />}
@@ -112,10 +201,65 @@ export default function App() {
   );
 }
 
-function LoginScreen({ go }: { go: (screen: Screen) => void }) {
+function LoginScreen({ go, onAuthenticated }: { go: (screen: Screen) => void; onAuthenticated: (userInfo: UserInfo) => void }) {
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submitLogin = async () => {
+    if (!username.trim() || !password.trim()) {
+      Alert.alert("입력 확인", "아이디와 비밀번호를 입력해주세요.");
+      return;
+    }
+
+    const url = apiUrl(loginPath);
+    if (!url) {
+      Alert.alert("설정 확인", ".env에 EXPO_PUBLIC_BASE_URL을 먼저 설정해주세요.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+        body: JSON.stringify({
+          loginId: username.trim(),
+          password,
+        }),
+      });
+
+      const responseText = await response.text();
+      let responseBody: unknown = responseText;
+      try {
+        responseBody = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        responseBody = responseText;
+      }
+
+      if (!response.ok) {
+        const message =
+          typeof responseBody === "object" && responseBody && "message" in responseBody
+            ? String((responseBody as { message?: unknown }).message)
+            : responseText || "로그인에 실패했어요.";
+        Alert.alert("로그인 실패", message);
+        return;
+      }
+
+      const loginId = username.trim();
+      onAuthenticated({
+        loginId,
+        nickname: getNestedString(responseBody, ["data", "nickname"]) ?? getNestedString(responseBody, ["data", "user", "nickname"]) ?? loginId,
+        email: getNestedString(responseBody, ["data", "email"]) ?? getNestedString(responseBody, ["data", "user", "email"]) ?? "",
+      });
+      go("mode");
+    } catch {
+      Alert.alert("연결 실패", "백엔드 서버 주소, ngrok 상태, CORS 설정을 확인해주세요.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.screen}>
@@ -147,7 +291,7 @@ function LoginScreen({ go }: { go: (screen: Screen) => void }) {
             <Text style={styles.linkText}>아이디 / 비밀번호 찾기</Text>
           </Pressable>
 
-          <PrimaryButton label="로그인" onPress={() => go("mode")} />
+          <PrimaryButton label={loading ? "처리 중..." : "로그인"} onPress={submitLogin} disabled={loading} />
 
           <View style={styles.dividerRow}>
             <View style={styles.divider} />
@@ -175,7 +319,6 @@ function LoginScreen({ go }: { go: (screen: Screen) => void }) {
     </KeyboardAvoidingView>
   );
 }
-
 function ModeScreen({ go }: { go: (screen: Screen) => void }) {
   const weekly = [33, 42, 27, 36, 48, 24, 60];
 
@@ -392,19 +535,268 @@ function TextChatScreen({ room, go }: { room: { title: string }; go: (screen: Sc
   );
 }
 
-function SimpleFormScreen({ title, subtitle, go }: { title: string; subtitle: string; go: (screen: Screen) => void }) {
+function SimpleFormScreen({
+  title,
+  subtitle,
+  go,
+  onAuthenticated,
+}: {
+  title: string;
+  subtitle: string;
+  go: (screen: Screen) => void;
+  onAuthenticated?: (userInfo: UserInfo) => void;
+}) {
+  const isSignup = title === "회원가입";
+  const [username, setUsername] = useState("");
+  const [nickname, setNickname] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submitSignup = async () => {
+    if (!email.trim() || !password.trim() || (isSignup && (!username.trim() || !nickname.trim()))) {
+      Alert.alert("입력 확인", "필수 정보를 모두 입력해주세요.");
+      return;
+    }
+
+    if (!isSignup) {
+      Alert.alert("안내", "계정 찾기 API는 아직 연결되지 않았어요.");
+      return;
+    }
+
+    const url = apiUrl(signupPath);
+    if (!url) {
+      Alert.alert("설정 확인", ".env에 EXPO_PUBLIC_BASE_URL을 먼저 설정해주세요.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+        body: JSON.stringify({
+          loginId: username.trim(),
+          nickname: nickname.trim(),
+          email: email.trim(),
+          password,
+        }),
+      });
+
+      const responseText = await response.text();
+      let responseBody: unknown = responseText;
+      try {
+        responseBody = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        responseBody = responseText;
+      }
+
+      if (!response.ok) {
+        const message =
+          typeof responseBody === "object" && responseBody && "message" in responseBody
+            ? String((responseBody as { message?: unknown }).message)
+            : responseText || "회원가입에 실패했어요.";
+        Alert.alert("회원가입 실패", message);
+        return;
+      }
+
+      Alert.alert("회원가입 완료", "계정이 생성되었습니다.");
+      onAuthenticated?.({
+        loginId: username.trim(),
+        nickname: nickname.trim(),
+        email: email.trim(),
+      });
+      go("mode");
+    } catch {
+      Alert.alert("연결 실패", "백엔드 서버 주소, 같은 와이파이, CORS 설정을 확인해주세요.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={styles.screenSoft}>
       <Header title={title} go={go} backTo="login" />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.h1}>{title}</Text>
         <Text style={styles.mutedBlock}>{subtitle}</Text>
+        {isSignup && (
+          <>
+            <Label text="아이디" />
+            <TextInput value={username} onChangeText={setUsername} placeholder="아이디 입력" style={styles.input} autoCapitalize="none" />
+            <Label text="닉네임" />
+            <TextInput value={nickname} onChangeText={setNickname} placeholder="닉네임 입력" style={styles.input} />
+          </>
+        )}
         <Label text="이메일" />
-        <TextInput placeholder="email@example.com" style={styles.input} keyboardType="email-address" />
+        <TextInput value={email} onChangeText={setEmail} placeholder="email@example.com" style={styles.input} keyboardType="email-address" autoCapitalize="none" />
         <Label text="비밀번호" />
-        <TextInput placeholder="비밀번호" secureTextEntry style={styles.input} />
-        <PrimaryButton label={title === "회원가입" ? "가입하기" : "안내 받기"} onPress={() => go("mode")} />
+        <TextInput value={password} onChangeText={setPassword} placeholder="비밀번호" secureTextEntry style={styles.input} />
+        <PrimaryButton label={loading ? "처리 중..." : isSignup ? "가입하기" : "안내 받기"} onPress={submitSignup} disabled={loading} />
       </ScrollView>
+    </View>
+  );
+}
+
+function MyPageScreen({ go, userInfo }: { go: (screen: Screen) => void; userInfo: UserInfo }) {
+  const [userLevel, setUserLevel] = useState<LevelId>("중급");
+  const [pendingLevel, setPendingLevel] = useState<LevelId>("중급");
+  const [levelConfirmed, setLevelConfirmed] = useState(true);
+
+  const maxMinutes = Math.max(...studyData.map((item) => item.minutes));
+  const totalMinutes = studyData.reduce((sum, item) => sum + item.minutes, 0);
+  const avgMinutes = Math.round(totalMinutes / studyData.length);
+  const currentLevel = levelOptions.find((level) => level.id === userLevel) ?? levelOptions[1];
+  const displayNickname = userInfo.nickname || userInfo.loginId || "영어마스터";
+  const displayEmail = userInfo.email || "로그인 이메일 없음";
+
+  const handleLevelButtonPress = () => {
+    if (levelConfirmed) {
+      setPendingLevel(userLevel);
+      setLevelConfirmed(false);
+      return;
+    }
+    setUserLevel(pendingLevel);
+    setLevelConfirmed(true);
+  };
+
+  const renderLevelCard = (level: LevelOption, selectable: boolean) => {
+    const selected = selectable ? pendingLevel === level.id : userLevel === level.id;
+    return (
+      <Pressable
+        key={level.id}
+        onPress={() => selectable && setPendingLevel(level.id)}
+        disabled={!selectable}
+        style={[
+          styles.levelCard,
+          {
+            borderColor: selected ? level.border : "#F3F4F6",
+            backgroundColor: selected ? level.bg : "#FFFFFF",
+          },
+        ]}
+      >
+        <View style={styles.flex}>
+          <View style={styles.levelTitleRow}>
+            <Text style={[styles.levelName, { color: selected ? level.color : "#111827" }]}>{level.id}</Text>
+            <Text style={[styles.levelEng, { color: selected ? level.color : "#9CA3AF" }]}>{level.eng}</Text>
+          </View>
+          <Text style={[styles.levelDesc, { color: selected ? level.color : "#6B7280" }]}>{level.desc}</Text>
+          <View style={styles.levelPillRow}>
+            {level.detail.map((item) => (
+              <View
+                key={item}
+                style={[
+                  styles.levelPill,
+                  {
+                    borderColor: selected ? level.border : "#E5E7EB",
+                    backgroundColor: selected ? "#FFFDF7" : "#F9FAFB",
+                  },
+                ]}
+              >
+                <Text style={[styles.levelPillText, { color: selected ? level.color : "#6B7280" }]}>{item}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+        <View style={[styles.levelRadio, { borderColor: selected ? level.border : "#E5E7EB" }]}>
+          {selected && <View style={[styles.levelRadioDot, { backgroundColor: level.dot }]} />}
+        </View>
+      </Pressable>
+    );
+  };
+
+  return (
+    <View style={styles.screenSoft}>
+      <Header title="마이 페이지" go={go} backTo="mode" />
+      <ScrollView contentContainerStyle={styles.myPageContent}>
+        <View style={styles.profileCard}>
+          <View style={styles.profileAvatar}>
+            <Text style={styles.profileAvatarText}>{displayNickname.slice(0, 1)}</Text>
+          </View>
+          <View style={styles.flex}>
+            <Text style={styles.profileName} numberOfLines={1}>{displayNickname}</Text>
+            <Text style={styles.profileEmail} numberOfLines={1}>{displayEmail}</Text>
+            <View style={styles.profileLevelRow}>
+              <View style={[styles.profileLevelDot, { backgroundColor: currentLevel.dot }]} />
+              <Text style={styles.profileLevelText}>{currentLevel.id} · {currentLevel.eng}</Text>
+            </View>
+          </View>
+          <Pressable
+            style={styles.logoutButton}
+            onPress={() =>
+              Alert.alert("로그아웃", "정말 로그아웃 하시겠어요?", [
+                { text: "취소", style: "cancel" },
+                { text: "로그아웃", style: "destructive", onPress: () => go("login") },
+              ])
+            }
+          >
+            <Text style={styles.logoutText}>↪</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.myStatsGrid}>
+          <MyStat label="이번 주" value={`${Math.round((totalMinutes / 60) * 10) / 10}h`} />
+          <MyStat label="일 평균" value={`${avgMinutes}분`} />
+          <MyStat label="연속 학습" value="5일" />
+        </View>
+
+        <View style={styles.myCard}>
+          <View style={styles.myCardHeader}>
+            <View>
+              <Text style={styles.myCardTitle}>주간 학습 시간</Text>
+              <Text style={styles.myCardSub}>최근 7일 기록</Text>
+            </View>
+            <Text style={styles.myCardTotal}>{totalMinutes}분</Text>
+          </View>
+          <View style={styles.myChart}>
+            {studyData.map((item, index) => {
+              const isToday = index === studyData.length - 1;
+              return (
+                <View key={item.id} style={styles.myBarWrap}>
+                  <View style={styles.myBarTrack}>
+                    <View
+                      style={[
+                        styles.myBar,
+                        {
+                          height: `${(item.minutes / maxMinutes) * 100}%`,
+                          backgroundColor: isToday ? primary : "#DCE5FF",
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={[styles.myBarDay, isToday && styles.primaryText]}>{item.day}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.myCard}>
+          <View style={styles.myCardHeader}>
+            <Text style={styles.myCardTitle}>학습 레벨 설정</Text>
+            <Pressable style={[styles.changeButton, !levelConfirmed && styles.confirmButton]} onPress={handleLevelButtonPress}>
+              <Text style={[styles.changeButtonText, !levelConfirmed && styles.confirmButtonText]}>
+                {levelConfirmed ? "변경" : "결정"}
+              </Text>
+            </Pressable>
+          </View>
+          {levelConfirmed ? renderLevelCard(currentLevel, false) : levelOptions.map((level) => renderLevelCard(level, true))}
+        </View>
+
+        <Pressable style={styles.menuRow} onPress={() => go("payment")}>
+          <Text style={styles.menuRowText}>결제 및 구독</Text>
+          <Text style={styles.menuChevron}>›</Text>
+        </Pressable>
+      </ScrollView>
+    </View>
+  );
+}
+
+function MyStat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.myStat}>
+      <Text style={styles.myStatLabel}>{label}</Text>
+      <Text style={styles.myStatValue}>{value}</Text>
     </View>
   );
 }
@@ -456,9 +848,9 @@ function Header({ title, go, backTo, actions }: { title: string; go: (screen: Sc
   );
 }
 
-function PrimaryButton({ label, onPress }: { label: string; onPress: () => void }) {
+function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
   return (
-    <Pressable style={styles.primaryButton} onPress={onPress}>
+    <Pressable style={[styles.primaryButton, disabled && styles.disabled]} onPress={onPress} disabled={disabled}>
       <Text style={styles.primaryButtonText}>{label}</Text>
     </Pressable>
   );
@@ -693,4 +1085,47 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.45 },
   sendText: { color: "#FFFFFF", fontWeight: "900" },
   listItem: { backgroundColor: "#FFFFFF", borderRadius: 14, borderWidth: 1, borderColor: "#F3F4F6", padding: 16 },
+  myPageContent: { paddingHorizontal: 10, paddingTop: 16, paddingBottom: 34, gap: 14 },
+  profileCard: { backgroundColor: "#FFFFFF", borderRadius: 14, borderWidth: 1, borderColor: "#EEF0F4", padding: 15, flexDirection: "row", alignItems: "center", gap: 14 },
+  profileAvatar: { width: 48, height: 48, borderRadius: 12, backgroundColor: "#E8ECFF", alignItems: "center", justifyContent: "center" },
+  profileAvatarText: { color: primary, fontSize: 16, fontWeight: "800" },
+  profileName: { color: "#111827", fontSize: 14, fontWeight: "800" },
+  profileEmail: { color: "#9CA3AF", fontSize: 11, marginTop: 3 },
+  profileLevelRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6 },
+  profileLevelDot: { width: 6, height: 6, borderRadius: 3 },
+  profileLevelText: { color: "#6B7280", fontSize: 11 },
+  logoutButton: { width: 30, height: 30, alignItems: "center", justifyContent: "center" },
+  logoutText: { color: "#F87171", fontSize: 17, fontWeight: "900" },
+  myStatsGrid: { flexDirection: "row", gap: 8 },
+  myStat: { flex: 1, backgroundColor: "#FFFFFF", borderRadius: 12, borderWidth: 1, borderColor: "#EEF0F4", paddingVertical: 12, alignItems: "center" },
+  myStatLabel: { color: "#9CA3AF", fontSize: 11, marginBottom: 4 },
+  myStatValue: { color: "#111827", fontSize: 13, fontWeight: "900" },
+  myCard: { backgroundColor: "#FFFFFF", borderRadius: 14, borderWidth: 1, borderColor: "#EEF0F4", padding: 15 },
+  myCardHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 },
+  myCardTitle: { color: "#111827", fontSize: 14, fontWeight: "900" },
+  myCardSub: { color: "#9CA3AF", fontSize: 11, marginTop: 3 },
+  myCardTotal: { color: "#8B91A1", fontSize: 11, marginTop: 3 },
+  myChart: { height: 116, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 8 },
+  myBarWrap: { flex: 1, height: "100%", alignItems: "center", justifyContent: "flex-end", gap: 7 },
+  myBarTrack: { flex: 1, width: "100%", justifyContent: "flex-end" },
+  myBar: { width: "100%", borderTopLeftRadius: 8, borderTopRightRadius: 8, minHeight: 8 },
+  myBarDay: { color: "#A8AFBD", fontSize: 9 },
+  changeButton: { backgroundColor: "#F3F4F6", paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999 },
+  confirmButton: { backgroundColor: primary },
+  changeButtonText: { color: "#4B5563", fontSize: 11, fontWeight: "800" },
+  confirmButtonText: { color: "#FFFFFF" },
+  levelCard: { borderWidth: 1.5, borderRadius: 12, padding: 12, flexDirection: "row", alignItems: "flex-start", gap: 12, marginTop: 8 },
+  levelTitleRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginBottom: 4 },
+  levelName: { fontSize: 13, fontWeight: "900" },
+  levelEng: { fontSize: 10, fontWeight: "800" },
+  levelDesc: { fontSize: 11, fontWeight: "700", marginBottom: 9 },
+  levelPillRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  levelPill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
+  levelPillText: { fontSize: 10, fontWeight: "700" },
+  levelRadio: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, alignItems: "center", justifyContent: "center", marginTop: 2 },
+  levelRadioDot: { width: 8, height: 8, borderRadius: 4 },
+  menuRow: { backgroundColor: "#FFFFFF", borderRadius: 12, borderWidth: 1, borderColor: "#EEF0F4", paddingHorizontal: 16, paddingVertical: 15, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  menuRowText: { color: "#374151", fontSize: 14, fontWeight: "800" },
+  menuChevron: { color: "#CBD5E1", fontSize: 24, lineHeight: 24 },
 });
+
