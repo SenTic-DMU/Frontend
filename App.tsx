@@ -1,6 +1,8 @@
 import { StatusBar } from "expo-status-bar";
 import { useMemo, useState } from "react";
 import {
+  Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -12,6 +14,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { WebView } from "react-native-webview";
 
 const KAKAO_REST_API_KEY = "5775a3641d33077c7adf61cbcc01d0a9";
@@ -48,6 +51,9 @@ type PracticeRoom = {
   title: string;
   desc: string;
   level?: string;
+  lastMessage?: string;
+  date?: string;
+  duration?: string;
 };
 
 const primary = "#4F46E5";
@@ -62,9 +68,30 @@ const voiceRooms = [
 ];
 
 const chatRooms = [
-  { id: "friend", title: "친구와 스몰톡", desc: "일상적인 표현을 편하게 연습" },
-  { id: "travel", title: "여행 계획 세우기", desc: "일정, 예약, 추천 표현 익히기" },
-  { id: "work", title: "업무 메시지", desc: "짧고 공손한 비즈니스 채팅" },
+  {
+    id: "friend",
+    title: "친구와 스몰톡",
+    desc: "일상적인 표현을 편하게 연습",
+    lastMessage: "What did you do last weekend?",
+    date: "오늘",
+    duration: "8분",
+  },
+  {
+    id: "travel",
+    title: "여행 계획 세우기",
+    desc: "일정, 예약, 추천 표현 익히기",
+    lastMessage: "Could you recommend a place nearby?",
+    date: "어제",
+    duration: "16분",
+  },
+  {
+    id: "work",
+    title: "업무 메시지",
+    desc: "짧고 공손한 비즈니스 채팅",
+    lastMessage: "I'll send the file by this afternoon.",
+    date: "5일 전",
+    duration: "10분",
+  },
 ];
 
 export default function App() {
@@ -74,6 +101,11 @@ export default function App() {
   const [kakaoWebViewVisible, setKakaoWebViewVisible] = useState(false);
 
   const go = (next: Screen) => setScreen(next);
+  const startNewConversation = (mode: "voice" | "text") => {
+    setSelectedMode(mode);
+    setSelectedRoom({ id: `${mode}-new`, title: "", desc: "", level: "맞춤" });
+    go("situation");
+  };
 
   const handleKakaoLogin = () => setKakaoWebViewVisible(true);
 
@@ -82,7 +114,6 @@ export default function App() {
       setKakaoWebViewVisible(false);
       const code = new URL(navState.url).searchParams.get("code");
       if (code) {
-        // TODO: 인증 코드를 백엔드로 전송해서 토큰 교환
         console.log("카카오 인증 코드:", code);
         go("mode");
       }
@@ -97,10 +128,7 @@ export default function App() {
           <Pressable style={styles.webViewClose} onPress={() => setKakaoWebViewVisible(false)}>
             <Text style={styles.webViewCloseText}>✕ 닫기</Text>
           </Pressable>
-          <WebView
-            source={{ uri: KAKAO_AUTH_URL }}
-            onNavigationStateChange={handleWebViewNavChange}
-          />
+          <WebView source={{ uri: KAKAO_AUTH_URL }} onNavigationStateChange={handleWebViewNavChange} />
         </SafeAreaView>
       </Modal>
       {screen === "login" && <LoginScreen go={go} onKakaoLogin={handleKakaoLogin} />}
@@ -112,11 +140,9 @@ export default function App() {
           title="음성 대화"
           rooms={voiceRooms}
           go={go}
-          onPick={(room) => {
-            setSelectedRoom(room);
-            setSelectedMode("voice");
-            go("situation");
-          }}
+          mode="voice"
+          onCreate={() => startNewConversation("voice")}
+          onPick={(room) => { setSelectedRoom(room); setSelectedMode("voice"); go("voiceChat"); }}
         />
       )}
       {screen === "chatRooms" && (
@@ -124,14 +150,19 @@ export default function App() {
           title="채팅 대화"
           rooms={chatRooms}
           go={go}
-          onPick={(room) => {
-            setSelectedRoom({ ...room, level: "맞춤" });
-            setSelectedMode("text");
-            go("situation");
-          }}
+          mode="text"
+          onCreate={() => startNewConversation("text")}
+          onPick={(room) => { setSelectedRoom({ ...room, level: "맞춤" }); setSelectedMode("text"); go("textChat"); }}
         />
       )}
-      {screen === "situation" && <SituationScreen mode={selectedMode} room={selectedRoom} go={go} />}
+      {screen === "situation" && (
+        <SituationScreen
+          mode={selectedMode}
+          room={selectedRoom}
+          go={go}
+          onStart={(nextRoom) => setSelectedRoom(nextRoom)}
+        />
+      )}
       {screen === "voiceChat" && <VoiceChatScreen room={selectedRoom} go={go} />}
       {screen === "textChat" && <TextChatScreen room={selectedRoom} go={go} />}
       {screen === "mypage" && <InfoScreen title="마이페이지" go={go} />}
@@ -156,11 +187,9 @@ function LoginScreen({ go, onKakaoLogin }: { go: (screen: Screen) => void; onKak
           <Text style={styles.logo}>SenTic</Text>
           <Text style={styles.muted}>AI 영어 소통 학습 파트너</Text>
         </View>
-
         <View style={styles.form}>
           <Label text="아이디" />
           <TextInput value={username} onChangeText={setUsername} placeholder="아이디 입력" style={styles.input} autoCapitalize="none" />
-
           <Label text="비밀번호" />
           <View style={styles.passwordRow}>
             <TextInput
@@ -170,23 +199,19 @@ function LoginScreen({ go, onKakaoLogin }: { go: (screen: Screen) => void; onKak
               secureTextEntry={!showPassword}
               style={[styles.input, styles.passwordInput]}
             />
-            <Pressable style={styles.eyeButton} onPress={() => setShowPassword((value) => !value)}>
+            <Pressable style={styles.eyeButton} onPress={() => setShowPassword((v) => !v)}>
               <Text style={styles.iconText}>{showPassword ? "숨김" : "보기"}</Text>
             </Pressable>
           </View>
-
           <Pressable onPress={() => go("findAccount")} style={styles.alignRight}>
             <Text style={styles.linkText}>아이디 / 비밀번호 찾기</Text>
           </Pressable>
-
           <PrimaryButton label="로그인" onPress={() => go("mode")} />
-
           <View style={styles.dividerRow}>
             <View style={styles.divider} />
             <Text style={styles.dividerText}>소셜 계정으로 시작</Text>
             <View style={styles.divider} />
           </View>
-
           <View style={styles.socialRow}>
             <Pressable style={[styles.socialButton, styles.kakao]} onPress={onKakaoLogin}>
               <Text style={styles.socialText}>카카오</Text>
@@ -195,7 +220,6 @@ function LoginScreen({ go, onKakaoLogin }: { go: (screen: Screen) => void; onKak
               <Text style={styles.socialText}>Google</Text>
             </Pressable>
           </View>
-
           <View style={styles.centerRow}>
             <Text style={styles.muted}>처음 오셨나요? </Text>
             <Pressable onPress={() => go("signup")}>
@@ -210,7 +234,6 @@ function LoginScreen({ go, onKakaoLogin }: { go: (screen: Screen) => void; onKak
 
 function ModeScreen({ go }: { go: (screen: Screen) => void }) {
   const weekly = [33, 42, 27, 36, 48, 24, 60];
-
   return (
     <View style={styles.screenSoft}>
       <Header title="SenTic" go={go} actions />
@@ -224,29 +247,24 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
             <Text style={styles.streakText}>불꽃 5일 연속</Text>
           </View>
         </View>
-
         <Text style={styles.sectionTitle}>학습 모드</Text>
         <ModeCard icon="🎙" title="음성 대화" desc="AI와 실시간 영어 회화 연습" color={primary} onPress={() => go("voiceRooms")} />
         <ModeCard icon="💬" title="채팅 대화" desc="텍스트로 편하게 영어 채팅" color="#16A34A" onPress={() => go("chatRooms")} />
-
         <View style={styles.card}>
           <View style={styles.rowBetween}>
             <Text style={styles.cardTitle}>이번 주 학습</Text>
-            <Pressable onPress={() => go("mypage")}>
-              <Text style={styles.linkText}>상세보기</Text>
-            </Pressable>
+            <Pressable onPress={() => go("mypage")}><Text style={styles.linkText}>상세보기</Text></Pressable>
           </View>
           <View style={styles.chart}>
             {weekly.map((minute, index) => (
               <View key={index} style={styles.barWrap}>
                 <Text style={[styles.barMinute, index === weekly.length - 1 && styles.primaryText]}>{minute}분</Text>
                 <View style={[styles.bar, { height: minute * 1.4 }, index === weekly.length - 1 && styles.activeBar]} />
-                <Text style={[styles.barDay, index === weekly.length - 1 && styles.primaryText]}>{["월", "화", "수", "목", "금", "토", "일"][index]}</Text>
+                <Text style={[styles.barDay, index === weekly.length - 1 && styles.primaryText]}>{["월","화","수","목","금","토","일"][index]}</Text>
               </View>
             ))}
           </View>
         </View>
-
         <View style={styles.statsGrid}>
           <Stat label="총 대화" value="24회" />
           <Stat label="총 학습시간" value="8.5h" />
@@ -258,30 +276,40 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
 }
 
 function RoomListScreen({
-  title,
-  rooms,
-  go,
-  onPick,
+  title, rooms, go, mode, onCreate, onPick,
 }: {
-  title: string;
-  rooms: PracticeRoom[];
-  go: (screen: Screen) => void;
-  onPick: (room: PracticeRoom) => void;
+  title: string; rooms: PracticeRoom[]; go: (screen: Screen) => void;
+  mode: "voice" | "text"; onCreate: () => void; onPick: (room: PracticeRoom) => void;
 }) {
   return (
     <View style={styles.screenSoft}>
-      <Header title={title} go={go} backTo="mode" />
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.h2}>상황을 선택하세요</Text>
-        <Text style={styles.mutedBlock}>원하는 대화 주제를 고르면 난이도와 역할을 확인한 뒤 연습을 시작할 수 있어요.</Text>
+      <View style={styles.roomListHeader}>
+        <Pressable style={styles.headerButton} onPress={() => go("mode")}>
+          <Text style={styles.headerIcon}>‹</Text>
+        </Pressable>
+        <View style={styles.flex}>
+          <Text style={styles.roomListTitle}>{title}</Text>
+          <Text style={styles.roomListCount}>{rooms.length}개의 대화방</Text>
+        </View>
+        <Pressable style={styles.newRoomButton} onPress={onCreate}>
+          <Text style={styles.newRoomButtonText}>+ 새 대화</Text>
+        </Pressable>
+      </View>
+      <ScrollView contentContainerStyle={styles.roomListContent}>
         {rooms.map((room) => (
-          <Pressable key={room.id} style={styles.roomCard} onPress={() => onPick(room)}>
-            <View style={styles.roomIcon}>
-              <Text style={styles.roomIconText}>{title.includes("음성") ? "🎙" : "💬"}</Text>
+          <Pressable key={room.id} style={styles.chatRoomCard} onPress={() => onPick(room)}>
+            <View style={styles.voiceRoomIcon}>
+              <Text style={styles.voiceRoomIconText}>{mode === "voice" ? "🎙" : "💬"}</Text>
             </View>
-            <View style={styles.flex}>
-              <Text style={styles.cardTitle}>{room.title}</Text>
-              <Text style={styles.mutedSmall}>{room.desc}</Text>
+            <View style={styles.roomPreview}>
+              <View style={styles.roomPreviewTop}>
+                <Text style={styles.roomPreviewTitle} numberOfLines={1}>{room.title}</Text>
+                <Text style={styles.roomPreviewDate}>{room.date}</Text>
+              </View>
+              <View style={styles.roomPreviewBottom}>
+                <Text style={styles.roomPreviewMessage} numberOfLines={1}>{room.lastMessage ?? room.desc}</Text>
+                {room.duration && <Text style={styles.durationBadge}>{room.duration}</Text>}
+              </View>
             </View>
             <Text style={styles.chevron}>›</Text>
           </Pressable>
@@ -292,34 +320,152 @@ function RoomListScreen({
 }
 
 function SituationScreen({
-  mode,
-  room,
-  go,
+  mode, room, go, onStart,
 }: {
-  mode: "voice" | "text";
-  room: { title: string; desc: string; level?: string };
-  go: (screen: Screen) => void;
+  mode: "voice" | "text"; room: PracticeRoom;
+  go: (screen: Screen) => void; onStart: (room: PracticeRoom) => void;
 }) {
+  const presets = [
+    { title: "카페에서 주문하기", desc: "처음 방문한 카페에서 원하는 메뉴를 묻고 추천을 받는 상황", name: "바리스타", trait: "친절하고 빠르게 주문을 도와주는 직원", avatar: "👩" },
+    { title: "비즈니스 미팅", desc: "프로젝트 진행 상황을 공유하고 다음 일정을 조율하는 상황", name: "Alex", trait: "차분하고 논리적인 해외 파트너", avatar: "👨" },
+    { title: "여행 계획 세우기", desc: "여름 여행지를 고르고 일정과 예산을 영어로 상의하는 상황", name: "여행 친구", trait: "호기심이 많고 새로운 장소를 좋아함", avatar: "🧑" },
+  ];
+
+  const [title, setTitle] = useState(room.title || "");
+  const [desc, setDesc] = useState(room.desc || "");
+  const [characters, setCharacters] = useState([
+    { name: presets[0].name, trait: presets[0].trait, avatar: presets[0].avatar, photoUri: null as string | null },
+  ]);
+
+  const addCharacter = () => {
+    if (characters.length >= 2) return;
+    setCharacters((prev) => [...prev, { name: "", trait: "", avatar: "👨", photoUri: null }]);
+  };
+
+  const updateCharacter = (index: number, field: string, value: string) => {
+    setCharacters((prev) => prev.map((c, i) => (i === index ? { ...c, [field]: value } : c)));
+  };
+
+  const pickPhoto = async (index: number) => {
+    if (Platform.OS !== "web") {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("권한 필요", "갤러리 접근 권한이 필요합니다.");
+        return;
+      }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      setCharacters((prev) => prev.map((c, i) => (i === index ? { ...c, photoUri: result.assets[0].uri } : c)));
+    }
+  };
+
+  const randomize = () => {
+    const next = presets[Math.floor(Math.random() * presets.length)];
+    setTitle(next.title);
+    setDesc(next.desc);
+    setCharacters([{ name: next.name, trait: next.trait, avatar: next.avatar, photoUri: null }]);
+  };
+
+  const start = () => {
+    onStart({
+      ...room,
+      title: title.trim() || "새 영어 대화",
+      desc: desc.trim() || "직접 설정한 영어 대화 상황",
+      lastMessage: desc.trim() || room.lastMessage,
+      date: "오늘",
+    });
+    go(mode === "voice" ? "voiceChat" : "textChat");
+  };
+
   return (
     <View style={styles.screenSoft}>
-      <Header title="상황 설정" go={go} backTo={mode === "voice" ? "voiceRooms" : "chatRooms"} />
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.heroCard}>
-          <Text style={styles.heroIcon}>{mode === "voice" ? "🎙" : "💬"}</Text>
-          <Text style={styles.heroTitle}>{room.title}</Text>
-          <Text style={styles.heroDesc}>{room.desc}</Text>
+      <View style={styles.roomListHeader}>
+        <Pressable style={styles.headerButton} onPress={() => go(mode === "voice" ? "voiceRooms" : "chatRooms")}>
+          <Text style={styles.headerIcon}>‹</Text>
+        </Pressable>
+        <View style={styles.flex}>
+          <Text style={styles.roomListTitle}>상황 설정</Text>
+          <Text style={styles.roomListCount}>영어 대화</Text>
         </View>
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>오늘의 목표</Text>
-          <Checklist text="첫 인사와 요청을 자연스럽게 말하기" />
-          <Checklist text="상대의 질문에 짧게 답하기" />
-          <Checklist text="AI 피드백으로 더 나은 표현 저장하기" />
+        <Pressable style={styles.randomButton} onPress={randomize}>
+          <Text style={styles.randomButtonText}>↝ 랜덤</Text>
+        </Pressable>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.setupContent}>
+        <Label text="대화방 제목" />
+        <TextInput value={title} onChangeText={setTitle} placeholder="예: 카페에서 주문하기" style={styles.input} />
+
+        <Label text="상황 설명" />
+        <TextInput
+          value={desc}
+          onChangeText={setDesc}
+          placeholder="원하는 상황을 자세히 설명해주세요"
+          multiline
+          textAlignVertical="top"
+          style={[styles.input, styles.descriptionInput]}
+        />
+
+        <View style={styles.setupSectionHeader}>
+          <View>
+            <Text style={styles.setupSectionTitle}>등장인물</Text>
+            <Text style={styles.roomListCount}>최대 2명까지 추가 가능</Text>
+          </View>
+          <Pressable onPress={addCharacter} disabled={characters.length >= 2}>
+            <Text style={[styles.addCharacterText, characters.length >= 2 && { color: "#D1D5DB" }]}>+ 추가</Text>
+          </Pressable>
         </View>
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>설정</Text>
-          <PillRow items={[room.level ?? "맞춤", "피드백 ON", mode === "voice" ? "자막 ON" : "자동 피드백"]} />
+
+        {characters.map((char, index) => (
+          <View key={index} style={[styles.characterCard, index > 0 && { marginTop: 10 }]}>
+            <View style={styles.avatarPicker}>
+              <Pressable onPress={() => pickPhoto(index)}>
+                {char.photoUri ? (
+                  <Image source={{ uri: char.photoUri }} style={styles.photo} />
+                ) : (
+                  <View style={styles.photoSlot}>
+                    <Text style={styles.cameraText}>📷</Text>
+                  </View>
+                )}
+              </Pressable>
+              <View style={styles.avatarOptions}>
+                {["👩", "👨", "🧑", "👧", "👴"].map((item) => (
+                  <Pressable
+                    key={item}
+                    style={[styles.avatarOption, char.avatar === item && styles.avatarOptionActive]}
+                    onPress={() => updateCharacter(index, "avatar", item)}
+                  >
+                    <Text style={styles.avatarOptionText}>{item}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+            <TextInput
+              value={char.name}
+              onChangeText={(v) => updateCharacter(index, "name", v)}
+              placeholder="이름 (예: 바리스타)"
+              style={styles.input}
+            />
+            <TextInput
+              value={char.trait}
+              onChangeText={(v) => updateCharacter(index, "trait", v)}
+              placeholder="성격 / 특징 (선택)"
+              style={styles.input}
+            />
+          </View>
+        ))}
+
+        <View style={styles.warningBox}>
+          <Text style={styles.warningText}>부적절한 상황 설정은 자동으로 제한됩니다</Text>
         </View>
-        <PrimaryButton label="연습 시작" onPress={() => go(mode === "voice" ? "voiceChat" : "textChat")} />
+
+        <PrimaryButton label="대화 시작하기" onPress={start} />
       </ScrollView>
     </View>
   );
@@ -332,20 +478,11 @@ function VoiceChatScreen({ room, go }: { room: { title: string }; go: (screen: S
   const [feedbackOn, setFeedbackOn] = useState(true);
   const [tab, setTab] = useState<"call" | "history" | "feedback">("call");
 
-  const history = useMemo<Message[]>(
-    () => [
-      { id: "1", speaker: "ai", text: "Hello! How can I help you today?", time: "10:30" },
-      {
-        id: "2",
-        speaker: "user",
-        text: "I want to order a coffee, please.",
-        time: "10:31",
-        feedback: ["더 자연스럽게: I'd like to order a coffee, please."],
-      },
-      { id: "3", speaker: "ai", text: "Sure! What size would you like?", time: "10:31" },
-    ],
-    [],
-  );
+  const history = useMemo<Message[]>(() => [
+    { id: "1", speaker: "ai", text: "Hello! How can I help you today?", time: "10:30" },
+    { id: "2", speaker: "user", text: "I want to order a coffee, please.", time: "10:31", feedback: ["더 자연스럽게: I'd like to order a coffee, please."] },
+    { id: "3", speaker: "ai", text: "Sure! What size would you like?", time: "10:31" },
+  ], []);
 
   return (
     <View style={styles.screen}>
@@ -386,13 +523,7 @@ function TextChatScreen({ room, go }: { room: { title: string }; go: (screen: Sc
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([
     { id: "1", speaker: "ai", text: "Hey! What's up?", time: "10:30" },
-    {
-      id: "2",
-      speaker: "user",
-      text: "I'm good. What about you?",
-      time: "10:31",
-      feedback: ["더 자연스럽게: I'm doing well, thanks! How about you?"],
-    },
+    { id: "2", speaker: "user", text: "I'm good. What about you?", time: "10:31", feedback: ["더 자연스럽게: I'm doing well, thanks! How about you?"] },
     { id: "3", speaker: "ai", text: "I'm doing great! Wanna grab some coffee later?", time: "10:31" },
   ]);
 
@@ -537,19 +668,16 @@ function FeedbackList({ messages, enabled }: { messages: Message[]; enabled: boo
       </View>
     );
   }
-
   return (
     <ScrollView contentContainerStyle={styles.content}>
-      {messages
-        .filter((message) => message.feedback)
-        .map((message) => (
-          <View key={message.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{message.text}</Text>
-            {message.feedback?.map((item) => (
-              <Text key={item} style={styles.feedbackText}>{item}</Text>
-            ))}
-          </View>
-        ))}
+      {messages.filter((m) => m.feedback).map((message) => (
+        <View key={message.id} style={styles.card}>
+          <Text style={styles.cardTitle}>{message.text}</Text>
+          {message.feedback?.map((item) => (
+            <Text key={item} style={styles.feedbackText}>{item}</Text>
+          ))}
+        </View>
+      ))}
     </ScrollView>
   );
 }
@@ -575,27 +703,6 @@ function Stat({ label, value }: { label: string; value: string }) {
     <View style={styles.stat}>
       <Text style={styles.mutedSmall}>{label}</Text>
       <Text style={styles.statValue}>{value}</Text>
-    </View>
-  );
-}
-
-function Checklist({ text }: { text: string }) {
-  return (
-    <View style={styles.checkRow}>
-      <Text style={styles.check}>✓</Text>
-      <Text style={styles.listText}>{text}</Text>
-    </View>
-  );
-}
-
-function PillRow({ items }: { items: string[] }) {
-  return (
-    <View style={styles.pillRow}>
-      {items.map((item) => (
-        <View key={item} style={styles.pill}>
-          <Text style={styles.pillText}>{item}</Text>
-        </View>
-      ))}
     </View>
   );
 }
@@ -649,6 +756,15 @@ const styles = StyleSheet.create({
   headerAction: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: "#F9FAFB" },
   headerSpacer: { width: 36 },
   content: { padding: 20, gap: 14 },
+  roomListHeader: { minHeight: 70, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#F3F4F6", flexDirection: "row", alignItems: "center", paddingHorizontal: 18, paddingVertical: 10 },
+  roomListTitle: { color: "#111827", fontSize: 20, fontWeight: "800" },
+  roomListCount: { color: "#9CA3AF", fontSize: 12, marginTop: 2 },
+  newRoomButton: { backgroundColor: primary, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 10 },
+  newRoomButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
+  randomButton: { backgroundColor: "#F9FAFB", borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 },
+  randomButtonText: { color: "#6B7280", fontSize: 12, fontWeight: "800" },
+  roomListContent: { paddingHorizontal: 20, paddingVertical: 16, gap: 10 },
+  setupContent: { padding: 22, paddingBottom: 30 },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 14 },
   caption: { color: "#9CA3AF", fontSize: 12, marginBottom: 4 },
   h1: { color: "#111827", fontSize: 30, fontWeight: "800", marginTop: 8, marginBottom: 8 },
@@ -674,17 +790,37 @@ const styles = StyleSheet.create({
   roomCard: { backgroundColor: "#FFFFFF", borderRadius: 16, borderWidth: 1, borderColor: "#F3F4F6", padding: 16, flexDirection: "row", alignItems: "center", gap: 14 },
   roomIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: "#EEF2FF", alignItems: "center", justifyContent: "center" },
   roomIconText: { fontSize: 22 },
+  chatRoomCard: { backgroundColor: "#FFFFFF", borderRadius: 16, borderWidth: 1, borderColor: "#F3F4F6", paddingHorizontal: 12, paddingVertical: 14, flexDirection: "row", alignItems: "center", gap: 10 },
+  voiceRoomIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: "#EEF2FF", alignItems: "center", justifyContent: "center" },
+  voiceRoomIconText: { fontSize: 18 },
+  roomPreview: { flex: 1, minWidth: 0 },
+  roomPreviewTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  roomPreviewBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 5 },
+  roomPreviewTitle: { flex: 1, color: "#111827", fontSize: 14, fontWeight: "800" },
+  roomPreviewDate: { color: "#9CA3AF", fontSize: 12 },
+  roomPreviewMessage: { flex: 1, color: "#9CA3AF", fontSize: 12 },
+  durationBadge: { color: primary, backgroundColor: "#EEF2FF", borderRadius: 999, overflow: "hidden", paddingHorizontal: 8, paddingVertical: 3, fontSize: 10, fontWeight: "800" },
   chevron: { color: "#C7CBD1", fontSize: 30 },
+  descriptionInput: { minHeight: 88, paddingTop: 14 },
+  setupSectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 22, marginBottom: 8 },
+  setupSectionTitle: { color: "#374151", fontSize: 13, fontWeight: "800" },
+  addCharacterText: { color: primary, fontSize: 13, fontWeight: "800" },
+  characterCard: { backgroundColor: "#FFFFFF", borderRadius: 16, borderWidth: 1, borderColor: "#F3F4F6", padding: 14, gap: 10 },
+  avatarPicker: { flexDirection: "row", gap: 10, alignItems: "center" },
+  photo: { width: 56, height: 56, borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB" },
+  photoSlot: { width: 56, height: 56, borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#F9FAFB", alignItems: "center", justifyContent: "center" },
+  cameraText: { fontSize: 22 },
+  avatarOptions: { flex: 1, flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  avatarOption: { width: 38, height: 38, borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF" },
+  avatarOptionActive: { borderColor: primary, backgroundColor: "#EEF2FF" },
+  avatarOptionText: { fontSize: 17 },
+  warningBox: { backgroundColor: "#FFFBEB", borderColor: "#FDE68A", borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13, marginTop: 16, marginBottom: 14 },
+  warningText: { color: "#B45309", fontSize: 12, fontWeight: "800" },
   heroCard: { alignItems: "center", backgroundColor: darkPrimary, borderRadius: 18, padding: 28 },
   heroIcon: { fontSize: 44, marginBottom: 10 },
   heroTitle: { color: "#FFFFFF", fontSize: 22, fontWeight: "900" },
   heroDesc: { color: "#C7D2FE", fontSize: 14, marginTop: 8, textAlign: "center" },
-  checkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 9 },
-  check: { color: primary, fontWeight: "900" },
   listText: { color: "#374151", fontSize: 14, lineHeight: 20 },
-  pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
-  pill: { backgroundColor: "#EEF2FF", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
-  pillText: { color: primary, fontSize: 12, fontWeight: "800" },
   tabBar: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: "#FFFFFF" },
   tab: { flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: "center" },
   activeTab: { backgroundColor: primary },
