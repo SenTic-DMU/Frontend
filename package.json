@@ -13,6 +13,7 @@
   "dependencies": {
     "expo": "~54.0.0",
     "expo-status-bar": "~3.0.8",
+    "express": "^5.2.1",
     "react": "19.1.0",
     "react-native": "0.81.5",
     "react-native-safe-area-context": "~5.6.0"
@@ -20,5 +21,18 @@
   "devDependencies": {
     "@types/react": "~19.1.10",
     "typescript": "~5.9.2"
-  }
+  },
+  "description": "This project has been converted from the original Vite React prototype into an Expo React Native app.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SenTic-DMU/Frontend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/SenTic-DMU/Frontend/issues"
+  },
+  "homepage": "https://github.com/SenTic-DMU/Frontend#readme"
 }
