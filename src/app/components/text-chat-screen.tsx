@@ -114,8 +114,10 @@ export function TextChatScreen() {
     });
   };
 
-  const handleSend = () => {
+  // 1. 함수 이름 앞에 async를 붙여야 await를 쓸 수 있습니다!
+  const handleSend = async () => {
     if (!inputText.trim()) return;
+
     const msgId = Date.now().toString();
     const newMessage: Message = {
       id: msgId,
@@ -127,18 +129,31 @@ export function TextChatScreen() {
       }),
       feedback: generateMockFeedback(inputText),
     };
+
+    // 2. 일단 사용자 메시지를 화면에 먼저 추가합니다.
     setMessages((prev) => [...prev, newMessage]);
     setInputText("");
+    setExpandedFeedbacks((prev) => new Set([...prev, msgId]));
 
-    // ⭐️ 바로 여기입니다! 여기서 백엔드 서버로 메시지를 보냅니다.
+    // 3. 서버 통신 로직
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "http://10.190.152.3:8080";
-      const roomId = 1; // 👈 테스트용 방 번호 (추후 동적으로 변경)
+      // ⭐️ 터널 주소로 바꾸었는지 꼭 확인하세요!
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const roomId = 1;
+
+      console.log("확인: 지금 서버로 보내는 roomId값은?", roomId);
+
+      // 1. 전송 직전 데이터를 콘솔에 통째로 찍어봅니다.
+      const payload = { content: text };
+      console.log(
+        "🔥 [디버깅] 서버로 보내는 payload:",
+        JSON.stringify(payload),
+      );
 
       const response = await axios.post(
         `${API_URL}/api/rooms/${roomId}/messages/chat`,
-        { content: newMessage.text },
+        payload, // 2. 위에서 만든 객체를 그대로 전달
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -147,11 +162,12 @@ export function TextChatScreen() {
         },
       );
 
-      // 서버에서 받은 AI 대답을 화면에 띄워줍니다.
+      // 4. 서버 응답이 성공하면 AI 메시지를 추가합니다.
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         speaker: "ai",
-        text: response.data.data.content, // 백엔드 응답 구조에 맞게 수정하세요!
+        // 서버에서 보내주는 데이터 구조를 확인하세요. (res.data.data.content 등)
+        text: response.data?.data?.content || "응답이 없습니다.",
         timestamp: new Date().toLocaleTimeString("ko-KR", {
           hour: "2-digit",
           minute: "2-digit",
@@ -159,24 +175,12 @@ export function TextChatScreen() {
       };
       setMessages((prev) => [...prev, aiMessage]);
     } catch (error) {
-      console.error("통신 실패:", error);
+      console.error("통신 실패 상세:", error);
+      // 에러 발생 시 사용자에게 알림을 주는 것도 좋습니다.
     }
 
-    // 새 메시지의 피드백 자동 펼치기
-    setExpandedFeedbacks((prev) => new Set([...prev, msgId]));
-
-    setTimeout(() => {
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        speaker: "ai",
-        text: "That sounds good! Let me know when you're free.",
-        timestamp: new Date().toLocaleTimeString("ko-KR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      };
-      setMessages((prev) => [...prev, aiMessage]);
-    }, 1200);
+    // ⭐️ 5. 기존의 setTimeout(...) 가짜 AI 답변 코드는 삭제하거나 주석 처리하세요!
+    // 그래야 서버에서 오는 진짜 답변만 화면에 나타납니다.
   };
 
   const saveExpression = (text: string) => {

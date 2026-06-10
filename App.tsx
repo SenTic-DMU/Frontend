@@ -735,11 +735,10 @@ function TextChatScreen({
   ]);
 
   const send = async () => {
-    // ⭐️ async 추가 필수!
     const text = input.trim();
     if (!text) return;
 
-    // 1. 내 메시지 먼저 화면에 띄우기
+    // 1. 내 메시지 화면에 먼저 띄우기
     const userMessage: Message = {
       id: Date.now().toString(),
       speaker: "user",
@@ -754,53 +753,52 @@ function TextChatScreen({
     setInput("");
 
     try {
-      // ⭐️ 2. 폰 금고(AsyncStorage)에서 출입증(토큰) 꺼내기
       const accessToken = await AsyncStorage.getItem("accessToken");
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const roomId = 1;
 
-      // ⭐️ 이 줄을 추가해서 컴퓨터(VS Code) 터미널 창에 뭐라고 뜨는지 확인해 보세요!
-      console.log("현재 금고에서 꺼낸 토큰:", accessToken);
+      // ⭐️ 핵심: axios.post는 객체를 그대로 보내는 게 좋습니다.
+      // JSON.stringify를 또 쓰면 이중 직렬화 문제가 생길 수 있어요.
+      const requestBody = { content: text };
 
-      // (디버깅용) 만약 금고가 비어있다면 콘솔에 경고 띄우기
-      if (!accessToken) {
-        console.warn("앗! 토큰이 없습니다. 로그인을 먼저 했는지 확인해주세요!");
-      }
+      console.log("👉 서버로 전송하는 최종 데이터:", requestBody);
 
-      // 3. 서버(주방)로 내 채팅과 출입증 같이 전송!
-      const API_URL = "http://10.190.152.3:8080";
-      console.log("현재 룸 정보:", room);
       const response = await axios.post(
-        `${API_URL}/api/rooms/${room.id}/messages/chat`,
-        {
-          content: text,
-        },
+        `${API_URL}/api/rooms/${roomId}/messages/chat`,
+        { content: text }, // 👈 이대로 유지! (이제 백엔드가 완벽하게 해석할 거예요)
         {
           headers: {
-            Authorization: `Bearer ${accessToken}`, // 👈 꺼낸 토큰을 여기에 장착!
+            Authorization: `Bearer ${accessToken}`,
             "Content-Type": "application/json",
           },
         },
       );
 
-      // 4. 서버가 준 진짜 AI 대답을 화면에 추가!
-      const aiMessage: Message = {
-        id: `${Date.now()}-ai`,
-        speaker: "ai",
-        text: response.data.data.content, // 백엔드가 알려준 정확한 주소
-        time: new Date().toLocaleTimeString("ko-KR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      };
+      // 서버 응답 성공 시 처리
+      if (response.data) {
+        // ⭐️ 여기서 response.data.data.content로 접근해야 합니다!
+        const aiMessage: Message = {
+          id: `${Date.now()}-ai`,
+          speaker: "ai",
+          text: response.data.data?.content || "응답이 없습니다.",
+          time: new Date().toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+      }
+    } catch (error: any) {
+      // 🚨 여기가 제일 중요합니다! 에러가 나면 꼭 이 로그를 확인하세요.
+      console.error(
+        "🚨 통신 에러 상세:",
+        error.response?.data || error.message,
+      );
 
-      setMessages((prev) => [...prev, aiMessage]);
-    } catch (error) {
-      console.error("API 통신 에러:", error);
-
-      // 에러 났을 때 화면에 띄워주는 친절한 센스!
       const errorMessage: Message = {
         id: `${Date.now()}-error`,
         speaker: "ai",
-        text: "죄송해요. AI 응답을 가져오지 못했어요.",
+        text: "서버 연결에 실패했습니다.",
         time: new Date().toLocaleTimeString("ko-KR", {
           hour: "2-digit",
           minute: "2-digit",
