@@ -56,6 +56,8 @@ type PracticeRoom = {
   duration?: string;
 };
 
+declare const global: { accessToken?: string };
+
 const primary = "#4F46E5";
 const darkPrimary = "#4338CA";
 const softBg = "#F5F5F7";
@@ -179,6 +181,37 @@ function LoginScreen({ go, onKakaoLogin }: { go: (screen: Screen) => void; onKak
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!username.trim() || !password.trim()) {
+      Alert.alert("입력 확인", "아이디와 비밀번호를 입력해주세요.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${process.env.EXPO_PUBLIC_BASE_URL}/api/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({ loginId: username, password }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        // 토큰 저장 (나중에 쓸 거라 일단 전역변수로)
+        global.accessToken = data.data.accessToken;
+        go("mode");
+      } else {
+        Alert.alert("로그인 실패", data.message ?? "아이디 또는 비밀번호를 확인해주세요.");
+      }
+    } catch (e) {
+      Alert.alert("오류", "서버에 연결할 수 없습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.screen}>
@@ -206,7 +239,13 @@ function LoginScreen({ go, onKakaoLogin }: { go: (screen: Screen) => void; onKak
           <Pressable onPress={() => go("findAccount")} style={styles.alignRight}>
             <Text style={styles.linkText}>아이디 / 비밀번호 찾기</Text>
           </Pressable>
-          <PrimaryButton label="로그인" onPress={() => go("mode")} />
+          <Pressable
+            style={[styles.primaryButton, loading && { opacity: 0.6 }]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            <Text style={styles.primaryButtonText}>{loading ? "로그인 중..." : "로그인"}</Text>
+          </Pressable>
           <View style={styles.dividerRow}>
             <View style={styles.divider} />
             <Text style={styles.dividerText}>소셜 계정으로 시작</Text>
@@ -2170,3 +2209,5 @@ const styles = StyleSheet.create({
   sendText: { color: "#FFFFFF", fontWeight: "900" },
   listItem: { backgroundColor: "#FFFFFF", borderRadius: 14, borderWidth: 1, borderColor: "#F3F4F6", padding: 16 },
 });
+
+ console.log(process.env.EXPO_PUBLIC_BASE_URL)
