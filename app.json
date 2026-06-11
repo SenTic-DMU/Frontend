@@ -6,9 +6,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "sentic",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true
     },
@@ -19,6 +17,14 @@
     },
     "web": {
       "bundler": "metro"
-    }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "갤러리에서 프로필 사진을 선택할 수 있도록 접근을 허용해주세요."
+        }
+      ]
+    ]
   }
 }
