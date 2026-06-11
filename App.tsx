@@ -1,5 +1,7 @@
 import { StatusBar } from "expo-status-bar";
 import { useMemo, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -297,6 +299,24 @@ function LoginScreen({
             : responseText || "로그인에 실패했어요.";
         Alert.alert("로그인 실패", message);
         return;
+      }
+
+      // 백엔드에서 받은 데이터(responseBody)에서 토큰을 추출합니다.
+      const accessToken = getNestedString(responseBody, [
+        "data",
+        "accessToken",
+      ]);
+      const refreshToken = getNestedString(responseBody, [
+        "data",
+        "refreshToken",
+      ]);
+
+      // 폰 금고에 저장합니다.
+      if (accessToken) {
+        await AsyncStorage.setItem("accessToken", accessToken);
+      }
+      if (refreshToken) {
+        await AsyncStorage.setItem("refreshToken", refreshToken);
       }
 
       const loginId = username.trim();
@@ -693,7 +713,7 @@ function TextChatScreen({
   room,
   go,
 }: {
-  room: { title: string };
+  room: { id: number; title: string };
   go: (screen: Screen) => void;
 }) {
   const [input, setInput] = useState("");
@@ -714,11 +734,11 @@ function TextChatScreen({
     },
   ]);
 
-  const send = () => {
+  const send = async () => {
     const text = input.trim();
     if (!text) return;
 
-    // 1. 내가 보낸 메시지 데이터 세팅
+    // 1. 내 메시지 화면에 먼저 띄우기
     const userMessage: Message = {
       id: Date.now().toString(),
       speaker: "user",
@@ -727,28 +747,65 @@ function TextChatScreen({
         hour: "2-digit",
         minute: "2-digit",
       }),
-      // 영어 교육 앱의 디테일! 추천 표현 로직 아주 좋습니다 👍
-      feedback: [`추천 표현: ${text.replace("I want to", "I'd like to")}`],
     };
 
-    // 2. 일단 내 메시지만 화면에 먼저 즉시 띄우고 입력창 비우기
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
 
-    // 3. 1.5초(1500ms) 뒤에 AI가 대답하는 척하기 (setTimeout)
-    setTimeout(() => {
-      const aiMessage: Message = {
-        id: `${Date.now()}-ai`,
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const roomId = 1;
+
+      // ⭐️ 핵심: axios.post는 객체를 그대로 보내는 게 좋습니다.
+      // JSON.stringify를 또 쓰면 이중 직렬화 문제가 생길 수 있어요.
+      const requestBody = { content: text };
+
+      console.log("👉 서버로 전송하는 최종 데이터:", requestBody);
+
+      const response = await axios.post(
+        `${API_URL}/api/rooms/${roomId}/messages/chat`,
+        { content: text }, // 👈 이대로 유지! (이제 백엔드가 완벽하게 해석할 거예요)
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      // 서버 응답 성공 시 처리
+      if (response.data) {
+        // ⭐️ 여기서 response.data.data.content로 접근해야 합니다!
+        const aiMessage: Message = {
+          id: `${Date.now()}-ai`,
+          speaker: "ai",
+          text: response.data.data?.content || "응답이 없습니다.",
+          time: new Date().toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+      }
+    } catch (error: any) {
+      // 🚨 여기가 제일 중요합니다! 에러가 나면 꼭 이 로그를 확인하세요.
+      console.error(
+        "🚨 통신 에러 상세:",
+        error.response?.data || error.message,
+      );
+
+      const errorMessage: Message = {
+        id: `${Date.now()}-error`,
         speaker: "ai",
-        text: "That sounds good! Tell me more.", // 나중에 Express 서버랑 연결할 때 실제 AI 대답으로 바뀔 부분!
+        text: "서버 연결에 실패했습니다.",
         time: new Date().toLocaleTimeString("ko-KR", {
           hour: "2-digit",
           minute: "2-digit",
         }),
       };
-      // 이전 메시지들(내 채팅 포함)에 AI 메시지를 스윽 추가합니다.
-      setMessages((prev) => [...prev, aiMessage]);
-    }, 1500);
+      setMessages((prev) => [...prev, errorMessage]);
+    }
   };
 
   return (

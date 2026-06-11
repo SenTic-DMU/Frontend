@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "expo": "~54.0.0",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "axios": "^1.17.0",
+    "expo": "~54.0.35",
     "expo-status-bar": "~3.0.8",
     "express": "^5.2.1",
     "react": "19.1.0",
