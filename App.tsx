@@ -2,6 +2,13 @@ import { StatusBar } from "expo-status-bar";
 import { useMemo, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
+
+GoogleSignin.configure({
+  webClientId:
+    "693540290424-r65vveeelurgsmur9uvr2melct50najg.apps.googleusercontent.com", // ⭐️ 필수!
+  offlineAccess: true, // 서버에서 토큰을 사용하려면 true
+});
 import {
   Alert,
   KeyboardAvoidingView,
@@ -342,6 +349,34 @@ function LoginScreen({
     }
   };
 
+  // 1. 컴포넌트 내부, return 문 바로 윗부분에 넣으세요
+  const handleGoogleLogin = async () => {
+    const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev"; // API 주소 선언
+
+    try {
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+
+      // idToken 타입 에러 방지
+      const idToken =
+        (userInfo as any).data?.idToken ?? (userInfo as any).idToken;
+
+      if (!idToken) {
+        console.error("로그인 정보에서 토큰을 찾을 수 없습니다.");
+        return;
+      }
+
+      const response = await axios.post(`${API_URL}/api/auth/google`, {
+        token: idToken,
+      });
+
+      await AsyncStorage.setItem("accessToken", response.data.accessToken);
+      go("mode");
+    } catch (error: any) {
+      console.error("구글 로그인 실패:", error.message);
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -411,7 +446,7 @@ function LoginScreen({
             >
               <Text style={styles.socialText}>카카오</Text>
             </Pressable>
-            <Pressable style={styles.socialButton} onPress={() => go("mode")}>
+            <Pressable style={styles.socialButton} onPress={handleGoogleLogin}>
               <Text style={styles.socialText}>Google</Text>
             </Pressable>
           </View>
