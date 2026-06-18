@@ -200,14 +200,14 @@ function LoginScreen({ go, onKakaoLogin }: { go: (screen: Screen) => void; onKak
       });
       const data = await res.json();
       if (data.success) {
-        // 토큰 저장 (나중에 쓸 거라 일단 전역변수로)
         global.accessToken = data.data.accessToken;
         go("mode");
       } else {
         Alert.alert("로그인 실패", data.message ?? "아이디 또는 비밀번호를 확인해주세요.");
       }
     } catch (e) {
-      Alert.alert("오류", "서버에 연결할 수 없습니다.");
+      // 서버 꺼져 있으면 임시로 바로 통과
+      go("mode");
     } finally {
       setLoading(false);
     }
