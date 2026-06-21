@@ -1,10 +1,10 @@
 import { StatusBar } from "expo-status-bar";
-import { useMemo, useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
+import { useMemo, useState, useEffect } from "react";
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   SafeAreaView,
@@ -14,6 +14,12 @@ import {
   TextInput,
   View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { WebView } from "react-native-webview";
+
+const KAKAO_REST_API_KEY = "5775a3641d33077c7adf61cbcc01d0a9";
+const KAKAO_REDIRECT_URI = "https://localhost/kakao";
+const KAKAO_AUTH_URL = `https://kauth.kakao.com/oauth/authorize?response_type=code&client_id=${KAKAO_REST_API_KEY}&redirect_uri=${encodeURIComponent(KAKAO_REDIRECT_URI)}`;
 
 type Screen =
   | "login"
@@ -45,52 +51,17 @@ type PracticeRoom = {
   title: string;
   desc: string;
   level?: string;
+  lastMessage?: string;
+  date?: string;
+  duration?: string;
 };
 
-type UserInfo = {
-  loginId: string;
-  nickname: string;
-  email: string;
-};
-
-type LevelId = "초급" | "중급" | "고급";
-
-type LevelOption = {
-  id: LevelId;
-  eng: string;
-  desc: string;
-  detail: string[];
-  color: string;
-  bg: string;
-  border: string;
-  dot: string;
-};
+declare const global: { accessToken?: string };
 
 const primary = "#4F46E5";
 const darkPrimary = "#4338CA";
 const softBg = "#F5F5F7";
 const border = "#E5E7EB";
-const apiBaseUrl = process.env.EXPO_PUBLIC_BASE_URL ?? "";
-const signupPath = process.env.EXPO_PUBLIC_SIGNUP_PATH ?? "/api/auth/signup";
-const loginPath = process.env.EXPO_PUBLIC_LOGIN_PATH ?? "/api/auth/login";
-
-function apiUrl(path: string) {
-  if (!apiBaseUrl) {
-    return "";
-  }
-  return `${apiBaseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
-}
-
-function getNestedString(value: unknown, keys: string[]) {
-  let current = value;
-  for (const key of keys) {
-    if (!current || typeof current !== "object" || !(key in current)) {
-      return undefined;
-    }
-    current = (current as Record<string, unknown>)[key];
-  }
-  return typeof current === "string" ? current : undefined;
-}
 
 const voiceRooms = [
   {
@@ -114,82 +85,83 @@ const voiceRooms = [
 ];
 
 const chatRooms = [
-  { id: "friend", title: "친구와 스몰톡", desc: "일상적인 표현을 편하게 연습" },
+  {
+    id: "friend",
+    title: "친구와 스몰톡",
+    desc: "일상적인 표현을 편하게 연습",
+    lastMessage: "What did you do last weekend?",
+    date: "오늘",
+    duration: "8분",
+  },
   {
     id: "travel",
     title: "여행 계획 세우기",
     desc: "일정, 예약, 추천 표현 익히기",
-  },
-  { id: "work", title: "업무 메시지", desc: "짧고 공손한 비즈니스 채팅" },
-];
-
-const levelOptions: LevelOption[] = [
-  {
-    id: "초급",
-    eng: "Beginner",
-    desc: "기초 단어/문장 구사 가능",
-    detail: ["짧고 쉬운 문장", "천천히 대화", "모르는 단어 설명"],
-    color: "#047857",
-    bg: "#ECFDF5",
-    border: "#34D399",
-    dot: "#34D399",
+    lastMessage: "Could you recommend a place nearby?",
+    date: "어제",
+    duration: "16분",
   },
   {
-    id: "중급",
-    eng: "Intermediate",
-    desc: "일상 대화 가능",
-    detail: ["일반 속도로 대화", "일상 표현 학습", "다양한 주제 토론"],
-    color: "#B45309",
-    bg: "#FFFBEB",
-    border: "#F59E0B",
-    dot: "#F59E0B",
+    id: "work",
+    title: "업무 메시지",
+    desc: "짧고 공손한 비즈니스 채팅",
+    lastMessage: "I'll send the file by this afternoon.",
+    date: "5일 전",
+    duration: "10분",
   },
-  {
-    id: "고급",
-    eng: "Advanced",
-    desc: "자유롭게 대화 가능",
-    detail: ["빠른 속도 대화", "관용어/슬랭 사용", "복잡한 문장 구사"],
-    color: "#4338CA",
-    bg: "#EEF2FF",
-    border: "#6366F1",
-    dot: "#6366F1",
-  },
-];
-
-const studyData = [
-  { id: "mon", day: "Mon", minutes: 45, date: "04/07" },
-  { id: "tue", day: "Tue", minutes: 60, date: "04/08" },
-  { id: "wed", day: "Wed", minutes: 30, date: "04/09" },
-  { id: "thu", day: "Thu", minutes: 75, date: "04/10" },
-  { id: "fri", day: "Fri", minutes: 50, date: "04/11" },
-  { id: "sat", day: "Sat", minutes: 90, date: "04/12" },
-  { id: "sun", day: "Sun", minutes: 65, date: "04/13" },
 ];
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [selectedRoom, setSelectedRoom] = useState<PracticeRoom>(voiceRooms[0]);
   const [selectedMode, setSelectedMode] = useState<"voice" | "text">("voice");
-  const [userInfo, setUserInfo] = useState<UserInfo>({
-    loginId: "",
-    nickname: "영어마스터",
-    email: "user@example.com",
-  });
+  const [kakaoWebViewVisible, setKakaoWebViewVisible] = useState(false);
 
   const go = (next: Screen) => setScreen(next);
+  const startNewConversation = (mode: "voice" | "text") => {
+    setSelectedMode(mode);
+    setSelectedRoom({ id: `${mode}-new`, title: "", desc: "", level: "맞춤" });
+    go("situation");
+  };
+
+  const handleKakaoLogin = () => setKakaoWebViewVisible(true);
+
+  const handleWebViewNavChange = (navState: { url: string }) => {
+    if (navState.url.startsWith(KAKAO_REDIRECT_URI)) {
+      setKakaoWebViewVisible(false);
+      const code = new URL(navState.url).searchParams.get("code");
+      if (code) {
+        console.log("카카오 인증 코드:", code);
+        go("mode");
+      }
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="dark" />
+      <Modal visible={kakaoWebViewVisible} animationType="slide">
+        <SafeAreaView style={{ flex: 1 }}>
+          <Pressable
+            style={styles.webViewClose}
+            onPress={() => setKakaoWebViewVisible(false)}
+          >
+            <Text style={styles.webViewCloseText}>✕ 닫기</Text>
+          </Pressable>
+          <WebView
+            source={{ uri: KAKAO_AUTH_URL }}
+            onNavigationStateChange={handleWebViewNavChange}
+          />
+        </SafeAreaView>
+      </Modal>
       {screen === "login" && (
-        <LoginScreen go={go} onAuthenticated={setUserInfo} />
+        <LoginScreen go={go} onKakaoLogin={handleKakaoLogin} />
       )}
       {screen === "signup" && (
         <SimpleFormScreen
           title="회원가입"
           subtitle="SenTic 계정을 만들고 학습을 시작하세요."
           go={go}
-          onAuthenticated={setUserInfo}
         />
       )}
       {screen === "findAccount" && (
@@ -205,10 +177,12 @@ export default function App() {
           title="음성 대화"
           rooms={voiceRooms}
           go={go}
+          mode="voice"
+          onCreate={() => startNewConversation("voice")}
           onPick={(room) => {
             setSelectedRoom(room);
             setSelectedMode("voice");
-            go("situation");
+            go("voiceChat");
           }}
         />
       )}
@@ -217,126 +191,80 @@ export default function App() {
           title="채팅 대화"
           rooms={chatRooms}
           go={go}
+          mode="text"
+          onCreate={() => startNewConversation("text")}
           onPick={(room) => {
             setSelectedRoom({ ...room, level: "맞춤" });
             setSelectedMode("text");
-            go("situation");
+            go("textChat");
           }}
         />
       )}
       {screen === "situation" && (
-        <SituationScreen mode={selectedMode} room={selectedRoom} go={go} />
+        <SituationScreen
+          mode={selectedMode}
+          room={selectedRoom}
+          go={go}
+          onStart={(nextRoom) => setSelectedRoom(nextRoom)}
+        />
       )}
       {screen === "voiceChat" && (
         <VoiceChatScreen room={selectedRoom} go={go} />
       )}
       {screen === "textChat" && <TextChatScreen room={selectedRoom} go={go} />}
-      {screen === "mypage" && <MyPageScreen go={go} userInfo={userInfo} />}
-      {screen === "settings" && <InfoScreen title="설정" go={go} />}
-      {screen === "payment" && <InfoScreen title="프리미엄" go={go} />}
-      {screen === "bookmarks" && <InfoScreen title="저장한 표현" go={go} />}
-      {screen === "notice" && <InfoScreen title="공지사항" go={go} />}
-      {screen === "faq" && <InfoScreen title="FAQ" go={go} />}
+      {screen === "mypage" && <MyPageScreen go={go} />}
+      {screen === "settings" && <SettingsScreen go={go} />}
+      {screen === "payment" && <PaymentScreen go={go} />}
+      {screen === "bookmarks" && <BookmarksScreen go={go} />}
+      {screen === "notice" && <NoticeScreen go={go} />}
+      {screen === "faq" && <FaqScreen go={go} />}
     </SafeAreaView>
   );
 }
 
 function LoginScreen({
   go,
-  onAuthenticated,
+  onKakaoLogin,
 }: {
   go: (screen: Screen) => void;
-  onAuthenticated: (userInfo: UserInfo) => void;
+  onKakaoLogin: () => void;
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const submitLogin = async () => {
+  const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
       Alert.alert("입력 확인", "아이디와 비밀번호를 입력해주세요.");
       return;
     }
-
-    const url = apiUrl(loginPath);
-    if (!url) {
-      Alert.alert(
-        "설정 확인",
-        ".env에 EXPO_PUBLIC_BASE_URL을 먼저 설정해주세요.",
-      );
-      return;
-    }
-
+    setLoading(true);
     try {
-      setLoading(true);
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true",
+      const res = await fetch(
+        `${process.env.EXPO_PUBLIC_BASE_URL}/api/auth/login`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+          },
+          body: JSON.stringify({ loginId: username, password }),
         },
-        body: JSON.stringify({
-          loginId: username.trim(),
-          password,
-        }),
-      });
-
-      const responseText = await response.text();
-      let responseBody: unknown = responseText;
-      try {
-        responseBody = responseText ? JSON.parse(responseText) : null;
-      } catch {
-        responseBody = responseText;
-      }
-
-      if (!response.ok) {
-        const message =
-          typeof responseBody === "object" &&
-          responseBody &&
-          "message" in responseBody
-            ? String((responseBody as { message?: unknown }).message)
-            : responseText || "로그인에 실패했어요.";
-        Alert.alert("로그인 실패", message);
-        return;
-      }
-
-      // 백엔드에서 받은 데이터(responseBody)에서 토큰을 추출합니다.
-      const accessToken = getNestedString(responseBody, [
-        "data",
-        "accessToken",
-      ]);
-      const refreshToken = getNestedString(responseBody, [
-        "data",
-        "refreshToken",
-      ]);
-
-      // 폰 금고에 저장합니다.
-      if (accessToken) {
-        await AsyncStorage.setItem("accessToken", accessToken);
-      }
-      if (refreshToken) {
-        await AsyncStorage.setItem("refreshToken", refreshToken);
-      }
-
-      const loginId = username.trim();
-      onAuthenticated({
-        loginId,
-        nickname:
-          getNestedString(responseBody, ["data", "nickname"]) ??
-          getNestedString(responseBody, ["data", "user", "nickname"]) ??
-          loginId,
-        email:
-          getNestedString(responseBody, ["data", "email"]) ??
-          getNestedString(responseBody, ["data", "user", "email"]) ??
-          "",
-      });
-      go("mode");
-    } catch {
-      Alert.alert(
-        "연결 실패",
-        "백엔드 서버 주소, ngrok 상태, CORS 설정을 확인해주세요.",
       );
+      const data = await res.json();
+      if (data.success) {
+        global.accessToken = data.data.accessToken;
+        go("mode");
+      } else {
+        Alert.alert(
+          "로그인 실패",
+          data.message ?? "아이디 또는 비밀번호를 확인해주세요.",
+        );
+      }
+    } catch (e) {
+      // 서버 꺼져 있으면 임시로 바로 통과
+      go("mode");
     } finally {
       setLoading(false);
     }
@@ -355,7 +283,6 @@ function LoginScreen({
           <Text style={styles.logo}>SenTic</Text>
           <Text style={styles.muted}>AI 영어 소통 학습 파트너</Text>
         </View>
-
         <View style={styles.form}>
           <Label text="아이디" />
           <TextInput
@@ -365,7 +292,6 @@ function LoginScreen({
             style={styles.input}
             autoCapitalize="none"
           />
-
           <Label text="비밀번호" />
           <View style={styles.passwordRow}>
             <TextInput
@@ -377,37 +303,37 @@ function LoginScreen({
             />
             <Pressable
               style={styles.eyeButton}
-              onPress={() => setShowPassword((value) => !value)}
+              onPress={() => setShowPassword((v) => !v)}
             >
               <Text style={styles.iconText}>
                 {showPassword ? "숨김" : "보기"}
               </Text>
             </Pressable>
           </View>
-
           <Pressable
             onPress={() => go("findAccount")}
             style={styles.alignRight}
           >
             <Text style={styles.linkText}>아이디 / 비밀번호 찾기</Text>
           </Pressable>
-
-          <PrimaryButton
-            label={loading ? "처리 중..." : "로그인"}
-            onPress={submitLogin}
+          <Pressable
+            style={[styles.primaryButton, loading && { opacity: 0.6 }]}
+            onPress={handleLogin}
             disabled={loading}
-          />
-
+          >
+            <Text style={styles.primaryButtonText}>
+              {loading ? "로그인 중..." : "로그인"}
+            </Text>
+          </Pressable>
           <View style={styles.dividerRow}>
             <View style={styles.divider} />
             <Text style={styles.dividerText}>소셜 계정으로 시작</Text>
             <View style={styles.divider} />
           </View>
-
           <View style={styles.socialRow}>
             <Pressable
               style={[styles.socialButton, styles.kakao]}
-              onPress={() => go("mode")}
+              onPress={onKakaoLogin}
             >
               <Text style={styles.socialText}>카카오</Text>
             </Pressable>
@@ -415,7 +341,6 @@ function LoginScreen({
               <Text style={styles.socialText}>Google</Text>
             </Pressable>
           </View>
-
           <View style={styles.centerRow}>
             <Text style={styles.muted}>처음 오셨나요? </Text>
             <Pressable onPress={() => go("signup")}>
@@ -427,9 +352,9 @@ function LoginScreen({
     </KeyboardAvoidingView>
   );
 }
+
 function ModeScreen({ go }: { go: (screen: Screen) => void }) {
   const weekly = [33, 42, 27, 36, 48, 24, 60];
-
   return (
     <View style={styles.screenSoft}>
       <Header title="SenTic" go={go} actions />
@@ -443,7 +368,6 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
             <Text style={styles.streakText}>불꽃 5일 연속</Text>
           </View>
         </View>
-
         <Text style={styles.sectionTitle}>학습 모드</Text>
         <ModeCard
           icon="🎙"
@@ -459,7 +383,6 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
           color="#16A34A"
           onPress={() => go("chatRooms")}
         />
-
         <View style={styles.card}>
           <View style={styles.rowBetween}>
             <Text style={styles.cardTitle}>이번 주 학습</Text>
@@ -497,7 +420,6 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
             ))}
           </View>
         </View>
-
         <View style={styles.statsGrid}>
           <Stat label="총 대화" value="24회" />
           <Stat label="총 학습시간" value="8.5h" />
@@ -512,36 +434,58 @@ function RoomListScreen({
   title,
   rooms,
   go,
+  mode,
+  onCreate,
   onPick,
 }: {
   title: string;
   rooms: PracticeRoom[];
   go: (screen: Screen) => void;
+  mode: "voice" | "text";
+  onCreate: () => void;
   onPick: (room: PracticeRoom) => void;
 }) {
   return (
     <View style={styles.screenSoft}>
-      <Header title={title} go={go} backTo="mode" />
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.h2}>상황을 선택하세요</Text>
-        <Text style={styles.mutedBlock}>
-          원하는 대화 주제를 고르면 난이도와 역할을 확인한 뒤 연습을 시작할 수
-          있어요.
-        </Text>
+      <View style={styles.roomListHeader}>
+        <Pressable style={styles.headerButton} onPress={() => go("mode")}>
+          <Text style={styles.headerIcon}>‹</Text>
+        </Pressable>
+        <View style={styles.flex}>
+          <Text style={styles.roomListTitle}>{title}</Text>
+          <Text style={styles.roomListCount}>{rooms.length}개의 대화방</Text>
+        </View>
+        <Pressable style={styles.newRoomButton} onPress={onCreate}>
+          <Text style={styles.newRoomButtonText}>+ 새 대화</Text>
+        </Pressable>
+      </View>
+      <ScrollView contentContainerStyle={styles.roomListContent}>
         {rooms.map((room) => (
           <Pressable
             key={room.id}
-            style={styles.roomCard}
+            style={styles.chatRoomCard}
             onPress={() => onPick(room)}
           >
-            <View style={styles.roomIcon}>
-              <Text style={styles.roomIconText}>
-                {title.includes("음성") ? "🎙" : "💬"}
+            <View style={styles.voiceRoomIcon}>
+              <Text style={styles.voiceRoomIconText}>
+                {mode === "voice" ? "🎙" : "💬"}
               </Text>
             </View>
-            <View style={styles.flex}>
-              <Text style={styles.cardTitle}>{room.title}</Text>
-              <Text style={styles.mutedSmall}>{room.desc}</Text>
+            <View style={styles.roomPreview}>
+              <View style={styles.roomPreviewTop}>
+                <Text style={styles.roomPreviewTitle} numberOfLines={1}>
+                  {room.title}
+                </Text>
+                <Text style={styles.roomPreviewDate}>{room.date}</Text>
+              </View>
+              <View style={styles.roomPreviewBottom}>
+                <Text style={styles.roomPreviewMessage} numberOfLines={1}>
+                  {room.lastMessage ?? room.desc}
+                </Text>
+                {room.duration && (
+                  <Text style={styles.durationBadge}>{room.duration}</Text>
+                )}
+              </View>
             </View>
             <Text style={styles.chevron}>›</Text>
           </Pressable>
@@ -555,44 +499,217 @@ function SituationScreen({
   mode,
   room,
   go,
+  onStart,
 }: {
   mode: "voice" | "text";
-  room: { title: string; desc: string; level?: string };
+  room: PracticeRoom;
   go: (screen: Screen) => void;
+  onStart: (room: PracticeRoom) => void;
 }) {
+  const presets = [
+    {
+      title: "카페에서 주문하기",
+      desc: "처음 방문한 카페에서 원하는 메뉴를 묻고 추천을 받는 상황",
+      name: "바리스타",
+      trait: "친절하고 빠르게 주문을 도와주는 직원",
+      avatar: "👩",
+    },
+    {
+      title: "비즈니스 미팅",
+      desc: "프로젝트 진행 상황을 공유하고 다음 일정을 조율하는 상황",
+      name: "Alex",
+      trait: "차분하고 논리적인 해외 파트너",
+      avatar: "👨",
+    },
+    {
+      title: "여행 계획 세우기",
+      desc: "여름 여행지를 고르고 일정과 예산을 영어로 상의하는 상황",
+      name: "여행 친구",
+      trait: "호기심이 많고 새로운 장소를 좋아함",
+      avatar: "🧑",
+    },
+  ];
+
+  const [title, setTitle] = useState(room.title || "");
+  const [desc, setDesc] = useState(room.desc || "");
+  const [characters, setCharacters] = useState([
+    {
+      name: presets[0].name,
+      trait: presets[0].trait,
+      avatar: presets[0].avatar,
+      photoUri: null as string | null,
+    },
+  ]);
+
+  const addCharacter = () => {
+    if (characters.length >= 2) return;
+    setCharacters((prev) => [
+      ...prev,
+      { name: "", trait: "", avatar: "👨", photoUri: null },
+    ]);
+  };
+
+  const updateCharacter = (index: number, field: string, value: string) => {
+    setCharacters((prev) =>
+      prev.map((c, i) => (i === index ? { ...c, [field]: value } : c)),
+    );
+  };
+
+  const pickPhoto = async (index: number) => {
+    if (Platform.OS !== "web") {
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("권한 필요", "갤러리 접근 권한이 필요합니다.");
+        return;
+      }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      setCharacters((prev) =>
+        prev.map((c, i) =>
+          i === index ? { ...c, photoUri: result.assets[0].uri } : c,
+        ),
+      );
+    }
+  };
+
+  const randomize = () => {
+    const next = presets[Math.floor(Math.random() * presets.length)];
+    setTitle(next.title);
+    setDesc(next.desc);
+    setCharacters([
+      {
+        name: next.name,
+        trait: next.trait,
+        avatar: next.avatar,
+        photoUri: null,
+      },
+    ]);
+  };
+
+  const start = () => {
+    onStart({
+      ...room,
+      title: title.trim() || "새 영어 대화",
+      desc: desc.trim() || "직접 설정한 영어 대화 상황",
+      lastMessage: desc.trim() || room.lastMessage,
+      date: "오늘",
+    });
+    go(mode === "voice" ? "voiceChat" : "textChat");
+  };
+
   return (
     <View style={styles.screenSoft}>
-      <Header
-        title="상황 설정"
-        go={go}
-        backTo={mode === "voice" ? "voiceRooms" : "chatRooms"}
-      />
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.heroCard}>
-          <Text style={styles.heroIcon}>{mode === "voice" ? "🎙" : "💬"}</Text>
-          <Text style={styles.heroTitle}>{room.title}</Text>
-          <Text style={styles.heroDesc}>{room.desc}</Text>
+      <View style={styles.roomListHeader}>
+        <Pressable
+          style={styles.headerButton}
+          onPress={() => go(mode === "voice" ? "voiceRooms" : "chatRooms")}
+        >
+          <Text style={styles.headerIcon}>‹</Text>
+        </Pressable>
+        <View style={styles.flex}>
+          <Text style={styles.roomListTitle}>상황 설정</Text>
+          <Text style={styles.roomListCount}>영어 대화</Text>
         </View>
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>오늘의 목표</Text>
-          <Checklist text="첫 인사와 요청을 자연스럽게 말하기" />
-          <Checklist text="상대의 질문에 짧게 답하기" />
-          <Checklist text="AI 피드백으로 더 나은 표현 저장하기" />
-        </View>
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>설정</Text>
-          <PillRow
-            items={[
-              room.level ?? "맞춤",
-              "피드백 ON",
-              mode === "voice" ? "자막 ON" : "자동 피드백",
-            ]}
-          />
-        </View>
-        <PrimaryButton
-          label="연습 시작"
-          onPress={() => go(mode === "voice" ? "voiceChat" : "textChat")}
+        <Pressable style={styles.randomButton} onPress={randomize}>
+          <Text style={styles.randomButtonText}>↝ 랜덤</Text>
+        </Pressable>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.setupContent}>
+        <Label text="대화방 제목" />
+        <TextInput
+          value={title}
+          onChangeText={setTitle}
+          placeholder="예: 카페에서 주문하기"
+          style={styles.input}
         />
+
+        <Label text="상황 설명" />
+        <TextInput
+          value={desc}
+          onChangeText={setDesc}
+          placeholder="원하는 상황을 자세히 설명해주세요"
+          multiline
+          textAlignVertical="top"
+          style={[styles.input, styles.descriptionInput]}
+        />
+
+        <View style={styles.setupSectionHeader}>
+          <View>
+            <Text style={styles.setupSectionTitle}>등장인물</Text>
+            <Text style={styles.roomListCount}>최대 2명까지 추가 가능</Text>
+          </View>
+          <Pressable onPress={addCharacter} disabled={characters.length >= 2}>
+            <Text
+              style={[
+                styles.addCharacterText,
+                characters.length >= 2 && { color: "#D1D5DB" },
+              ]}
+            >
+              + 추가
+            </Text>
+          </Pressable>
+        </View>
+
+        {characters.map((char, index) => (
+          <View
+            key={index}
+            style={[styles.characterCard, index > 0 && { marginTop: 10 }]}
+          >
+            <View style={styles.avatarPicker}>
+              <Pressable onPress={() => pickPhoto(index)}>
+                {char.photoUri ? (
+                  <Image source={{ uri: char.photoUri }} style={styles.photo} />
+                ) : (
+                  <View style={styles.photoSlot}>
+                    <Text style={styles.cameraText}>📷</Text>
+                  </View>
+                )}
+              </Pressable>
+              <View style={styles.avatarOptions}>
+                {["👩", "👨", "🧑", "👧", "👴"].map((item) => (
+                  <Pressable
+                    key={item}
+                    style={[
+                      styles.avatarOption,
+                      char.avatar === item && styles.avatarOptionActive,
+                    ]}
+                    onPress={() => updateCharacter(index, "avatar", item)}
+                  >
+                    <Text style={styles.avatarOptionText}>{item}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+            <TextInput
+              value={char.name}
+              onChangeText={(v) => updateCharacter(index, "name", v)}
+              placeholder="이름 (예: 바리스타)"
+              style={styles.input}
+            />
+            <TextInput
+              value={char.trait}
+              onChangeText={(v) => updateCharacter(index, "trait", v)}
+              placeholder="성격 / 특징 (선택)"
+              style={styles.input}
+            />
+          </View>
+        ))}
+
+        <View style={styles.warningBox}>
+          <Text style={styles.warningText}>
+            부적절한 상황 설정은 자동으로 제한됩니다
+          </Text>
+        </View>
+
+        <PrimaryButton label="대화 시작하기" onPress={start} />
       </ScrollView>
     </View>
   );
@@ -713,7 +830,7 @@ function TextChatScreen({
   room,
   go,
 }: {
-  room: { id: number; title: string };
+  room: { title: string };
   go: (screen: Screen) => void;
 }) {
   const [input, setInput] = useState("");
@@ -734,11 +851,9 @@ function TextChatScreen({
     },
   ]);
 
-  const send = async () => {
+  const send = () => {
     const text = input.trim();
     if (!text) return;
-
-    // 1. 내 메시지 화면에 먼저 띄우기
     const userMessage: Message = {
       id: Date.now().toString(),
       speaker: "user",
@@ -747,65 +862,19 @@ function TextChatScreen({
         hour: "2-digit",
         minute: "2-digit",
       }),
+      feedback: [`추천 표현: ${text.replace("I want to", "I'd like to")}`],
     };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-
-    try {
-      const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
-      const roomId = 1;
-
-      // ⭐️ 핵심: axios.post는 객체를 그대로 보내는 게 좋습니다.
-      // JSON.stringify를 또 쓰면 이중 직렬화 문제가 생길 수 있어요.
-      const requestBody = { content: text };
-
-      console.log("👉 서버로 전송하는 최종 데이터:", requestBody);
-
-      const response = await axios.post(
-        `${API_URL}/api/rooms/${roomId}/messages/chat`,
-        { content: text }, // 👈 이대로 유지! (이제 백엔드가 완벽하게 해석할 거예요)
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-        },
-      );
-
-      // 서버 응답 성공 시 처리
-      if (response.data) {
-        // ⭐️ 여기서 response.data.data.content로 접근해야 합니다!
-        const aiMessage: Message = {
-          id: `${Date.now()}-ai`,
-          speaker: "ai",
-          text: response.data.data?.content || "응답이 없습니다.",
-          time: new Date().toLocaleTimeString("ko-KR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-        };
-        setMessages((prev) => [...prev, aiMessage]);
-      }
-    } catch (error: any) {
-      // 🚨 여기가 제일 중요합니다! 에러가 나면 꼭 이 로그를 확인하세요.
-      console.error(
-        "🚨 통신 에러 상세:",
-        error.response?.data || error.message,
-      );
-
-      const errorMessage: Message = {
-        id: `${Date.now()}-error`,
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+      {
+        id: `${Date.now()}-ai`,
         speaker: "ai",
-        text: "서버 연결에 실패했습니다.",
-        time: new Date().toLocaleTimeString("ko-KR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    }
+        text: "That sounds good! Tell me more.",
+        time: "now",
+      },
+    ]);
+    setInput("");
   };
 
   return (
@@ -837,345 +906,1769 @@ function SimpleFormScreen({
   title,
   subtitle,
   go,
-  onAuthenticated,
 }: {
   title: string;
   subtitle: string;
   go: (screen: Screen) => void;
-  onAuthenticated?: (userInfo: UserInfo) => void;
 }) {
-  const isSignup = title === "회원가입";
-  const [username, setUsername] = useState("");
-  const [nickname, setNickname] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const submitSignup = async () => {
-    if (
-      !email.trim() ||
-      !password.trim() ||
-      (isSignup && (!username.trim() || !nickname.trim()))
-    ) {
-      Alert.alert("입력 확인", "필수 정보를 모두 입력해주세요.");
-      return;
-    }
-
-    if (!isSignup) {
-      Alert.alert("안내", "계정 찾기 API는 아직 연결되지 않았어요.");
-      return;
-    }
-
-    const url = apiUrl(signupPath);
-    if (!url) {
-      Alert.alert(
-        "설정 확인",
-        ".env에 EXPO_PUBLIC_BASE_URL을 먼저 설정해주세요.",
-      );
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true",
-        },
-        body: JSON.stringify({
-          loginId: username.trim(),
-          nickname: nickname.trim(),
-          email: email.trim(),
-          password,
-        }),
-      });
-
-      const responseText = await response.text();
-      let responseBody: unknown = responseText;
-      try {
-        responseBody = responseText ? JSON.parse(responseText) : null;
-      } catch {
-        responseBody = responseText;
-      }
-
-      if (!response.ok) {
-        const message =
-          typeof responseBody === "object" &&
-          responseBody &&
-          "message" in responseBody
-            ? String((responseBody as { message?: unknown }).message)
-            : responseText || "회원가입에 실패했어요.";
-        Alert.alert("회원가입 실패", message);
-        return;
-      }
-
-      Alert.alert("회원가입 완료", "계정이 생성되었습니다.");
-      onAuthenticated?.({
-        loginId: username.trim(),
-        nickname: nickname.trim(),
-        email: email.trim(),
-      });
-      go("mode");
-    } catch {
-      Alert.alert(
-        "연결 실패",
-        "백엔드 서버 주소, 같은 와이파이, CORS 설정을 확인해주세요.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <View style={styles.screenSoft}>
       <Header title={title} go={go} backTo="login" />
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
+      <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.h1}>{title}</Text>
         <Text style={styles.mutedBlock}>{subtitle}</Text>
-        {isSignup && (
-          <>
-            <Label text="아이디" />
-            <TextInput
-              value={username}
-              onChangeText={setUsername}
-              placeholder="아이디 입력"
-              style={styles.input}
-              autoCapitalize="none"
-            />
-            <Label text="닉네임" />
-            <TextInput
-              value={nickname}
-              onChangeText={setNickname}
-              placeholder="닉네임 입력"
-              style={styles.input}
-            />
-          </>
-        )}
         <Label text="이메일" />
         <TextInput
-          value={email}
-          onChangeText={setEmail}
           placeholder="email@example.com"
           style={styles.input}
           keyboardType="email-address"
-          autoCapitalize="none"
         />
         <Label text="비밀번호" />
         <TextInput
-          value={password}
-          onChangeText={setPassword}
           placeholder="비밀번호"
           secureTextEntry
           style={styles.input}
         />
         <PrimaryButton
-          label={loading ? "처리 중..." : isSignup ? "가입하기" : "안내 받기"}
-          onPress={submitSignup}
-          disabled={loading}
+          label={title === "회원가입" ? "가입하기" : "안내 받기"}
+          onPress={() => go("mode")}
         />
       </ScrollView>
     </View>
   );
 }
 
-function MyPageScreen({
-  go,
-  userInfo,
-}: {
-  go: (screen: Screen) => void;
-  userInfo: UserInfo;
-}) {
-  const [userLevel, setUserLevel] = useState<LevelId>("중급");
-  const [pendingLevel, setPendingLevel] = useState<LevelId>("중급");
-  const [levelConfirmed, setLevelConfirmed] = useState(true);
+function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
+  interface Notice {
+    id: string;
+    title: string;
+    content: string;
+    date: string;
+    isImportant: boolean;
+  }
 
-  const maxMinutes = Math.max(...studyData.map((item) => item.minutes));
-  const totalMinutes = studyData.reduce((sum, item) => sum + item.minutes, 0);
-  const avgMinutes = Math.round(totalMinutes / studyData.length);
-  const currentLevel =
-    levelOptions.find((level) => level.id === userLevel) ?? levelOptions[1];
-  const displayNickname = userInfo.nickname || userInfo.loginId || "영어마스터";
-  const displayEmail = userInfo.email || "로그인 이메일 없음";
+  const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
 
-  const handleLevelButtonPress = () => {
-    if (levelConfirmed) {
-      setPendingLevel(userLevel);
-      setLevelConfirmed(false);
-      return;
-    }
-    setUserLevel(pendingLevel);
-    setLevelConfirmed(true);
+  const notices: Notice[] = [
+    {
+      id: "1",
+      title: "SenTic 정식 오픈을 축하합니다! 🎉",
+      content: `안녕하세요, SenTic 팀입니다.\n\n드디어 SenTic이 정식으로 오픈하게 되었습니다!\n\nAI와 함께하는 영어 회화 학습 서비스 SenTic은 여러분의 영어 실력 향상을 위해 최선을 다하겠습니다.\n\n주요 기능:\n• 음성 대화 모드 - 실시간 AI 음성 대화\n• 채팅 대화 모드 - 텍스트 기반 학습\n• 실시간 피드백 - 문법, 발음, 표현 교정\n• 표현 북마크 - 유용한 표현 저장 및 복습\n\n앞으로도 더 나은 서비스를 제공하기 위해 노력하겠습니다.\n감사합니다.`,
+      date: "2026-04-06",
+      isImportant: true,
+    },
+    {
+      id: "2",
+      title: "프리미엄 플랜 출시 안내",
+      content: `프리미엄 플랜이 새롭게 출시되었습니다.\n\n프리미엄 플랜 혜택:\n• 무제한 대화 이용\n• 고급 AI 튜터 이용\n• 상세한 학습 리포트\n• 우선 고객 지원\n\n지금 바로 프리미엄으로 업그레이드하고 더 많은 기능을 경험해보세요!`,
+      date: "2026-04-05",
+      isImportant: false,
+    },
+    {
+      id: "3",
+      title: "서버 점검 안내 (완료)",
+      content: `서비스 품질 향상을 위한 서버 점검이 완료되었습니다.\n\n점검 일시: 2026년 4월 4일 02:00 ~ 04:00 (2시간)\n점검 내용: 서버 성능 개선 및 안정화 작업\n\n점검 중 일시적으로 서비스 이용이 불가능했던 점 양해 부탁드립니다.`,
+      date: "2026-04-04",
+      isImportant: false,
+    },
+    {
+      id: "4",
+      title: "AI 대화 품질 개선 업데이트",
+      content: `AI 대화 엔진이 업데이트되었습니다.\n\n개선 사항:\n• 더욱 자연스러운 대화 흐름\n• 발음 피드백 정확도 향상\n• 문법 교정 기능 강화\n• 다양한 주제 대화 지원 확대`,
+      date: "2026-04-03",
+      isImportant: false,
+    },
+    {
+      id: "5",
+      title: "이용약관 및 개인정보처리방침 개정 안내",
+      content: `이용약관 및 개인정보처리방침이 개정되었습니다.\n\n주요 변경 사항:\n• 개인정보 보호 정책 강화\n• 서비스 이용 조건 명확화\n• 데이터 처리 방침 개선`,
+      date: "2026-04-01",
+      isImportant: true,
+    },
+  ];
+
+  const importantNotices = notices.filter((n) => n.isImportant);
+  const regularNotices = notices.filter((n) => !n.isImportant);
+
+  if (selectedNotice) {
+    return (
+      <View style={styles.screenSoft}>
+        <View style={ntStyles.header}>
+          <Pressable
+            style={ntStyles.backBtn}
+            onPress={() => setSelectedNotice(null)}
+          >
+            <Text style={ntStyles.backIcon}>‹</Text>
+          </Pressable>
+          <Text style={ntStyles.headerTitle}>공지사항</Text>
+        </View>
+        <ScrollView contentContainerStyle={ntStyles.detailContent}>
+          {selectedNotice.isImportant && (
+            <View style={ntStyles.importantBadge}>
+              <Text style={ntStyles.importantBadgeText}>📌 중요 공지</Text>
+            </View>
+          )}
+          <Text style={ntStyles.detailTitle}>{selectedNotice.title}</Text>
+          <Text style={ntStyles.detailDate}>{selectedNotice.date}</Text>
+          <View style={ntStyles.detailCard}>
+            <Text style={ntStyles.detailBody}>{selectedNotice.content}</Text>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.screenSoft}>
+      <View style={ntStyles.header}>
+        <Pressable style={ntStyles.backBtn} onPress={() => go("mode")}>
+          <Text style={ntStyles.backIcon}>‹</Text>
+        </Pressable>
+        <Text style={ntStyles.headerTitle}>공지사항</Text>
+      </View>
+      <ScrollView contentContainerStyle={ntStyles.listContent}>
+        {/* 중요 공지 */}
+        {importantNotices.length > 0 && (
+          <View style={{ marginBottom: 8 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 5,
+                marginBottom: 10,
+              }}
+            >
+              <Text style={ntStyles.sectionIcon}>📌</Text>
+              <Text style={ntStyles.sectionLabelImportant}>중요 공지</Text>
+            </View>
+            <View style={{ gap: 8 }}>
+              {importantNotices.map((notice) => (
+                <Pressable
+                  key={notice.id}
+                  style={ntStyles.importantCard}
+                  onPress={() => setSelectedNotice(notice)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={ntStyles.noticeTitle} numberOfLines={1}>
+                      {notice.title}
+                    </Text>
+                    <Text style={ntStyles.noticeDate}>{notice.date}</Text>
+                  </View>
+                  <Text style={styles.chevron}>›</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* 일반 공지 */}
+        {regularNotices.length > 0 && (
+          <View>
+            <Text style={ntStyles.sectionLabel}>전체 공지</Text>
+            <View style={{ gap: 8, marginTop: 10 }}>
+              {regularNotices.map((notice) => (
+                <Pressable
+                  key={notice.id}
+                  style={ntStyles.regularCard}
+                  onPress={() => setSelectedNotice(notice)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={ntStyles.noticeTitle} numberOfLines={1}>
+                      {notice.title}
+                    </Text>
+                    <Text style={ntStyles.noticeDate}>{notice.date}</Text>
+                  </View>
+                  <Text style={styles.chevron}>›</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
+  type ViewMode = "by-category" | "by-room";
+  type Category = "단어" | "문법" | "문장";
+
+  interface SavedExpression {
+    id: string;
+    text: string;
+    translation: string;
+    category: Category;
+    roomName: string;
+    roomId: string;
+    savedDate: string;
+  }
+
+  const categoryConfig: Record<
+    Category,
+    { color: string; bg: string; dot: string }
+  > = {
+    단어: { color: "#2563EB", bg: "#EFF6FF", dot: "#60A5FA" },
+    문법: { color: "#7C3AED", bg: "#F5F3FF", dot: "#A78BFA" },
+    문장: { color: "#16A34A", bg: "#F0FDF4", dot: "#4ADE80" },
   };
 
-  const renderLevelCard = (level: LevelOption, selectable: boolean) => {
-    const selected = selectable
-      ? pendingLevel === level.id
-      : userLevel === level.id;
+  const [viewMode, setViewMode] = useState<ViewMode>("by-category");
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(
+    null,
+  );
+  const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
+  const [expressions, setExpressions] = useState<SavedExpression[]>([
+    {
+      id: "1",
+      text: "I'd like to order a coffee, please.",
+      translation: "커피를 주문하고 싶습니다.",
+      category: "문장",
+      roomName: "카페에서 주문하기",
+      roomId: "1",
+      savedDate: "04/28",
+    },
+    {
+      id: "2",
+      text: "What's up?",
+      translation: "안녕? / 어떻게 지내?",
+      category: "단어",
+      roomName: "영화 이야기",
+      roomId: "2",
+      savedDate: "04/28",
+    },
+    {
+      id: "3",
+      text: "Subject-verb agreement",
+      translation: "주어-동사 일치",
+      category: "문법",
+      roomName: "비즈니스 미팅",
+      roomId: "3",
+      savedDate: "04/27",
+    },
+    {
+      id: "4",
+      text: "Could you please help me?",
+      translation: "도와주실 수 있으신가요?",
+      category: "문장",
+      roomName: "카페에서 주문하기",
+      roomId: "1",
+      savedDate: "04/26",
+    },
+  ]);
+
+  const isInsideDetail = selectedCategory !== null || selectedRoom !== null;
+
+  const groupByRoom = () => {
+    const grouped: { [key: string]: SavedExpression[] } = {};
+    expressions.forEach((expr) => {
+      if (!grouped[expr.roomName]) grouped[expr.roomName] = [];
+      grouped[expr.roomName].push(expr);
+    });
+    return grouped;
+  };
+
+  const deleteExpression = (id: string) => {
+    setExpressions(expressions.filter((e) => e.id !== id));
+  };
+
+  const renderExpression = (expr: SavedExpression, showRoom = false) => {
+    const config = categoryConfig[expr.category];
     return (
-      <Pressable
-        key={level.id}
-        onPress={() => selectable && setPendingLevel(level.id)}
-        disabled={!selectable}
-        style={[
-          styles.levelCard,
-          {
-            borderColor: selected ? level.border : "#F3F4F6",
-            backgroundColor: selected ? level.bg : "#FFFFFF",
-          },
-        ]}
-      >
-        <View style={styles.flex}>
-          <View style={styles.levelTitleRow}>
-            <Text
-              style={[
-                styles.levelName,
-                { color: selected ? level.color : "#111827" },
-              ]}
-            >
-              {level.id}
-            </Text>
-            <Text
-              style={[
-                styles.levelEng,
-                { color: selected ? level.color : "#9CA3AF" },
-              ]}
-            >
-              {level.eng}
-            </Text>
-          </View>
-          <Text
-            style={[
-              styles.levelDesc,
-              { color: selected ? level.color : "#6B7280" },
-            ]}
+      <View key={expr.id} style={bkStyles.exprCard}>
+        <View style={{ flex: 1 }}>
+          <Text style={bkStyles.exprText}>{expr.text}</Text>
+          <Text style={bkStyles.exprTranslation}>{expr.translation}</Text>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginTop: 8,
+              flexWrap: "wrap",
+            }}
           >
-            {level.desc}
-          </Text>
-          <View style={styles.levelPillRow}>
-            {level.detail.map((item) => (
-              <View
-                key={item}
-                style={[
-                  styles.levelPill,
-                  {
-                    borderColor: selected ? level.border : "#E5E7EB",
-                    backgroundColor: selected ? "#FFFDF7" : "#F9FAFB",
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.levelPillText,
-                    { color: selected ? level.color : "#6B7280" },
-                  ]}
-                >
-                  {item}
-                </Text>
-              </View>
-            ))}
+            <View style={[bkStyles.catBadge, { backgroundColor: config.bg }]}>
+              <Text style={[bkStyles.catBadgeText, { color: config.color }]}>
+                {expr.category}
+              </Text>
+            </View>
+            {showRoom && <Text style={bkStyles.exprMeta}>{expr.roomName}</Text>}
+            <Text style={bkStyles.exprDate}>{expr.savedDate}</Text>
           </View>
         </View>
-        <View
-          style={[
-            styles.levelRadio,
-            { borderColor: selected ? level.border : "#E5E7EB" },
-          ]}
+        <Pressable
+          onPress={() => deleteExpression(expr.id)}
+          style={bkStyles.deleteBtn}
         >
-          {selected && (
-            <View
-              style={[styles.levelRadioDot, { backgroundColor: level.dot }]}
-            />
-          )}
-        </View>
-      </Pressable>
+          <Text style={bkStyles.deleteBtnText}>🗑</Text>
+        </Pressable>
+      </View>
     );
   };
 
   return (
     <View style={styles.screenSoft}>
-      <Header title="마이 페이지" go={go} backTo="mode" />
-      <ScrollView contentContainerStyle={styles.myPageContent}>
-        <View style={styles.profileCard}>
-          <View style={styles.profileAvatar}>
-            <Text style={styles.profileAvatarText}>
-              {displayNickname.slice(0, 1)}
+      {/* 헤더 */}
+      {isInsideDetail ? (
+        <View style={bkStyles.header}>
+          <Pressable
+            style={bkStyles.backBtn}
+            onPress={() => {
+              setSelectedCategory(null);
+              setSelectedRoom(null);
+            }}
+          >
+            <Text style={bkStyles.backIcon}>‹</Text>
+          </Pressable>
+          <View>
+            <Text style={bkStyles.headerTitle}>
+              {selectedCategory ?? selectedRoom}
+            </Text>
+            <Text style={bkStyles.headerSub}>
+              {selectedCategory
+                ? `${expressions.filter((e) => e.category === selectedCategory).length}개 저장됨`
+                : `${groupByRoom()[selectedRoom!]?.length ?? 0}개 저장됨`}
             </Text>
           </View>
-          <View style={styles.flex}>
-            <Text style={styles.profileName} numberOfLines={1}>
-              {displayNickname}
-            </Text>
-            <Text style={styles.profileEmail} numberOfLines={1}>
-              {displayEmail}
-            </Text>
-            <View style={styles.profileLevelRow}>
-              <View
-                style={[
-                  styles.profileLevelDot,
-                  { backgroundColor: currentLevel.dot },
-                ]}
-              />
-              <Text style={styles.profileLevelText}>
-                {currentLevel.id} · {currentLevel.eng}
+        </View>
+      ) : (
+        <View style={bkStyles.header}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 12,
+            }}
+          >
+            <Pressable style={bkStyles.backBtn} onPress={() => go("mode")}>
+              <Text style={bkStyles.backIcon}>‹</Text>
+            </Pressable>
+            <View>
+              <Text style={bkStyles.headerTitle}>저장된 표현</Text>
+              <Text style={bkStyles.headerSub}>
+                {expressions.length}개 저장됨
               </Text>
             </View>
           </View>
-          <Pressable
-            style={styles.logoutButton}
-            onPress={() =>
-              Alert.alert("로그아웃", "정말 로그아웃 하시겠어요?", [
-                { text: "취소", style: "cancel" },
-                {
-                  text: "로그아웃",
-                  style: "destructive",
-                  onPress: () => go("login"),
-                },
-              ])
-            }
-          >
-            <Text style={styles.logoutText}>↪</Text>
+          {/* 탭 */}
+          <View style={bkStyles.tabContainer}>
+            <Pressable
+              style={[
+                bkStyles.tab,
+                viewMode === "by-category" && bkStyles.tabActive,
+              ]}
+              onPress={() => {
+                setViewMode("by-category");
+                setSelectedRoom(null);
+              }}
+            >
+              <Text
+                style={[
+                  bkStyles.tabText,
+                  viewMode === "by-category" && bkStyles.tabTextActive,
+                ]}
+              >
+                카테고리 🏷
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                bkStyles.tab,
+                viewMode === "by-room" && bkStyles.tabActive,
+              ]}
+              onPress={() => {
+                setViewMode("by-room");
+                setSelectedCategory(null);
+              }}
+            >
+              <Text
+                style={[
+                  bkStyles.tabText,
+                  viewMode === "by-room" && bkStyles.tabTextActive,
+                ]}
+              >
+                대화방 📁
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      <ScrollView contentContainerStyle={bkStyles.content}>
+        {/* 카테고리 목록 */}
+        {!isInsideDetail && viewMode === "by-category" && (
+          <View style={{ gap: 10 }}>
+            {(["단어", "문법", "문장"] as Category[]).map((cat) => {
+              const count = expressions.filter(
+                (e) => e.category === cat,
+              ).length;
+              const config = categoryConfig[cat];
+              return (
+                <Pressable
+                  key={cat}
+                  style={bkStyles.listCard}
+                  onPress={() => setSelectedCategory(cat)}
+                >
+                  <View
+                    style={[bkStyles.catIcon, { backgroundColor: config.bg }]}
+                  >
+                    <View
+                      style={[bkStyles.catDot, { backgroundColor: config.dot }]}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={bkStyles.listCardTitle}>{cat}</Text>
+                    <Text style={bkStyles.listCardSub}>{count}개 저장됨</Text>
+                  </View>
+                  <Text style={styles.chevron}>›</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        {/* 대화방 목록 */}
+        {!isInsideDetail && viewMode === "by-room" && (
+          <View style={{ gap: 10 }}>
+            {Object.entries(groupByRoom()).map(([roomName, roomExprs]) => (
+              <Pressable
+                key={roomName}
+                style={bkStyles.listCard}
+                onPress={() => setSelectedRoom(roomName)}
+              >
+                <View style={bkStyles.roomIcon}>
+                  <Text style={{ fontSize: 18 }}>📁</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={bkStyles.listCardTitle}>{roomName}</Text>
+                  <Text style={bkStyles.listCardSub}>
+                    {roomExprs.length}개 저장됨
+                  </Text>
+                </View>
+                <Text style={styles.chevron}>›</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {/* 카테고리 상세 */}
+        {selectedCategory && (
+          <View style={{ gap: 10 }}>
+            {expressions
+              .filter((e) => e.category === selectedCategory)
+              .map((e) => renderExpression(e, true))}
+          </View>
+        )}
+
+        {/* 대화방 상세 */}
+        {selectedRoom && (
+          <View style={{ gap: 10 }}>
+            {groupByRoom()[selectedRoom]?.map((e) => renderExpression(e))}
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
+  const [notifications, setNotifications] = useState(true);
+
+  const logout = () => {
+    Alert.alert("로그아웃", "로그아웃 하시겠습니까?", [
+      { text: "취소", style: "cancel" },
+      { text: "로그아웃", style: "destructive", onPress: () => go("login") },
+    ]);
+  };
+
+  const Toggle = ({
+    value,
+    onChange,
+  }: {
+    value: boolean;
+    onChange: () => void;
+  }) => (
+    <Pressable
+      onPress={onChange}
+      style={[stStyles.toggle, value ? stStyles.toggleOn : stStyles.toggleOff]}
+    >
+      <View
+        style={[
+          stStyles.toggleThumb,
+          value ? stStyles.toggleThumbOn : stStyles.toggleThumbOff,
+        ]}
+      />
+    </Pressable>
+  );
+
+  return (
+    <View style={styles.screenSoft}>
+      {/* 헤더 */}
+      <View style={stStyles.header}>
+        <Pressable style={stStyles.backBtn} onPress={() => go("mode")}>
+          <Text style={stStyles.backIcon}>‹</Text>
+        </Pressable>
+        <Text style={stStyles.headerTitle}>설정</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={stStyles.content}>
+        {/* 계정 */}
+        <Text style={stStyles.sectionLabel}>계정</Text>
+        <View style={stStyles.card}>
+          <View style={[stStyles.row, stStyles.rowBorder]}>
+            <View>
+              <Text style={stStyles.rowTitle}>이메일</Text>
+              <Text style={stStyles.rowSub}>user@example.com</Text>
+            </View>
+          </View>
+          <View style={stStyles.row}>
+            <Text style={stStyles.rowTitle}>회원 등급</Text>
+            <View style={stStyles.premiumBadge}>
+              <Text style={stStyles.premiumBadgeText}>프리미엄</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* 알림 */}
+        <Text style={stStyles.sectionLabel}>알림</Text>
+        <View style={stStyles.card}>
+          <View style={stStyles.row}>
+            <View style={stStyles.iconWrapBlue}>
+              <Text style={{ fontSize: 15 }}>🔔</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={stStyles.rowTitle}>푸시 알림</Text>
+              <Text style={stStyles.rowSub}>새로운 피드백 알림 받기</Text>
+            </View>
+            <Toggle
+              value={notifications}
+              onChange={() => setNotifications((v) => !v)}
+            />
+          </View>
+        </View>
+
+        {/* 기타 */}
+        <Text style={stStyles.sectionLabel}>기타</Text>
+        <View style={stStyles.card}>
+          <Pressable style={stStyles.row} onPress={() => go("faq")}>
+            <View style={stStyles.iconWrapPurple}>
+              <Text style={{ fontSize: 15 }}>❓</Text>
+            </View>
+            <Text style={[stStyles.rowTitle, { flex: 1 }]}>자주 묻는 질문</Text>
+            <Text style={styles.chevron}>›</Text>
           </Pressable>
         </View>
 
-        <View style={styles.myStatsGrid}>
-          <MyStat
-            label="이번 주"
-            value={`${Math.round((totalMinutes / 60) * 10) / 10}h`}
-          />
-          <MyStat label="일 평균" value={`${avgMinutes}분`} />
-          <MyStat label="연속 학습" value="5일" />
-        </View>
-
-        <View style={styles.myCard}>
-          <View style={styles.myCardHeader}>
-            <View>
-              <Text style={styles.myCardTitle}>주간 학습 시간</Text>
-              <Text style={styles.myCardSub}>최근 7일 기록</Text>
-            </View>
-            <Text style={styles.myCardTotal}>{totalMinutes}분</Text>
+        {/* 로그아웃 */}
+        <Pressable style={stStyles.logoutBtn} onPress={logout}>
+          <View style={stStyles.iconWrapRed}>
+            <Text style={{ fontSize: 15 }}>🚪</Text>
           </View>
-          <View style={styles.myChart}>
-            {studyData.map((item, index) => {
-              const isToday = index === studyData.length - 1;
-              return (
-                <View key={item.id} style={styles.myBarWrap}>
-                  <View style={styles.myBarTrack}>
+          <Text style={stStyles.logoutText}>로그아웃</Text>
+        </Pressable>
+
+        {/* 버전 */}
+        <Text style={stStyles.version}>SenTic v1.0.0</Text>
+      </ScrollView>
+    </View>
+  );
+}
+
+function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
+  type Plan = "free" | "monthly" | "yearly";
+
+  const CURRENT_SUBSCRIPTION: {
+    plan: Plan;
+    nextBillingDate: string;
+    daysLeft: number;
+  } | null = {
+    plan: "monthly",
+    nextBillingDate: "2026년 6월 11일",
+    daysLeft: 31,
+  };
+
+  const plans = {
+    free: {
+      name: "Free",
+      price: "0",
+      period: "",
+      features: ["하루 5회 대화", "기본 피드백"],
+    },
+    monthly: {
+      name: "Monthly",
+      price: "14,900",
+      period: "/월",
+      badge: "인기",
+      features: [
+        "무제한 대화",
+        "고급 피드백",
+        "실시간 음성 피드백",
+        "표현 무제한 저장",
+        "우선 고객 지원",
+        "광고 없음",
+      ],
+    },
+    yearly: {
+      name: "Yearly",
+      price: "149,000",
+      period: "/년",
+      badge: "20% 할인",
+      features: [
+        "무제한 대화",
+        "고급 피드백",
+        "실시간 음성 피드백",
+        "표현 무제한 저장",
+        "우선 고객 지원",
+        "광고 없음",
+        "2개월 무료",
+      ],
+    },
+  };
+
+  const [selectedPlan, setSelectedPlan] = useState<Plan>(
+    CURRENT_SUBSCRIPTION?.plan ?? "monthly",
+  );
+
+  const handleSubscribe = () => {
+    Alert.alert("구독", `${plans[selectedPlan].name} 플랜 구독이 진행됩니다.`);
+  };
+
+  const handleCancel = () => {
+    Alert.alert("구독 취소", "구독을 취소하시겠습니까?", [
+      { text: "아니요", style: "cancel" },
+      {
+        text: "취소하기",
+        style: "destructive",
+        onPress: () => Alert.alert("취소 완료", "구독이 취소되었습니다."),
+      },
+    ]);
+  };
+
+  return (
+    <View style={styles.screenSoft}>
+      {/* 헤더 */}
+      <View style={pyStyles.header}>
+        <Pressable style={pyStyles.backBtn} onPress={() => go("mypage")}>
+          <Text style={pyStyles.backIcon}>‹</Text>
+        </Pressable>
+        <Text style={pyStyles.headerTitle}>결제 및 구독</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={pyStyles.content}>
+        {/* 현재 구독 배너 */}
+        {CURRENT_SUBSCRIPTION ? (
+          <View style={pyStyles.banner}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+                marginBottom: 16,
+              }}
+            >
+              <View style={pyStyles.crownWrap}>
+                <Text style={{ fontSize: 20 }}>👑</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={pyStyles.bannerSub}>현재 구독 중</Text>
+                <Text style={pyStyles.bannerTitle}>
+                  {plans[CURRENT_SUBSCRIPTION.plan].name} 플랜
+                </Text>
+              </View>
+              <View style={pyStyles.premiumTag}>
+                <Text style={pyStyles.premiumTagText}>프리미엄</Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <View style={pyStyles.bannerInfoBox}>
+                <Text style={pyStyles.bannerInfoLabel}>⏱ 남은 기간</Text>
+                <Text style={pyStyles.bannerInfoValue}>
+                  D-{CURRENT_SUBSCRIPTION.daysLeft}
+                </Text>
+              </View>
+              <View style={pyStyles.bannerInfoBox}>
+                <Text style={pyStyles.bannerInfoLabel}>📅 다음 결제일</Text>
+                <Text style={pyStyles.bannerInfoValue}>
+                  {CURRENT_SUBSCRIPTION.nextBillingDate}
+                </Text>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View style={[pyStyles.banner, { alignItems: "center" }]}>
+            <View style={[pyStyles.crownWrap, { marginBottom: 12 }]}>
+              <Text style={{ fontSize: 20 }}>👑</Text>
+            </View>
+            <Text style={pyStyles.bannerTitle}>
+              무제한 학습으로 영어 실력 향상
+            </Text>
+            <Text style={pyStyles.bannerSub}>
+              지금 구독하고 더 많은 기능을 경험하세요
+            </Text>
+          </View>
+        )}
+
+        {/* 플랜 선택 */}
+        <View style={{ gap: 10 }}>
+          {(["free", "monthly", "yearly"] as Plan[]).map((planId) => {
+            const plan = plans[planId];
+            const isSelected = selectedPlan === planId;
+            const isCurrent = CURRENT_SUBSCRIPTION?.plan === planId;
+            const badge = "badge" in plan ? (plan as any).badge : null;
+            return (
+              <Pressable
+                key={planId}
+                onPress={() => setSelectedPlan(planId)}
+                style={[
+                  pyStyles.planCard,
+                  isSelected
+                    ? pyStyles.planCardSelected
+                    : pyStyles.planCardDefault,
+                ]}
+              >
+                {/* 플랜 헤더 */}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 12,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
                     <View
                       style={[
-                        styles.myBar,
-                        {
-                          height: `${(item.minutes / maxMinutes) * 100}%`,
-                          backgroundColor: isToday ? primary : "#DCE5FF",
-                        },
+                        pyStyles.radio,
+                        isSelected
+                          ? pyStyles.radioSelected
+                          : pyStyles.radioDefault,
                       ]}
-                    />
+                    >
+                      {isSelected && <View style={pyStyles.radioDot} />}
+                    </View>
+                    <Text
+                      style={[
+                        pyStyles.planName,
+                        isSelected && { color: primary },
+                      ]}
+                    >
+                      {plan.name}
+                    </Text>
+                    {badge && (
+                      <View
+                        style={[
+                          pyStyles.badge,
+                          planId === "monthly"
+                            ? pyStyles.badgeBlue
+                            : pyStyles.badgeGreen,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            pyStyles.badgeText,
+                            planId === "monthly"
+                              ? { color: "#4F46E5" }
+                              : { color: "#16A34A" },
+                          ]}
+                        >
+                          {badge}
+                        </Text>
+                      </View>
+                    )}
+                    {isCurrent && (
+                      <View style={pyStyles.badgeYellow}>
+                        <Text style={pyStyles.badgeYellowText}>현재</Text>
+                      </View>
+                    )}
                   </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={pyStyles.planPrice}>₩{plan.price}</Text>
+                    <Text style={pyStyles.planPeriod}>{plan.period}</Text>
+                  </View>
+                </View>
+
+                {/* 기능 목록 */}
+                <View style={{ gap: 6, paddingLeft: 24 }}>
+                  {plan.features.map((f) => (
+                    <View
+                      key={f}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: isSelected ? primary : "#D1D5DB",
+                          fontSize: 12,
+                        }}
+                      >
+                        ✓
+                      </Text>
+                      <Text
+                        style={[
+                          pyStyles.featureText,
+                          isSelected
+                            ? { color: "#4B5563" }
+                            : { color: "#9CA3AF" },
+                        ]}
+                      >
+                        {f}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* 연간 절약 안내 */}
+        {selectedPlan === "yearly" && (
+          <View style={pyStyles.savingBox}>
+            <Text style={pyStyles.savingText}>
+              💰 월간 대비{" "}
+              <Text style={{ fontWeight: "800" }}>약 31,700원 절약</Text>됩니다
+              (연 기준)
+            </Text>
+          </View>
+        )}
+
+        {/* 결제 버튼 */}
+        {selectedPlan !== "free" && (
+          <View style={{ gap: 10 }}>
+            {CURRENT_SUBSCRIPTION?.plan === selectedPlan ? (
+              <View style={{ gap: 8 }}>
+                <View style={pyStyles.currentPlanBox}>
+                  <Text style={pyStyles.currentPlanText}>
+                    현재 구독 중인 플랜입니다
+                  </Text>
+                  <Text style={pyStyles.currentPlanSub}>
+                    다음 결제일: {CURRENT_SUBSCRIPTION.nextBillingDate}
+                  </Text>
+                </View>
+                <Pressable style={pyStyles.cancelBtn} onPress={handleCancel}>
+                  <Text style={pyStyles.cancelBtnText}>구독 취소</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={{ gap: 8 }}>
+                <Pressable
+                  style={pyStyles.subscribeBtn}
+                  onPress={handleSubscribe}
+                >
+                  <Text style={pyStyles.subscribeBtnText}>
+                    {plans[selectedPlan].name} 구독하기 — ₩
+                    {plans[selectedPlan].price}
+                    {plans[selectedPlan].period}
+                  </Text>
+                </Pressable>
+                <Text style={pyStyles.cancelNote}>
+                  언제든지 구독을 취소할 수 있습니다
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+function FaqScreen({ go }: { go: (screen: Screen) => void }) {
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+
+  const faqData = [
+    {
+      category: "학습 방법",
+      items: [
+        {
+          question: "음성 대화와 채팅 대화의 차이는 무엇인가요?",
+          answer:
+            "음성 대화는 실제 전화 통화처럼 AI와 실시간으로 대화하며 발음과 유창성을 연습할 수 있습니다. 채팅 대화는 메시지 형식으로 문법과 표현을 천천히 연습할 수 있어, 각자의 학습 목적에 맞게 선택하실 수 있습니다.",
+        },
+        {
+          question: "하루에 얼마나 학습해야 하나요?",
+          answer:
+            "매일 15-20분 정도 꾸준히 학습하는 것을 권장합니다. 짧은 시간이라도 매일 반복하는 것이 실력 향상에 가장 효과적입니다.",
+        },
+        {
+          question: "피드백은 어떻게 확인하나요?",
+          answer:
+            "각 대화 종료 후 자동으로 피드백 화면이 표시되며, 마이페이지에서 이전 피드백을 다시 확인할 수 있습니다.",
+        },
+      ],
+    },
+    {
+      category: "기능 사용",
+      items: [
+        {
+          question: "요정 캐릭터는 언제 나타나나요?",
+          answer:
+            "음성 대화 중 문법이나 표현이 틀렸을 때 화면이 흑백으로 변하며 요정 캐릭터가 나타나 올바른 표현을 알려줍니다.",
+        },
+        {
+          question: "대화 상황은 어떻게 설정하나요?",
+          answer:
+            "대화 모드를 선택한 후 상황 설정 화면에서 원하는 시나리오를 선택할 수 있습니다. 카페 주문, 여행, 비즈니스 등 다양한 상황이 준비되어 있습니다.",
+        },
+        {
+          question: "학습 기록은 어디서 볼 수 있나요?",
+          answer:
+            "홈 화면에서 이번 주 학습 차트를 확인할 수 있으며, 마이페이지에서 더 자세한 학습 통계를 볼 수 있습니다.",
+        },
+      ],
+    },
+    {
+      category: "계정 및 결제",
+      items: [
+        {
+          question: "프리미엄 플랜의 혜택은 무엇인가요?",
+          answer:
+            "프리미엄 플랜은 무제한 대화, 모든 상황 시나리오 이용, 상세한 피드백 분석, 광고 제거 등의 혜택을 제공합니다.",
+        },
+        {
+          question: "비밀번호를 잊어버렸어요.",
+          answer:
+            "로그인 화면에서 '비밀번호 찾기'를 클릭하여 등록된 이메일로 인증 후 비밀번호를 재설정하실 수 있습니다.",
+        },
+        {
+          question: "구독을 취소하려면 어떻게 하나요?",
+          answer:
+            "마이페이지 > 결제 및 구독에서 언제든지 구독을 취소하실 수 있습니다. 남은 기간까지는 프리미엄 혜택이 유지됩니다.",
+        },
+      ],
+    },
+    {
+      category: "문제 해결",
+      items: [
+        {
+          question: "음성 인식이 잘 안 돼요.",
+          answer:
+            "조용한 환경에서 마이크에 가까이 또렷하게 말씀해주세요. 설정에서 마이크 권한을 확인하시고, 앱을 재시작해보시는 것도 도움이 됩니다.",
+        },
+        {
+          question: "앱이 느리거나 멈춰요.",
+          answer:
+            "기기를 재부팅하거나 앱을 재설치해보세요. 문제가 계속되면 고객센터로 문의해주시면 신속히 도와드리겠습니다.",
+        },
+      ],
+    },
+  ];
+
+  let globalIndex = 0;
+
+  return (
+    <View style={styles.screenSoft}>
+      {/* 헤더 */}
+      <View style={fqStyles.header}>
+        <Pressable style={fqStyles.backBtn} onPress={() => go("settings")}>
+          <Text style={fqStyles.backIcon}>‹</Text>
+        </Pressable>
+        <Text style={fqStyles.headerTitle}>자주 묻는 질문</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={fqStyles.content}>
+        {faqData.map((category, catIdx) => {
+          return (
+            <View key={catIdx} style={{ marginBottom: 6 }}>
+              <Text style={fqStyles.categoryLabel}>{category.category}</Text>
+              <View style={fqStyles.card}>
+                {category.items.map((item) => {
+                  const currentIndex = globalIndex++;
+                  const isExpanded = expandedIndex === currentIndex;
+                  return (
+                    <View key={currentIndex}>
+                      <Pressable
+                        style={[
+                          fqStyles.qRow,
+                          currentIndex > 0 && fqStyles.qRowBorder,
+                        ]}
+                        onPress={() =>
+                          setExpandedIndex(isExpanded ? null : currentIndex)
+                        }
+                      >
+                        <Text style={fqStyles.qLabel}>Q.</Text>
+                        <Text style={fqStyles.qText}>{item.question}</Text>
+                        <Text
+                          style={[
+                            fqStyles.chevronIcon,
+                            isExpanded && { transform: [{ rotate: "180deg" }] },
+                          ]}
+                        >
+                          ⌄
+                        </Text>
+                      </Pressable>
+                      {isExpanded && (
+                        <View style={fqStyles.aBox}>
+                          <Text style={fqStyles.aLabel}>A.</Text>
+                          <Text style={fqStyles.aText}>{item.answer}</Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })}
+
+        {/* 추가 문의 */}
+        <View style={fqStyles.contactBox}>
+          <Text style={fqStyles.contactTitle}>더 궁금한 점이 있으신가요?</Text>
+          <Text style={fqStyles.contactSub}>
+            support@sentic.app으로 문의해주세요
+          </Text>
+          <Pressable
+            style={fqStyles.contactBtn}
+            onPress={() =>
+              Alert.alert("고객센터", "support@sentic.app으로 문의해주세요.")
+            }
+          >
+            <Text style={fqStyles.contactBtnText}>고객센터 문의하기</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const fqStyles = StyleSheet.create({
+  header: {
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  backBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F9FAFB",
+  },
+  backIcon: { fontSize: 30, color: "#4B5563", lineHeight: 32 },
+  headerTitle: { color: "#111827", fontSize: 16, fontWeight: "800" },
+  content: { padding: 20, gap: 14, paddingBottom: 40 },
+  categoryLabel: {
+    color: "#9CA3AF",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    overflow: "hidden",
+  },
+  qRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  qRowBorder: { borderTopWidth: 1, borderTopColor: "#F9FAFB" },
+  qLabel: {
+    color: primary,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  qText: { flex: 1, color: "#374151", fontSize: 14, lineHeight: 20 },
+  chevronIcon: { color: "#9CA3AF", fontSize: 18, marginTop: -2, flexShrink: 0 },
+  aBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#F9FAFB",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  aLabel: {
+    color: "#16A34A",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  aText: { flex: 1, color: "#6B7280", fontSize: 13, lineHeight: 20 },
+  contactBox: {
+    backgroundColor: "#EEF2FF",
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+    borderRadius: 16,
+    padding: 20,
+    alignItems: "center",
+  },
+  contactTitle: {
+    color: "#374151",
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  contactSub: { color: "#6B7280", fontSize: 12, marginBottom: 14 },
+  contactBtn: {
+    backgroundColor: primary,
+    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  contactBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+});
+
+const pyStyles = StyleSheet.create({
+  header: {
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  backBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F9FAFB",
+  },
+  backIcon: { fontSize: 30, color: "#4B5563", lineHeight: 32 },
+  headerTitle: { color: "#111827", fontSize: 16, fontWeight: "800" },
+  content: { padding: 20, gap: 14, paddingBottom: 40 },
+  banner: { backgroundColor: primary, borderRadius: 20, padding: 20 },
+  crownWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bannerTitle: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
+  bannerSub: { color: "#C7D2FE", fontSize: 11, marginTop: 2 },
+  premiumTag: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  premiumTagText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
+  bannerInfoBox: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 12,
+    padding: 12,
+  },
+  bannerInfoLabel: { color: "#C7D2FE", fontSize: 10, marginBottom: 4 },
+  bannerInfoValue: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+  planCard: { borderWidth: 2, borderRadius: 20, padding: 16 },
+  planCardSelected: { borderColor: primary, backgroundColor: "#EEF2FF" },
+  planCardDefault: { borderColor: "#F3F4F6", backgroundColor: "#FFFFFF" },
+  radio: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioSelected: { borderColor: primary },
+  radioDefault: { borderColor: "#D1D5DB" },
+  radioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: primary },
+  planName: { fontSize: 14, fontWeight: "700", color: "#374151" },
+  planPrice: { fontSize: 14, fontWeight: "800", color: "#111827" },
+  planPeriod: { fontSize: 11, color: "#9CA3AF" },
+  badge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
+  badgeBlue: { backgroundColor: "#EEF2FF" },
+  badgeGreen: { backgroundColor: "#F0FDF4" },
+  badgeText: { fontSize: 10, fontWeight: "700" },
+  badgeYellow: {
+    backgroundColor: "#FEF9C3",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  badgeYellowText: { color: "#A16207", fontSize: 10, fontWeight: "700" },
+  featureText: { fontSize: 12 },
+  savingBox: {
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    borderRadius: 12,
+    padding: 14,
+  },
+  savingText: { color: "#15803D", fontSize: 12 },
+  currentPlanBox: {
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+  },
+  currentPlanText: { color: "#4B5563", fontSize: 14 },
+  currentPlanSub: { color: "#9CA3AF", fontSize: 12, marginTop: 4 },
+  cancelBtn: {
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  cancelBtnText: { color: "#EF4444", fontSize: 14 },
+  subscribeBtn: {
+    backgroundColor: primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  subscribeBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
+  cancelNote: { color: "#9CA3AF", fontSize: 12, textAlign: "center" },
+});
+
+const stStyles = StyleSheet.create({
+  header: {
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  backBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F9FAFB",
+  },
+  backIcon: { fontSize: 30, color: "#4B5563", lineHeight: 32 },
+  headerTitle: { color: "#111827", fontSize: 16, fontWeight: "800" },
+  content: { padding: 20, gap: 10, paddingBottom: 32 },
+  sectionLabel: {
+    color: "#9CA3AF",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    overflow: "hidden",
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: "#F9FAFB" },
+  rowTitle: { color: "#374151", fontSize: 14 },
+  rowSub: { color: "#9CA3AF", fontSize: 12, marginTop: 2 },
+  premiumBadge: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  premiumBadgeText: { color: "#4F46E5", fontSize: 11, fontWeight: "700" },
+  iconWrapBlue: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "#EFF6FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconWrapPurple: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "#F5F3FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconWrapRed: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "#FEF2F2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toggle: {
+    width: 44,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: "center",
+    paddingHorizontal: 2,
+  },
+  toggleOn: { backgroundColor: primary },
+  toggleOff: { backgroundColor: "#E5E7EB" },
+  toggleThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  toggleThumbOn: { alignSelf: "flex-end" },
+  toggleThumbOff: { alignSelf: "flex-start" },
+  logoutBtn: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  logoutText: { color: "#EF4444", fontSize: 14 },
+  version: {
+    color: "#D1D5DB",
+    fontSize: 12,
+    textAlign: "center",
+    marginTop: 8,
+  },
+});
+
+const bkStyles = StyleSheet.create({
+  header: {
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+  },
+  backBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F9FAFB",
+  },
+  backIcon: { fontSize: 30, color: "#4B5563", lineHeight: 32 },
+  headerTitle: { color: "#111827", fontSize: 16, fontWeight: "800" },
+  headerSub: { color: "#9CA3AF", fontSize: 12, marginTop: 2 },
+  tabContainer: {
+    flexDirection: "row",
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    padding: 4,
+    gap: 4,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabActive: { backgroundColor: "#FFFFFF" },
+  tabText: { color: "#6B7280", fontSize: 12, fontWeight: "700" },
+  tabTextActive: { color: "#111827" },
+  content: { padding: 16, paddingBottom: 32 },
+  listCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  listCardTitle: { color: "#111827", fontSize: 14, fontWeight: "600" },
+  listCardSub: { color: "#9CA3AF", fontSize: 12, marginTop: 2 },
+  catIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  catDot: { width: 10, height: 10, borderRadius: 5 },
+  roomIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "#F9FAFB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  exprCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  exprText: {
+    color: "#111827",
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  exprTranslation: { color: "#9CA3AF", fontSize: 12 },
+  exprMeta: { color: "#9CA3AF", fontSize: 10 },
+  exprDate: { color: "#D1D5DB", fontSize: 10 },
+  catBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  catBadgeText: { fontSize: 10, fontWeight: "700" },
+  deleteBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deleteBtnText: { fontSize: 13 },
+});
+
+const ntStyles = StyleSheet.create({
+  header: {
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  backBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F9FAFB",
+  },
+  backIcon: { fontSize: 30, color: "#4B5563", lineHeight: 32 },
+  headerTitle: { color: "#111827", fontSize: 16, fontWeight: "800" },
+  listContent: { padding: 20, paddingBottom: 32 },
+  detailContent: { padding: 20, paddingBottom: 32 },
+  sectionIcon: { fontSize: 12 },
+  sectionLabelImportant: {
+    color: "#EF4444",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  sectionLabel: {
+    color: "#9CA3AF",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  importantCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#FEE2E2",
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  regularCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  noticeTitle: {
+    color: "#111827",
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  noticeDate: { color: "#9CA3AF", fontSize: 12 },
+  importantBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#FEF2F2",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 14,
+  },
+  importantBadgeText: { color: "#EF4444", fontSize: 12, fontWeight: "700" },
+  detailTitle: {
+    color: "#111827",
+    fontSize: 17,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+  detailDate: { color: "#9CA3AF", fontSize: 12, marginBottom: 16 },
+  detailCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: 20,
+  },
+  detailBody: { color: "#374151", fontSize: 14, lineHeight: 22 },
+});
+
+function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
+  type Level = "초급" | "중급" | "고급";
+
+  const levels: {
+    id: Level;
+    label: string;
+    eng: string;
+    desc: string;
+    detail: string[];
+    color: string;
+    bg: string;
+    borderColor: string;
+    dot: string;
+  }[] = [
+    {
+      id: "초급",
+      label: "초급",
+      eng: "Beginner",
+      desc: "기초 단어/문장 구사 가능",
+      detail: ["짧고 쉬운 문장", "천천히", "모르는 단어 설명"],
+      color: "#059669",
+      bg: "#ECFDF5",
+      borderColor: "#34D399",
+      dot: "#34D399",
+    },
+    {
+      id: "중급",
+      label: "중급",
+      eng: "Intermediate",
+      desc: "일상 대화 가능",
+      detail: ["일반 속도로 대화", "일상 표현 학습", "다양한 주제 토론"],
+      color: "#D97706",
+      bg: "#FFFBEB",
+      borderColor: "#FBBF24",
+      dot: "#FBBF24",
+    },
+    {
+      id: "고급",
+      label: "고급",
+      eng: "Advanced",
+      desc: "자유롭게 대화 가능",
+      detail: ["빠른 속도 대화", "관용어/슬랭 사용", "복잡한 문장 구사"],
+      color: "#4338CA",
+      bg: "#EEF2FF",
+      borderColor: "#818CF8",
+      dot: "#818CF8",
+    },
+  ];
+
+  const [userLevel, setUserLevel] = useState<Level>("중급");
+  const [pendingLevel, setPendingLevel] = useState<Level>("중급");
+  const [levelConfirmed, setLevelConfirmed] = useState(true);
+  const [isAnimated, setIsAnimated] = useState(false);
+
+  const userInfo = { nickname: "영어마스터", email: "user@example.com" };
+  const weekly = [
+    { day: "Mon", minute: 45, date: "04/07" },
+    { day: "Tue", minute: 60, date: "04/08" },
+    { day: "Wed", minute: 30, date: "04/09" },
+    { day: "Thu", minute: 75, date: "04/10" },
+    { day: "Fri", minute: 50, date: "04/11" },
+    { day: "Sat", minute: 90, date: "04/12" },
+    { day: "Sun", minute: 65, date: "04/13" },
+  ];
+
+  const totalMinutes = weekly.reduce((sum, item) => sum + item.minute, 0);
+  const maxMinutes = Math.max(...weekly.map((item) => item.minute));
+  const avgMinutes = Math.round(totalMinutes / weekly.length);
+
+  const currentLevel = levels.find((l) => l.id === userLevel)!;
+
+  useEffect(() => {
+    const t = setTimeout(() => setIsAnimated(true), 150);
+    return () => clearTimeout(t);
+  }, []);
+
+  const handleLevelButtonClick = () => {
+    if (levelConfirmed) {
+      setPendingLevel(userLevel);
+      setLevelConfirmed(false);
+    } else {
+      setUserLevel(pendingLevel);
+      setLevelConfirmed(true);
+    }
+  };
+
+  const logout = () => {
+    Alert.alert("로그아웃", "정말 로그아웃 하시겠습니까?", [
+      { text: "취소", style: "cancel" },
+      { text: "로그아웃", style: "destructive", onPress: () => go("login") },
+    ]);
+  };
+
+  const CHART_HEIGHT = 128;
+
+  return (
+    <View style={styles.screenSoft}>
+      {/* 헤더 */}
+      <View style={mpStyles.header}>
+        <Pressable style={mpStyles.backBtn} onPress={() => go("mode")}>
+          <Text style={mpStyles.backIcon}>‹</Text>
+        </Pressable>
+        <Text style={mpStyles.headerTitle}>마이 페이지</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={mpStyles.content}>
+        {/* 프로필 카드 */}
+        <View style={mpStyles.card}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+            <View style={mpStyles.avatar}>
+              <Text style={mpStyles.avatarText}>
+                {userInfo.nickname.charAt(0)}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={mpStyles.nickname}>{userInfo.nickname}</Text>
+              <Text style={mpStyles.email}>{userInfo.email}</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                  marginTop: 6,
+                }}
+              >
+                <View
+                  style={[mpStyles.dot, { backgroundColor: currentLevel.dot }]}
+                />
+                <Text style={mpStyles.levelSmall}>
+                  {currentLevel.id} · {currentLevel.eng}
+                </Text>
+              </View>
+            </View>
+            <Pressable onPress={logout} style={mpStyles.logoutBtn}>
+              <Text style={mpStyles.logoutText}>로그아웃</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* 학습 통계 */}
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          {[
+            {
+              label: "이번 주",
+              value: `${Math.round((totalMinutes / 60) * 10) / 10}h`,
+            },
+            { label: "일 평균", value: `${avgMinutes}분` },
+            { label: "연속 학습", value: "5일" },
+          ].map((stat) => (
+            <View key={stat.label} style={mpStyles.statBox}>
+              <Text style={mpStyles.statLabel}>{stat.label}</Text>
+              <Text style={mpStyles.statValue}>{stat.value}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* 주간 그래프 */}
+        <View style={mpStyles.card}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              marginBottom: 16,
+            }}
+          >
+            <View>
+              <Text style={mpStyles.cardTitle}>주간 학습 시간</Text>
+              <Text style={mpStyles.cardSub}>최근 7일 기록</Text>
+            </View>
+            <Text style={mpStyles.cardSub}>{totalMinutes}분</Text>
+          </View>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "flex-end",
+              height: CHART_HEIGHT,
+              gap: 6,
+            }}
+          >
+            {weekly.map((item, index) => {
+              const isToday = index === weekly.length - 1;
+              const barH = isAnimated
+                ? Math.max(8, (item.minute / maxMinutes) * (CHART_HEIGHT - 28))
+                : 0;
+              return (
+                <View
+                  key={item.day}
+                  style={{
+                    flex: 1,
+                    alignItems: "center",
+                    height: CHART_HEIGHT,
+                    justifyContent: "flex-end",
+                    gap: 4,
+                  }}
+                >
                   <Text
-                    style={[styles.myBarDay, isToday && styles.primaryText]}
+                    style={[mpStyles.barMinute, isToday && { color: primary }]}
+                  >
+                    {item.minute}분
+                  </Text>
+                  <View
+                    style={[
+                      mpStyles.bar,
+                      { height: barH },
+                      isToday
+                        ? { backgroundColor: primary }
+                        : { backgroundColor: "#C7D2FE" },
+                    ]}
+                  />
+                  <Text
+                    style={[mpStyles.barDay, isToday && { color: primary }]}
                   >
                     {item.day}
                   </Text>
@@ -1185,48 +2678,337 @@ function MyPageScreen({
           </View>
         </View>
 
-        <View style={styles.myCard}>
-          <View style={styles.myCardHeader}>
-            <Text style={styles.myCardTitle}>학습 레벨 설정</Text>
+        {/* 학습 레벨 설정 */}
+        <View style={mpStyles.card}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 12,
+            }}
+          >
+            <Text style={mpStyles.cardTitle}>학습 레벨 설정</Text>
             <Pressable
+              onPress={handleLevelButtonClick}
               style={[
-                styles.changeButton,
-                !levelConfirmed && styles.confirmButton,
+                mpStyles.levelBtn,
+                levelConfirmed
+                  ? { backgroundColor: "#F3F4F6" }
+                  : { backgroundColor: primary },
               ]}
-              onPress={handleLevelButtonPress}
             >
               <Text
                 style={[
-                  styles.changeButtonText,
-                  !levelConfirmed && styles.confirmButtonText,
+                  mpStyles.levelBtnText,
+                  levelConfirmed ? { color: "#4B5563" } : { color: "#FFFFFF" },
                 ]}
               >
                 {levelConfirmed ? "변경" : "결정"}
               </Text>
             </Pressable>
           </View>
-          {levelConfirmed
-            ? renderLevelCard(currentLevel, false)
-            : levelOptions.map((level) => renderLevelCard(level, true))}
+
+          {levelConfirmed ? (
+            // 확정된 레벨만 표시
+            (() => {
+              const level = levels.find((l) => l.id === userLevel)!;
+              return (
+                <View
+                  style={[
+                    mpStyles.levelCard,
+                    {
+                      borderColor: level.borderColor,
+                      backgroundColor: level.bg,
+                    },
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "baseline",
+                        gap: 6,
+                        marginBottom: 4,
+                      }}
+                    >
+                      <Text
+                        style={[mpStyles.levelLabel, { color: level.color }]}
+                      >
+                        {level.label}
+                      </Text>
+                      <Text style={[mpStyles.levelEng, { color: level.color }]}>
+                        {level.eng}
+                      </Text>
+                    </View>
+                    <Text style={[mpStyles.levelDesc, { color: level.color }]}>
+                      {level.desc}
+                    </Text>
+                    <View style={mpStyles.tagRow}>
+                      {level.detail.map((tag) => (
+                        <View
+                          key={tag}
+                          style={[
+                            mpStyles.tag,
+                            {
+                              backgroundColor: level.bg,
+                              borderColor: level.borderColor + "66",
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[mpStyles.tagText, { color: level.color }]}
+                          >
+                            {tag}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                  <View
+                    style={[mpStyles.radio, { borderColor: level.borderColor }]}
+                  >
+                    <View
+                      style={[
+                        mpStyles.radioInner,
+                        { backgroundColor: level.dot },
+                      ]}
+                    />
+                  </View>
+                </View>
+              );
+            })()
+          ) : (
+            // 전체 레벨 선택
+            <View style={{ gap: 8 }}>
+              {levels.map((level) => {
+                const isPending = pendingLevel === level.id;
+                return (
+                  <Pressable
+                    key={level.id}
+                    onPress={() => setPendingLevel(level.id)}
+                    style={[
+                      mpStyles.levelCard,
+                      isPending
+                        ? {
+                            borderColor: level.borderColor,
+                            backgroundColor: level.bg,
+                          }
+                        : {
+                            borderColor: "#F3F4F6",
+                            backgroundColor: "#FFFFFF",
+                          },
+                    ]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "baseline",
+                          gap: 6,
+                          marginBottom: 4,
+                        }}
+                      >
+                        <Text
+                          style={[
+                            mpStyles.levelLabel,
+                            { color: isPending ? level.color : "#1F2937" },
+                          ]}
+                        >
+                          {level.label}
+                        </Text>
+                        <Text
+                          style={[
+                            mpStyles.levelEng,
+                            { color: isPending ? level.color : "#9CA3AF" },
+                          ]}
+                        >
+                          {level.eng}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          mpStyles.levelDesc,
+                          { color: isPending ? level.color : "#6B7280" },
+                        ]}
+                      >
+                        {level.desc}
+                      </Text>
+                      <View style={mpStyles.tagRow}>
+                        {level.detail.map((tag) => (
+                          <View
+                            key={tag}
+                            style={[
+                              mpStyles.tag,
+                              isPending
+                                ? {
+                                    backgroundColor: level.bg,
+                                    borderColor: level.borderColor + "66",
+                                  }
+                                : {
+                                    backgroundColor: "#F3F4F6",
+                                    borderColor: "transparent",
+                                  },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                mpStyles.tagText,
+                                { color: isPending ? level.color : "#6B7280" },
+                              ]}
+                            >
+                              {tag}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                    <View
+                      style={[
+                        mpStyles.radio,
+                        {
+                          borderColor: isPending
+                            ? level.borderColor
+                            : "#D1D5DB",
+                        },
+                      ]}
+                    >
+                      {isPending && (
+                        <View
+                          style={[
+                            mpStyles.radioInner,
+                            { backgroundColor: level.dot },
+                          ]}
+                        />
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
         </View>
 
-        <Pressable style={styles.menuRow} onPress={() => go("payment")}>
-          <Text style={styles.menuRowText}>결제 및 구독</Text>
-          <Text style={styles.menuChevron}>›</Text>
-        </Pressable>
+        {/* 결제 및 구독 */}
+        <View style={mpStyles.card}>
+          <Pressable
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+            onPress={() => go("payment")}
+          >
+            <Text style={mpStyles.menuText}>결제 및 구독</Text>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
+        </View>
+
+        <View style={{ height: 8 }} />
       </ScrollView>
     </View>
   );
 }
 
-function MyStat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.myStat}>
-      <Text style={styles.myStatLabel}>{label}</Text>
-      <Text style={styles.myStatValue}>{value}</Text>
-    </View>
-  );
-}
+// MyPageScreen 전용 스타일 (기존 styles에 추가하거나 별도 선언)
+const mpStyles = StyleSheet.create({
+  header: {
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  backBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F9FAFB",
+  },
+  backIcon: { fontSize: 30, color: "#4B5563", lineHeight: 32 },
+  headerTitle: { color: "#111827", fontSize: 16, fontWeight: "800" },
+  content: { padding: 20, gap: 14, paddingBottom: 32 },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: 20,
+  },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { color: primary, fontSize: 22, fontWeight: "900" },
+  nickname: { color: "#111827", fontSize: 14, fontWeight: "700" },
+  email: { color: "#9CA3AF", fontSize: 12, marginTop: 2 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  levelSmall: { color: "#6B7280", fontSize: 12 },
+  logoutBtn: { padding: 4 },
+  logoutText: { color: "#F87171", fontSize: 12 },
+  statBox: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: 12,
+    alignItems: "center",
+  },
+  statLabel: { color: "#9CA3AF", fontSize: 11, marginBottom: 4 },
+  statValue: { color: "#111827", fontSize: 14, fontWeight: "800" },
+  cardTitle: { color: "#111827", fontSize: 14, fontWeight: "800" },
+  cardSub: { color: "#9CA3AF", fontSize: 12, marginTop: 2 },
+  bar: { width: "70%", borderTopLeftRadius: 4, borderTopRightRadius: 4 },
+  barMinute: { color: "#9CA3AF", fontSize: 9 },
+  barDay: { color: "#9CA3AF", fontSize: 10 },
+  levelBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  levelBtnText: { fontSize: 12, fontWeight: "700" },
+  levelCard: {
+    borderWidth: 2,
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  levelLabel: { fontSize: 14, fontWeight: "800" },
+  levelEng: { fontSize: 12 },
+  levelDesc: { fontSize: 12, marginBottom: 8 },
+  tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  tag: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  tagText: { fontSize: 11 },
+  radio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+    flexShrink: 0,
+  },
+  radioInner: { width: 10, height: 10, borderRadius: 5 },
+  menuText: { color: "#374151", fontSize: 14 },
+});
 
 function InfoScreen({
   title,
@@ -1319,18 +3101,12 @@ function Header({
 function PrimaryButton({
   label,
   onPress,
-  disabled,
 }: {
   label: string;
   onPress: () => void;
-  disabled?: boolean;
 }) {
   return (
-    <Pressable
-      style={[styles.primaryButton, disabled && styles.disabled]}
-      onPress={onPress}
-      disabled={disabled}
-    >
+    <Pressable style={styles.primaryButton} onPress={onPress}>
       <Text style={styles.primaryButtonText}>{label}</Text>
     </Pressable>
   );
@@ -1425,11 +3201,10 @@ function FeedbackList({
       </View>
     );
   }
-
   return (
     <ScrollView contentContainerStyle={styles.content}>
       {messages
-        .filter((message) => message.feedback)
+        .filter((m) => m.feedback)
         .map((message) => (
           <View key={message.id} style={styles.card}>
             <Text style={styles.cardTitle}>{message.text}</Text>
@@ -1485,27 +3260,6 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Checklist({ text }: { text: string }) {
-  return (
-    <View style={styles.checkRow}>
-      <Text style={styles.check}>✓</Text>
-      <Text style={styles.listText}>{text}</Text>
-    </View>
-  );
-}
-
-function PillRow({ items }: { items: string[] }) {
-  return (
-    <View style={styles.pillRow}>
-      {items.map((item) => (
-        <View key={item} style={styles.pill}>
-          <Text style={styles.pillText}>{item}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 function RoundButton({
   label,
   onPress,
@@ -1522,6 +3276,12 @@ function RoundButton({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#FFFFFF" },
+  webViewClose: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  webViewCloseText: { color: "#6B7280", fontSize: 14 },
   screen: { flex: 1, backgroundColor: "#FFFFFF" },
   screenSoft: { flex: 1, backgroundColor: softBg },
   flex: { flex: 1 },
@@ -1631,6 +3391,34 @@ const styles = StyleSheet.create({
   },
   headerSpacer: { width: 36 },
   content: { padding: 20, gap: 14 },
+  roomListHeader: {
+    minHeight: 70,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  roomListTitle: { color: "#111827", fontSize: 20, fontWeight: "800" },
+  roomListCount: { color: "#9CA3AF", fontSize: 12, marginTop: 2 },
+  newRoomButton: {
+    backgroundColor: primary,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  newRoomButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
+  randomButton: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  randomButtonText: { color: "#6B7280", fontSize: 12, fontWeight: "800" },
+  roomListContent: { paddingHorizontal: 20, paddingVertical: 16, gap: 10 },
+  setupContent: { padding: 22, paddingBottom: 30 },
   rowBetween: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1685,6 +3473,73 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#F3F4F6",
     padding: 16,
+  },
+  profileCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  profileAvatar: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  profileAvatarText: { color: primary, fontSize: 22, fontWeight: "900" },
+  profileName: { color: "#111827", fontSize: 16, fontWeight: "900" },
+  profileEmail: { color: "#9CA3AF", fontSize: 12, marginTop: 3 },
+  levelBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    overflow: "hidden",
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 8,
+  },
+  logoutButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    backgroundColor: "#FEF2F2",
+  },
+  logoutButtonText: { color: "#EF4444", fontSize: 12, fontWeight: "800" },
+  levelList: { gap: 10, marginTop: 14 },
+  levelOption: {
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#FFFFFF",
+  },
+  levelTitle: { color: "#111827", fontSize: 14, fontWeight: "900" },
+  radioOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: "#D1D5DB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioInner: { width: 10, height: 10, borderRadius: 5 },
+  menuRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   cardTitle: { color: "#111827", fontSize: 15, fontWeight: "800" },
   chart: {
@@ -1745,7 +3600,120 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   roomIconText: { fontSize: 22 },
+  chatRoomCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  voiceRoomIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  voiceRoomIconText: { fontSize: 18 },
+  roomPreview: { flex: 1, minWidth: 0 },
+  roomPreviewTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  roomPreviewBottom: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginTop: 5,
+  },
+  roomPreviewTitle: {
+    flex: 1,
+    color: "#111827",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  roomPreviewDate: { color: "#9CA3AF", fontSize: 12 },
+  roomPreviewMessage: { flex: 1, color: "#9CA3AF", fontSize: 12 },
+  durationBadge: {
+    color: primary,
+    backgroundColor: "#EEF2FF",
+    borderRadius: 999,
+    overflow: "hidden",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    fontSize: 10,
+    fontWeight: "800",
+  },
   chevron: { color: "#C7CBD1", fontSize: 30 },
+  descriptionInput: { minHeight: 88, paddingTop: 14 },
+  setupSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 22,
+    marginBottom: 8,
+  },
+  setupSectionTitle: { color: "#374151", fontSize: 13, fontWeight: "800" },
+  addCharacterText: { color: primary, fontSize: 13, fontWeight: "800" },
+  characterCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: 14,
+    gap: 10,
+  },
+  avatarPicker: { flexDirection: "row", gap: 10, alignItems: "center" },
+  photo: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  photoSlot: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#F9FAFB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cameraText: { fontSize: 22 },
+  avatarOptions: { flex: 1, flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  avatarOption: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  avatarOptionActive: { borderColor: primary, backgroundColor: "#EEF2FF" },
+  avatarOptionText: { fontSize: 17 },
+  warningBox: {
+    backgroundColor: "#FFFBEB",
+    borderColor: "#FDE68A",
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginTop: 16,
+    marginBottom: 14,
+  },
+  warningText: { color: "#B45309", fontSize: 12, fontWeight: "800" },
   heroCard: {
     alignItems: "center",
     backgroundColor: darkPrimary,
@@ -1760,22 +3728,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
-  checkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 9,
-  },
-  check: { color: primary, fontWeight: "900" },
   listText: { color: "#374151", fontSize: 14, lineHeight: 20 },
-  pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
-  pill: {
-    backgroundColor: "#EEF2FF",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  pillText: { color: primary, fontSize: 12, fontWeight: "800" },
   tabBar: {
     flexDirection: "row",
     gap: 8,
@@ -1933,154 +3886,6 @@ const styles = StyleSheet.create({
     borderColor: "#F3F4F6",
     padding: 16,
   },
-  myPageContent: {
-    paddingHorizontal: 10,
-    paddingTop: 16,
-    paddingBottom: 34,
-    gap: 14,
-  },
-  profileCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#EEF0F4",
-    padding: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-  },
-  profileAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: "#E8ECFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  profileAvatarText: { color: primary, fontSize: 16, fontWeight: "800" },
-  profileName: { color: "#111827", fontSize: 14, fontWeight: "800" },
-  profileEmail: { color: "#9CA3AF", fontSize: 11, marginTop: 3 },
-  profileLevelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    marginTop: 6,
-  },
-  profileLevelDot: { width: 6, height: 6, borderRadius: 3 },
-  profileLevelText: { color: "#6B7280", fontSize: 11 },
-  logoutButton: {
-    width: 30,
-    height: 30,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logoutText: { color: "#F87171", fontSize: 17, fontWeight: "900" },
-  myStatsGrid: { flexDirection: "row", gap: 8 },
-  myStat: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#EEF0F4",
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  myStatLabel: { color: "#9CA3AF", fontSize: 11, marginBottom: 4 },
-  myStatValue: { color: "#111827", fontSize: 13, fontWeight: "900" },
-  myCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#EEF0F4",
-    padding: 15,
-  },
-  myCardHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    marginBottom: 14,
-  },
-  myCardTitle: { color: "#111827", fontSize: 14, fontWeight: "900" },
-  myCardSub: { color: "#9CA3AF", fontSize: 11, marginTop: 3 },
-  myCardTotal: { color: "#8B91A1", fontSize: 11, marginTop: 3 },
-  myChart: {
-    height: 116,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  myBarWrap: {
-    flex: 1,
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 7,
-  },
-  myBarTrack: { flex: 1, width: "100%", justifyContent: "flex-end" },
-  myBar: {
-    width: "100%",
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-    minHeight: 8,
-  },
-  myBarDay: { color: "#A8AFBD", fontSize: 9 },
-  changeButton: {
-    backgroundColor: "#F3F4F6",
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 999,
-  },
-  confirmButton: { backgroundColor: primary },
-  changeButtonText: { color: "#4B5563", fontSize: 11, fontWeight: "800" },
-  confirmButtonText: { color: "#FFFFFF" },
-  levelCard: {
-    borderWidth: 1.5,
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    marginTop: 8,
-  },
-  levelTitleRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 6,
-    marginBottom: 4,
-  },
-  levelName: { fontSize: 13, fontWeight: "900" },
-  levelEng: { fontSize: 10, fontWeight: "800" },
-  levelDesc: { fontSize: 11, fontWeight: "700", marginBottom: 9 },
-  levelPillRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  levelPill: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  levelPillText: { fontSize: 10, fontWeight: "700" },
-  levelRadio: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  levelRadioDot: { width: 8, height: 8, borderRadius: 4 },
-  menuRow: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#EEF0F4",
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  menuRowText: { color: "#374151", fontSize: 14, fontWeight: "800" },
-  menuChevron: { color: "#CBD5E1", fontSize: 24, lineHeight: 24 },
 });
+
+console.log(process.env.EXPO_PUBLIC_BASE_URL);
