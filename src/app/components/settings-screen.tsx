@@ -1,4 +1,4 @@
-import { ArrowLeft, Bell, HelpCircle, LogOut, ChevronRight } from "lucide-react";
+import { ArrowLeft, Bell, LogOut, UserX } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -8,6 +8,12 @@ export function SettingsScreen() {
 
   const handleLogout = () => {
     if (confirm("로그아웃 하시겠습니까?")) {
+      navigate("/");
+    }
+  };
+
+  const handleWithdraw = () => {
+    if (confirm("정말 회원탈퇴 하시겠습니까?\n탈퇴 시 모든 데이터가 삭제되며 복구할 수 없습니다.")) {
       navigate("/");
     }
   };
@@ -75,35 +81,27 @@ export function SettingsScreen() {
           </div>
         </div>
 
-        {/* 기타 */}
-        <div>
-          <p className="text-xs text-gray-400 uppercase tracking-wide mb-2.5">기타</p>
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-            <button
-              onClick={() => navigate("/faq")}
-              className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-purple-50 rounded-xl flex items-center justify-center">
-                  <HelpCircle size={15} className="text-purple-500" />
-                </div>
-                <p className="text-sm text-gray-700">자주 묻는 질문</p>
-              </div>
-              <ChevronRight size={16} className="text-gray-300" />
-            </button>
-          </div>
+        {/* 계정 관리 */}
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-5 py-4 border-b border-gray-50 hover:bg-red-50 transition-colors"
+          >
+            <div className="w-8 h-8 bg-red-50 rounded-xl flex items-center justify-center">
+              <LogOut size={15} className="text-red-500" />
+            </div>
+            <span className="text-sm text-red-500">로그아웃</span>
+          </button>
+          <button
+            onClick={handleWithdraw}
+            className="w-full flex items-center gap-3 px-5 py-4 hover:bg-gray-50 transition-colors"
+          >
+            <div className="w-8 h-8 bg-gray-100 rounded-xl flex items-center justify-center">
+              <UserX size={15} className="text-gray-500" />
+            </div>
+            <span className="text-sm text-gray-500">회원탈퇴</span>
+          </button>
         </div>
-
-        {/* 로그아웃 */}
-        <button
-          onClick={handleLogout}
-          className="w-full bg-white rounded-2xl border border-gray-100 px-5 py-4 flex items-center gap-3 hover:bg-red-50 hover:border-red-100 transition-colors"
-        >
-          <div className="w-8 h-8 bg-red-50 rounded-xl flex items-center justify-center">
-            <LogOut size={15} className="text-red-500" />
-          </div>
-          <span className="text-sm text-red-500">로그아웃</span>
-        </button>
 
         {/* 버전 */}
         <p className="text-center text-xs text-gray-300 pb-2">SenTic v1.0.0</p>

@@ -44,6 +44,18 @@ type Message = {
   text: string;
   time: string;
   feedback?: string[];
+  feedbackDetails?: FeedbackDetail[];
+  correctedText?: string;
+};
+
+type FeedbackCategory = "sentence" | "grammar" | "word";
+
+type FeedbackDetail = {
+  id: string;
+  category: FeedbackCategory;
+  title: string;
+  description: string;
+  target?: string;
 };
 
 type PracticeRoom = {
@@ -558,38 +570,145 @@ function VoiceChatScreen({ room, go }: { room: { title: string }; go: (screen: S
   );
 }
 
+function makeTextFeedback(text: string): { details: FeedbackDetail[]; correctedText: string } {
+  const lower = text.toLowerCase();
+  let correctedText = lower.includes("i want to")
+    ? text.replace(/i want to/i, "I'd like to").replace(/coffee please/i, "coffee, please")
+    : text;
+  const details: FeedbackDetail[] = [
+    {
+      id: "sentence",
+      category: "sentence",
+      title: "추천 표현",
+      description: lower.includes("i want to")
+        ? "더 자연스러운 표현: 'I'd like to order a coffee, please.'"
+        : "문장을 조금 더 구체적으로 말하면 더 자연스러워요.",
+    },
+  ];
+
+  if (lower.includes("coffee please") && !lower.includes("coffee, please")) {
+    correctedText = correctedText.replace(/coffee please/i, "coffee, please");
+    details.push({
+      id: "grammar",
+      category: "grammar",
+      title: "문법 설명",
+      description: "'please' 앞에 쉼표를 넣으면 부탁하는 느낌이 더 자연스럽고 정확해요.",
+      target: "please",
+    });
+  }
+
+  if (lower.includes("large size")) {
+    correctedText = lower.includes("large size coffee")
+      ? correctedText.replace(/large size coffee/i, "a large coffee")
+      : correctedText.replace(/large size/i, "A large one");
+    details.push({
+      id: "word",
+      category: "word",
+      title: "단어 설명",
+      description: "'Large size coffee'보다는 'a large coffee'가 주문 상황에서 더 자연스러워요.",
+      target: "Large size",
+    });
+  }
+
+  return { details, correctedText };
+}
+
 function TextChatScreen({ room, go }: { room: { title: string }; go: (screen: Screen) => void }) {
   const [input, setInput] = useState("");
+  const [tab, setTab] = useState<"chat" | "feedback">("chat");
   const [messages, setMessages] = useState<Message[]>([
-    { id: "1", speaker: "ai", text: "Hey! What's up?", time: "10:30" },
-    { id: "2", speaker: "user", text: "I'm good. What about you?", time: "10:31", feedback: ["더 자연스럽게: I'm doing well, thanks! How about you?"] },
-    { id: "3", speaker: "ai", text: "I'm doing great! Wanna grab some coffee later?", time: "10:31" },
+    { id: "1", speaker: "ai", text: "Hello! How can I help you today?", time: "10:30" },
+    {
+      id: "2",
+      speaker: "user",
+      text: "I want to order large size coffee please.",
+      time: "10:31",
+      correctedText: "I'd like to order a large coffee, please.",
+      feedbackDetails: [
+        {
+          id: "sentence-1",
+          category: "sentence",
+          title: "추천 표현",
+          description: "더 자연스러운 표현: 'I'd like to order a large coffee, please.'",
+        },
+        {
+          id: "grammar-1",
+          category: "grammar",
+          title: "문법 설명",
+          description: "'please' 앞에 쉼표를 넣으면 부탁하는 느낌이 더 자연스럽고 정확해요.",
+          target: "please",
+        },
+        {
+          id: "word-1",
+          category: "word",
+          title: "단어 설명",
+          description: "'Large size coffee'보다는 'a large coffee'가 주문 상황에서 더 자연스러워요.",
+          target: "large size",
+        },
+      ],
+    },
+    { id: "3", speaker: "ai", text: "Sure! What size would you like?", time: "10:31" },
+    {
+      id: "4",
+      speaker: "user",
+      text: "Large size, please.",
+      time: "10:32",
+      correctedText: "A large one, please.",
+      feedbackDetails: [
+        {
+          id: "sentence-2",
+          category: "sentence",
+          title: "추천 표현",
+          description: "완벽합니다! 'A large one, please.' 라고도 할 수 있어요.",
+        },
+        {
+          id: "word-1",
+          category: "word",
+          title: "단어 설명",
+          description: "'one'은 앞에서 말한 coffee를 대신하는 단어라 반복을 줄여줘요.",
+          target: "Large size",
+        },
+      ],
+    },
   ]);
 
   const send = () => {
     const text = input.trim();
     if (!text) return;
+    const now = Date.now();
+    const feedback = makeTextFeedback(text);
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: now.toString(),
       speaker: "user",
       text,
       time: new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }),
-      feedback: [`추천 표현: ${text.replace("I want to", "I'd like to")}`],
+      feedbackDetails: feedback.details,
+      correctedText: feedback.correctedText,
     };
-    setMessages((prev) => [...prev, userMessage, { id: `${Date.now()}-ai`, speaker: "ai", text: "That sounds good! Tell me more.", time: "now" }]);
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+      { id: `${now}-ai`, speaker: "ai", text: "That sounds good! Tell me more.", time: "now" },
+    ]);
     setInput("");
   };
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.screen}>
       <Header title={room.title} go={go} backTo="chatRooms" />
-      <MessageList messages={messages} />
-      <View style={styles.composer}>
-        <TextInput value={input} onChangeText={setInput} placeholder="메시지를 입력하세요" style={styles.composerInput} />
-        <Pressable style={[styles.sendButton, !input.trim() && styles.disabled]} onPress={send}>
-          <Text style={styles.sendText}>전송</Text>
-        </Pressable>
-      </View>
+      <TabBar active={tab} setActive={setTab} labels={{ chat: "채팅", feedback: "피드백" }} />
+      {tab === "chat" && (
+        <>
+          <MessageList messages={messages} />
+          <View style={styles.composer}>
+            <TextInput value={input} onChangeText={setInput} placeholder="메시지를 입력하세요" style={styles.composerInput} />
+            <Pressable style={[styles.sendButton, !input.trim() && styles.disabled]} onPress={send}>
+              <Text style={styles.sendText}>전송</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
+      {tab === "feedback" && <FeedbackList messages={messages} enabled sourceLabel="채팅" />}
     </KeyboardAvoidingView>
   );
 }
@@ -913,6 +1032,13 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
     ]);
   };
 
+  const withdraw = () => {
+    Alert.alert("회원탈퇴", "정말 회원탈퇴 하시겠습니까?\n탈퇴 시 모든 데이터가 삭제되며 복구할 수 없습니다.", [
+      { text: "취소", style: "cancel" },
+      { text: "회원탈퇴", style: "destructive", onPress: () => go("login") },
+    ]);
+  };
+
   const Toggle = ({ value, onChange }: { value: boolean; onChange: () => void }) => (
     <Pressable
       onPress={onChange}
@@ -965,25 +1091,22 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
           </View>
         </View>
 
-        {/* 기타 */}
-        <Text style={stStyles.sectionLabel}>기타</Text>
+        {/* 계정 관리 */}
+        <Text style={stStyles.sectionLabel}>계정 관리</Text>
         <View style={stStyles.card}>
-          <Pressable style={stStyles.row} onPress={() => go("faq")}>
-            <View style={stStyles.iconWrapPurple}>
-              <Text style={{ fontSize: 15 }}>❓</Text>
+          <Pressable style={[stStyles.row, stStyles.rowBorder]} onPress={logout}>
+            <View style={stStyles.iconWrapRed}>
+              <Text style={{ fontSize: 15 }}>🚪</Text>
             </View>
-            <Text style={[stStyles.rowTitle, { flex: 1 }]}>자주 묻는 질문</Text>
-            <Text style={styles.chevron}>›</Text>
+            <Text style={[stStyles.rowTitle, { flex: 1, color: "#EF4444" }]}>로그아웃</Text>
+          </Pressable>
+          <Pressable style={stStyles.row} onPress={withdraw}>
+            <View style={stStyles.iconWrapGray}>
+              <Text style={{ fontSize: 15 }}>🚫</Text>
+            </View>
+            <Text style={[stStyles.rowTitle, { flex: 1, color: "#6B7280" }]}>회원탈퇴</Text>
           </Pressable>
         </View>
-
-        {/* 로그아웃 */}
-        <Pressable style={stStyles.logoutBtn} onPress={logout}>
-          <View style={stStyles.iconWrapRed}>
-            <Text style={{ fontSize: 15 }}>🚪</Text>
-          </View>
-          <Text style={stStyles.logoutText}>로그아웃</Text>
-        </Pressable>
 
         {/* 버전 */}
         <Text style={stStyles.version}>SenTic v1.0.0</Text>
@@ -1415,6 +1538,11 @@ const stStyles = StyleSheet.create({
     backgroundColor: "#FEF2F2",
     alignItems: "center", justifyContent: "center",
   },
+  iconWrapGray: {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center", justifyContent: "center",
+  },
   toggle: {
     width: 44, height: 24, borderRadius: 12,
     justifyContent: "center", paddingHorizontal: 2,
@@ -1430,13 +1558,6 @@ const stStyles = StyleSheet.create({
   },
   toggleThumbOn: { alignSelf: "flex-end" },
   toggleThumbOff: { alignSelf: "flex-start" },
-  logoutBtn: {
-    backgroundColor: "#FFFFFF", borderRadius: 16,
-    borderWidth: 1, borderColor: "#F3F4F6",
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 16, paddingVertical: 14, gap: 12,
-  },
-  logoutText: { color: "#EF4444", fontSize: 14 },
   version: {
     color: "#D1D5DB", fontSize: 12,
     textAlign: "center", marginTop: 8,
@@ -1631,13 +1752,6 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
     }
   };
 
-  const logout = () => {
-    Alert.alert("로그아웃", "정말 로그아웃 하시겠습니까?", [
-      { text: "취소", style: "cancel" },
-      { text: "로그아웃", style: "destructive", onPress: () => go("login") },
-    ]);
-  };
-
   const CHART_HEIGHT = 128;
 
   return (
@@ -1665,9 +1779,6 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
                 <Text style={mpStyles.levelSmall}>{currentLevel.id} · {currentLevel.eng}</Text>
               </View>
             </View>
-            <Pressable onPress={logout} style={mpStyles.logoutBtn}>
-              <Text style={mpStyles.logoutText}>로그아웃</Text>
-            </Pressable>
           </View>
         </View>
 
@@ -1813,13 +1924,20 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
           )}
         </View>
 
-        {/* 결제 및 구독 */}
+        {/* 결제 및 구독 / 자주 묻는 질문 */}
         <View style={mpStyles.card}>
           <Pressable
-            style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: "#F9FAFB", marginBottom: 12 }}
             onPress={() => go("payment")}
           >
             <Text style={mpStyles.menuText}>결제 및 구독</Text>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
+          <Pressable
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+            onPress={() => go("faq")}
+          >
+            <Text style={mpStyles.menuText}>자주 묻는 질문</Text>
             <Text style={styles.chevron}>›</Text>
           </Pressable>
         </View>
@@ -1990,25 +2108,137 @@ function MessageList({ messages }: { messages: Message[] }) {
   );
 }
 
-function FeedbackList({ messages, enabled }: { messages: Message[]; enabled: boolean }) {
+function HighlightedFeedbackSentence({ message, details }: { message: Message; details: FeedbackDetail[] }) {
+  const highlightable = details
+    .filter((detail) => detail.target && detail.category !== "sentence")
+    .map((detail) => {
+      const start = message.text.toLowerCase().indexOf(detail.target!.toLowerCase());
+      return start >= 0 ? { ...detail, start, end: start + detail.target!.length } : null;
+    })
+    .filter((detail): detail is FeedbackDetail & { start: number; end: number } => Boolean(detail))
+    .sort((a, b) => a.start - b.start);
+
+  if (highlightable.length === 0) {
+    return <Text style={styles.feedbackSentence}>{message.text}</Text>;
+  }
+
+  const parts: { text: string; category?: FeedbackCategory }[] = [];
+  let cursor = 0;
+
+  highlightable.forEach((detail) => {
+    if (detail.start < cursor) return;
+    if (detail.start > cursor) {
+      parts.push({ text: message.text.slice(cursor, detail.start) });
+    }
+    parts.push({ text: message.text.slice(detail.start, detail.end), category: detail.category });
+    cursor = detail.end;
+  });
+
+  if (cursor < message.text.length) {
+    parts.push({ text: message.text.slice(cursor) });
+  }
+
+  return (
+    <Text style={styles.feedbackSentence}>
+      {parts.map((part, index) => (
+        <Text
+          key={`${part.text}-${index}`}
+          style={[
+            part.category === "grammar" && styles.feedbackWrongGrammar,
+            part.category === "word" && styles.feedbackWrongWord,
+          ]}
+        >
+          {part.text}
+        </Text>
+      ))}
+    </Text>
+  );
+}
+
+function FeedbackList({ messages, enabled, sourceLabel = "통화" }: { messages: Message[]; enabled: boolean; sourceLabel?: string }) {
   if (!enabled) {
     return (
       <View style={styles.emptyState}>
-        <Text style={styles.emptyIcon}>🔕</Text>
+        <Text style={styles.emptyIcon}>ⓘ</Text>
         <Text style={styles.muted}>피드백이 꺼져 있습니다.</Text>
       </View>
     );
   }
+
+  const feedbackMessages = messages.filter((m) => m.speaker === "user" && (m.feedbackDetails || m.feedback));
+
   return (
     <ScrollView contentContainerStyle={styles.content}>
-      {messages.filter((m) => m.feedback).map((message) => (
-        <View key={message.id} style={styles.card}>
-          <Text style={styles.cardTitle}>{message.text}</Text>
-          {message.feedback?.map((item) => (
-            <Text key={item} style={styles.feedbackText}>{item}</Text>
-          ))}
+      <View style={styles.feedbackIntro}>
+        <Text style={styles.cardTitle}>피드백 모아보기</Text>
+        <Text style={styles.mutedSmall}>{sourceLabel} 중 AI가 분석한 내 표현 교정입니다</Text>
+      </View>
+      {feedbackMessages.map((message) => {
+        const details = message.feedbackDetails ?? message.feedback?.map((item, index) => ({
+          id: `${message.id}-${index}`,
+          category: "sentence" as FeedbackCategory,
+          title: "추천 표현",
+          description: item,
+        })) ?? [];
+
+        return (
+          <View key={message.id} style={styles.feedbackCard}>
+            <View style={styles.feedbackSentenceGroup}>
+              <Text style={styles.feedbackSentenceLabel}>틀린 문장</Text>
+              <HighlightedFeedbackSentence message={message} details={details} />
+            </View>
+            <View style={styles.feedbackSentenceGroup}>
+              <Text style={styles.feedbackSentenceLabel}>완성 문장</Text>
+              <Text style={styles.feedbackCorrectSentence}>{message.correctedText ?? message.text}</Text>
+            </View>
+            {details.map((detail) => (
+              <View
+                key={detail.id}
+                style={[
+                  styles.feedbackBlock,
+                  detail.category === "sentence" && styles.feedbackBlockSentence,
+                  detail.category === "grammar" && styles.feedbackBlockGrammar,
+                  detail.category === "word" && styles.feedbackBlockWord,
+                ]}
+              >
+                <View style={styles.feedbackBlockHeader}>
+                  <View style={styles.feedbackBlockTitleRow}>
+                    <Text
+                      style={[
+                        styles.feedbackChip,
+                        detail.category === "sentence" && styles.feedbackChipSentence,
+                        detail.category === "grammar" && styles.feedbackChipGrammar,
+                        detail.category === "word" && styles.feedbackChipWord,
+                      ]}
+                    >
+                      {detail.category === "sentence" ? "문장" : detail.category === "grammar" ? "문법" : "단어"}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.feedbackBlockTitle,
+                        detail.category === "sentence" && styles.feedbackTitleSentence,
+                        detail.category === "grammar" && styles.feedbackTitleGrammar,
+                        detail.category === "word" && styles.feedbackTitleWord,
+                      ]}
+                    >
+                      {detail.title}
+                    </Text>
+                  </View>
+                  <Pressable style={styles.bookmarkButton}>
+                    <Text style={styles.bookmarkText}>🔖</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.feedbackDescription}>{detail.description}</Text>
+              </View>
+            ))}
+          </View>
+        );
+      })}
+      {feedbackMessages.length === 0 && (
+        <View style={styles.emptyState}>
+          <Text style={styles.muted}>아직 피드백이 없어요.</Text>
         </View>
-      ))}
+      )}
     </ScrollView>
   );
 }
@@ -2200,6 +2430,32 @@ const styles = StyleSheet.create({
   timeText: { color: "#9CA3AF", fontSize: 10, marginTop: 4 },
   userTimeText: { color: "#C7D2FE", textAlign: "right" },
   feedbackText: { color: "#374151", backgroundColor: "#EEF2FF", borderRadius: 12, padding: 10, marginTop: 10, fontSize: 13 },
+  feedbackIntro: { marginBottom: 2 },
+  feedbackCard: { backgroundColor: "#FFFFFF", borderRadius: 16, borderWidth: 1, borderColor: "#F3F4F6", padding: 16, gap: 10 },
+  feedbackHeaderRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  feedbackSentenceGroup: { gap: 4 },
+  feedbackSentenceLabel: { color: "#9CA3AF", fontSize: 10, marginBottom: 4 },
+  feedbackSentence: { color: "#111827", fontSize: 14, lineHeight: 20 },
+  feedbackCorrectSentence: { color: primary, fontSize: 14, lineHeight: 20, fontWeight: "800" },
+  feedbackWrongGrammar: { backgroundColor: "#FEF08A", color: "#111827", fontWeight: "400" },
+  feedbackWrongWord: { color: "#E11D48", fontWeight: "900" },
+  bookmarkButton: { width: 30, height: 30, borderRadius: 15, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
+  bookmarkText: { color: primary, fontSize: 15, fontWeight: "800" },
+  feedbackBlock: { borderRadius: 12, padding: 12 },
+  feedbackBlockSentence: { backgroundColor: "#EEF2FF" },
+  feedbackBlockGrammar: { backgroundColor: "#FEF9C3" },
+  feedbackBlockWord: { backgroundColor: "#FFF1F2" },
+  feedbackBlockHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 },
+  feedbackBlockTitleRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: 6 },
+  feedbackChip: { borderRadius: 999, overflow: "hidden", paddingHorizontal: 8, paddingVertical: 3, fontSize: 10, fontWeight: "900" },
+  feedbackChipSentence: { backgroundColor: "#C7D2FE", color: primary },
+  feedbackChipGrammar: { backgroundColor: "#FEF08A", color: "#854D0E" },
+  feedbackChipWord: { backgroundColor: "#FFE4E6", color: "#E11D48" },
+  feedbackBlockTitle: { fontSize: 11, fontWeight: "800" },
+  feedbackTitleSentence: { color: primary },
+  feedbackTitleGrammar: { color: "#854D0E" },
+  feedbackTitleWord: { color: "#E11D48" },
+  feedbackDescription: { color: "#374151", fontSize: 12, lineHeight: 18 },
   emptyState: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
   emptyIcon: { fontSize: 34 },
   composer: { flexDirection: "row", gap: 10, padding: 14, backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#F3F4F6" },

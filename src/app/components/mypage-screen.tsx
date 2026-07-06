@@ -1,4 +1,4 @@
-import { ArrowLeft, LogOut, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 
@@ -30,7 +30,6 @@ export function MyPageScreen() {
   const [userLevel, setUserLevel] = useState<Level>("중급");
   const [pendingLevel, setPendingLevel] = useState<Level>("중급");
   const [levelConfirmed, setLevelConfirmed] = useState(true); // 이미 레벨이 설정된 상태
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [hoveredBar, setHoveredBar] = useState<string | null>(null);
   const [isAnimated, setIsAnimated] = useState(false);
 
@@ -97,12 +96,6 @@ export function MyPageScreen() {
                 <span className="text-xs text-gray-500">{currentLevel.id} · {currentLevel.eng}</span>
               </div>
             </div>
-            <button
-              onClick={() => setShowLogoutModal(true)}
-              className="flex-shrink-0 flex items-center gap-1 text-xs text-red-400 hover:text-red-600 transition-colors"
-            >
-              <LogOut size={14} />
-            </button>
           </div>
         </div>
 
@@ -265,10 +258,11 @@ export function MyPageScreen() {
           )}
         </div>
 
-        {/* 메뉴 — 결제 및 구독 */}
+        {/* 메뉴 — 결제 및 구독, 자주 묻는 질문 */}
         <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
           {[
-            { label: "결제 및 구독", onClick: () => navigate("/payment") }
+            { label: "결제 및 구독", onClick: () => navigate("/payment") },
+            { label: "자주 묻는 질문", onClick: () => navigate("/faq") },
           ].map((item, i, arr) => (
             <button
               key={item.label}
@@ -285,30 +279,6 @@ export function MyPageScreen() {
 
         <div className="h-2" />
       </div>
-
-      {/* 로그아웃 모달 */}
-      {showLogoutModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50 px-4 pb-6">
-          <div className="bg-white rounded-3xl w-full max-w-sm p-6">
-            <h3 className="text-sm text-gray-900 mb-1">로그아웃</h3>
-            <p className="text-xs text-gray-500 mb-5">정말 로그아웃 하시겠습니까?</p>
-            <div className="flex gap-2.5">
-              <button
-                onClick={() => setShowLogoutModal(false)}
-                className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl text-sm hover:bg-gray-200 transition-colors"
-              >
-                취소
-              </button>
-              <button
-                onClick={() => navigate("/")}
-                className="flex-1 py-3 bg-red-500 text-white rounded-xl text-sm hover:bg-red-600 transition-colors"
-              >
-                로그아웃
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
