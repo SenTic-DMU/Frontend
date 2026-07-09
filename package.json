@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "axios": "^1.18.1",
     "expo": "~54.0.0",
     "expo-image-picker": "~17.0.11",
     "expo-status-bar": "~3.0.8",
@@ -22,5 +24,18 @@
   "devDependencies": {
     "@types/react": "~19.1.10",
     "typescript": "~5.9.2"
-  }
+  },
+  "description": "This project has been converted from the original Vite React prototype into an Expo React Native app.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SenTic-DMU/Frontend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/SenTic-DMU/Frontend/issues"
+  },
+  "homepage": "https://github.com/SenTic-DMU/Frontend#readme"
 }
