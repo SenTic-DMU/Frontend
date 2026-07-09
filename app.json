@@ -13,12 +13,19 @@
       "supportsTablet": true
     },
     "android": {
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#4F46E5"
-      }
+      },
+      "package": "com.coldzero99.sentic"
     },
     "web": {
       "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "09c80f64-8b34-4130-8fa9-fc6d01c1a0eb"
+      }
     }
   }
 }

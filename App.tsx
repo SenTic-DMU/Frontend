@@ -344,7 +344,8 @@ function LoginScreen({
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "padding"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0} // 👈 안드로이드를 위해 약간의 여백 추가
       style={styles.screen}
     >
       <ScrollView
@@ -811,6 +812,7 @@ function TextChatScreen({
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0} // 👈 2. 안드로이드 상단 헤더 높이만큼 여백 추가
       style={styles.screen}
     >
       <Header title={room.title} go={go} backTo="chatRooms" />
@@ -1904,6 +1906,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     padding: 14,
+    paddingBottom: Platform.OS === "ios" ? 14 : 14, // 👈 안드로이드일 때만 바닥 여백을 0으로 덮어씌움
     backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
     borderTopColor: "#F3F4F6",
