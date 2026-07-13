@@ -1,17 +1,10 @@
 import { StatusBar } from "expo-status-bar";
-<<<<<<< HEAD
-import { useMemo, useState } from "react";
-=======
 import { useMemo, useState, useEffect } from "react";
->>>>>>> yurim
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import {
   Alert,
-<<<<<<< HEAD
-=======
   Image,
->>>>>>> yurim
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -65,54 +58,12 @@ type PracticeRoom = {
   duration?: string;
 };
 
-<<<<<<< HEAD
-type UserInfo = {
-  loginId: string;
-  nickname: string;
-  email: string;
-};
-
-type LevelId = "초급" | "중급" | "고급";
-
-type LevelOption = {
-  id: LevelId;
-  eng: string;
-  desc: string;
-  detail: string[];
-  color: string;
-  bg: string;
-  border: string;
-  dot: string;
-};
-=======
 declare const global: { accessToken?: string };
->>>>>>> yurim
 
 const primary = "#4F46E5";
 const darkPrimary = "#4338CA";
 const softBg = "#F5F5F7";
 const border = "#E5E7EB";
-const apiBaseUrl = process.env.EXPO_PUBLIC_BASE_URL ?? "";
-const signupPath = process.env.EXPO_PUBLIC_SIGNUP_PATH ?? "/api/auth/signup";
-const loginPath = process.env.EXPO_PUBLIC_LOGIN_PATH ?? "/api/auth/login";
-
-function apiUrl(path: string) {
-  if (!apiBaseUrl) {
-    return "";
-  }
-  return `${apiBaseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
-}
-
-function getNestedString(value: unknown, keys: string[]) {
-  let current = value;
-  for (const key of keys) {
-    if (!current || typeof current !== "object" || !(key in current)) {
-      return undefined;
-    }
-    current = (current as Record<string, unknown>)[key];
-  }
-  return typeof current === "string" ? current : undefined;
-}
 
 const voiceRooms = [
   {
@@ -136,9 +87,6 @@ const voiceRooms = [
 ];
 
 const chatRooms = [
-<<<<<<< HEAD
-  { id: "friend", title: "친구와 스몰톡", desc: "일상적인 표현을 편하게 연습" },
-=======
   {
     id: "friend",
     title: "친구와 스몰톡",
@@ -147,15 +95,10 @@ const chatRooms = [
     date: "오늘",
     duration: "8분",
   },
->>>>>>> yurim
   {
     id: "travel",
     title: "여행 계획 세우기",
     desc: "일정, 예약, 추천 표현 익히기",
-<<<<<<< HEAD
-  },
-  { id: "work", title: "업무 메시지", desc: "짧고 공손한 비즈니스 채팅" },
-=======
     lastMessage: "Could you recommend a place nearby?",
     date: "어제",
     duration: "16분",
@@ -168,65 +111,13 @@ const chatRooms = [
     date: "5일 전",
     duration: "10분",
   },
->>>>>>> yurim
-];
-
-const levelOptions: LevelOption[] = [
-  {
-    id: "초급",
-    eng: "Beginner",
-    desc: "기초 단어/문장 구사 가능",
-    detail: ["짧고 쉬운 문장", "천천히 대화", "모르는 단어 설명"],
-    color: "#047857",
-    bg: "#ECFDF5",
-    border: "#34D399",
-    dot: "#34D399",
-  },
-  {
-    id: "중급",
-    eng: "Intermediate",
-    desc: "일상 대화 가능",
-    detail: ["일반 속도로 대화", "일상 표현 학습", "다양한 주제 토론"],
-    color: "#B45309",
-    bg: "#FFFBEB",
-    border: "#F59E0B",
-    dot: "#F59E0B",
-  },
-  {
-    id: "고급",
-    eng: "Advanced",
-    desc: "자유롭게 대화 가능",
-    detail: ["빠른 속도 대화", "관용어/슬랭 사용", "복잡한 문장 구사"],
-    color: "#4338CA",
-    bg: "#EEF2FF",
-    border: "#6366F1",
-    dot: "#6366F1",
-  },
-];
-
-const studyData = [
-  { id: "mon", day: "Mon", minutes: 45, date: "04/07" },
-  { id: "tue", day: "Tue", minutes: 60, date: "04/08" },
-  { id: "wed", day: "Wed", minutes: 30, date: "04/09" },
-  { id: "thu", day: "Thu", minutes: 75, date: "04/10" },
-  { id: "fri", day: "Fri", minutes: 50, date: "04/11" },
-  { id: "sat", day: "Sat", minutes: 90, date: "04/12" },
-  { id: "sun", day: "Sun", minutes: 65, date: "04/13" },
 ];
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [selectedRoom, setSelectedRoom] = useState<PracticeRoom>(voiceRooms[0]);
   const [selectedMode, setSelectedMode] = useState<"voice" | "text">("voice");
-<<<<<<< HEAD
-  const [userInfo, setUserInfo] = useState<UserInfo>({
-    loginId: "",
-    nickname: "영어마스터",
-    email: "user@example.com",
-  });
-=======
   const [kakaoWebViewVisible, setKakaoWebViewVisible] = useState(false);
->>>>>>> yurim
 
   const go = (next: Screen) => setScreen(next);
   const startNewConversation = (mode: "voice" | "text") => {
@@ -251,10 +142,6 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="dark" />
-<<<<<<< HEAD
-      {screen === "login" && (
-        <LoginScreen go={go} onAuthenticated={setUserInfo} />
-=======
       <Modal visible={kakaoWebViewVisible} animationType="slide">
         <SafeAreaView style={{ flex: 1 }}>
           <Pressable
@@ -271,17 +158,12 @@ export default function App() {
       </Modal>
       {screen === "login" && (
         <LoginScreen go={go} onKakaoLogin={handleKakaoLogin} />
->>>>>>> yurim
       )}
       {screen === "signup" && (
         <SimpleFormScreen
           title="회원가입"
           subtitle="SenTic 계정을 만들고 학습을 시작하세요."
           go={go}
-<<<<<<< HEAD
-          onAuthenticated={setUserInfo}
-=======
->>>>>>> yurim
         />
       )}
       {screen === "findAccount" && (
@@ -321,149 +203,45 @@ export default function App() {
         />
       )}
       {screen === "situation" && (
-<<<<<<< HEAD
-        <SituationScreen mode={selectedMode} room={selectedRoom} go={go} />
-=======
         <SituationScreen
           mode={selectedMode}
           room={selectedRoom}
           go={go}
           onStart={(nextRoom) => setSelectedRoom(nextRoom)}
         />
->>>>>>> yurim
       )}
       {screen === "voiceChat" && (
         <VoiceChatScreen room={selectedRoom} go={go} />
       )}
       {screen === "textChat" && <TextChatScreen room={selectedRoom} go={go} />}
-<<<<<<< HEAD
-      {screen === "mypage" && <MyPageScreen go={go} userInfo={userInfo} />}
-      {screen === "settings" && <InfoScreen title="설정" go={go} />}
-      {screen === "payment" && <InfoScreen title="프리미엄" go={go} />}
-      {screen === "bookmarks" && <InfoScreen title="저장한 표현" go={go} />}
-      {screen === "notice" && <InfoScreen title="공지사항" go={go} />}
-      {screen === "faq" && <InfoScreen title="FAQ" go={go} />}
-=======
       {screen === "mypage" && <MyPageScreen go={go} />}
       {screen === "settings" && <SettingsScreen go={go} />}
       {screen === "payment" && <PaymentScreen go={go} />}
       {screen === "bookmarks" && <BookmarksScreen go={go} />}
       {screen === "notice" && <NoticeScreen go={go} />}
       {screen === "faq" && <FaqScreen go={go} />}
->>>>>>> yurim
     </SafeAreaView>
   );
 }
 
 function LoginScreen({
   go,
-<<<<<<< HEAD
-  onAuthenticated,
-}: {
-  go: (screen: Screen) => void;
-  onAuthenticated: (userInfo: UserInfo) => void;
-=======
   onKakaoLogin,
 }: {
   go: (screen: Screen) => void;
   onKakaoLogin: () => void;
->>>>>>> yurim
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-<<<<<<< HEAD
-  const submitLogin = async () => {
-=======
   const handleLogin = async () => {
->>>>>>> yurim
     if (!username.trim() || !password.trim()) {
       Alert.alert("입력 확인", "아이디와 비밀번호를 입력해주세요.");
       return;
     }
 
-<<<<<<< HEAD
-    const url = apiUrl(loginPath);
-    if (!url) {
-      Alert.alert(
-        "설정 확인",
-        ".env에 EXPO_PUBLIC_BASE_URL을 먼저 설정해주세요.",
-      );
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true",
-        },
-        body: JSON.stringify({
-          loginId: username.trim(),
-          password,
-        }),
-      });
-
-      const responseText = await response.text();
-      let responseBody: unknown = responseText;
-      try {
-        responseBody = responseText ? JSON.parse(responseText) : null;
-      } catch {
-        responseBody = responseText;
-      }
-
-      if (!response.ok) {
-        const message =
-          typeof responseBody === "object" &&
-          responseBody &&
-          "message" in responseBody
-            ? String((responseBody as { message?: unknown }).message)
-            : responseText || "로그인에 실패했어요.";
-        Alert.alert("로그인 실패", message);
-        return;
-      }
-
-      // 백엔드에서 받은 데이터(responseBody)에서 토큰을 추출합니다.
-      const accessToken = getNestedString(responseBody, [
-        "data",
-        "accessToken",
-      ]);
-      const refreshToken = getNestedString(responseBody, [
-        "data",
-        "refreshToken",
-      ]);
-
-      // 폰 금고에 저장합니다.
-      if (accessToken) {
-        await AsyncStorage.setItem("accessToken", accessToken);
-      }
-      if (refreshToken) {
-        await AsyncStorage.setItem("refreshToken", refreshToken);
-      }
-
-      const loginId = username.trim();
-      onAuthenticated({
-        loginId,
-        nickname:
-          getNestedString(responseBody, ["data", "nickname"]) ??
-          getNestedString(responseBody, ["data", "user", "nickname"]) ??
-          loginId,
-        email:
-          getNestedString(responseBody, ["data", "email"]) ??
-          getNestedString(responseBody, ["data", "user", "email"]) ??
-          "",
-      });
-      go("mode");
-    } catch {
-      Alert.alert(
-        "연결 실패",
-        "백엔드 서버 주소, ngrok 상태, CORS 설정을 확인해주세요.",
-      );
-=======
     setLoading(true);
 
     try {
@@ -506,7 +284,6 @@ function LoginScreen({
         "서버와 연결할 수 없습니다. 서버 주소나 ngrok 상태를 확인해주세요.",
       );
       console.error("로그인 통신 에러:", e);
->>>>>>> yurim
     } finally {
       setLoading(false);
     }
@@ -514,12 +291,7 @@ function LoginScreen({
 
   return (
     <KeyboardAvoidingView
-<<<<<<< HEAD
-      behavior={Platform.OS === "ios" ? "padding" : "padding"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0} // 👈 안드로이드를 위해 약간의 여백 추가
-=======
       behavior={Platform.OS === "ios" ? "padding" : undefined}
->>>>>>> yurim
       style={styles.screen}
     >
       <ScrollView
@@ -539,10 +311,6 @@ function LoginScreen({
             style={styles.input}
             autoCapitalize="none"
           />
-<<<<<<< HEAD
-
-=======
->>>>>>> yurim
           <Label text="비밀번호" />
           <View style={styles.passwordRow}>
             <TextInput
@@ -554,36 +322,19 @@ function LoginScreen({
             />
             <Pressable
               style={styles.eyeButton}
-<<<<<<< HEAD
-              onPress={() => setShowPassword((value) => !value)}
-=======
               onPress={() => setShowPassword((v) => !v)}
->>>>>>> yurim
             >
               <Text style={styles.iconText}>
                 {showPassword ? "숨김" : "보기"}
               </Text>
             </Pressable>
           </View>
-<<<<<<< HEAD
-
-=======
->>>>>>> yurim
           <Pressable
             onPress={() => go("findAccount")}
             style={styles.alignRight}
           >
             <Text style={styles.linkText}>아이디 / 비밀번호 찾기</Text>
           </Pressable>
-<<<<<<< HEAD
-
-          <PrimaryButton
-            label={loading ? "처리 중..." : "로그인"}
-            onPress={submitLogin}
-            disabled={loading}
-          />
-
-=======
           <Pressable
             style={[styles.primaryButton, loading && { opacity: 0.6 }]}
             onPress={handleLogin}
@@ -593,7 +344,6 @@ function LoginScreen({
               {loading ? "로그인 중..." : "로그인"}
             </Text>
           </Pressable>
->>>>>>> yurim
           <View style={styles.dividerRow}>
             <View style={styles.divider} />
             <Text style={styles.dividerText}>소셜 계정으로 시작</Text>
@@ -602,11 +352,7 @@ function LoginScreen({
           <View style={styles.socialRow}>
             <Pressable
               style={[styles.socialButton, styles.kakao]}
-<<<<<<< HEAD
-              onPress={() => go("mode")}
-=======
               onPress={onKakaoLogin}
->>>>>>> yurim
             >
               <Text style={styles.socialText}>카카오</Text>
             </Pressable>
@@ -625,6 +371,7 @@ function LoginScreen({
     </KeyboardAvoidingView>
   );
 }
+
 function ModeScreen({ go }: { go: (screen: Screen) => void }) {
   const weekly = [33, 42, 27, 36, 48, 24, 60];
   return (
@@ -655,10 +402,6 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
           color="#16A34A"
           onPress={() => go("chatRooms")}
         />
-<<<<<<< HEAD
-
-=======
->>>>>>> yurim
         <View style={styles.card}>
           <View style={styles.rowBetween}>
             <Text style={styles.cardTitle}>이번 주 학습</Text>
@@ -723,24 +466,6 @@ function RoomListScreen({
 }) {
   return (
     <View style={styles.screenSoft}>
-<<<<<<< HEAD
-      <Header title={title} go={go} backTo="mode" />
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.h2}>상황을 선택하세요</Text>
-        <Text style={styles.mutedBlock}>
-          원하는 대화 주제를 고르면 난이도와 역할을 확인한 뒤 연습을 시작할 수
-          있어요.
-        </Text>
-        {rooms.map((room) => (
-          <Pressable
-            key={room.id}
-            style={styles.roomCard}
-            onPress={() => onPick(room)}
-          >
-            <View style={styles.roomIcon}>
-              <Text style={styles.roomIconText}>
-                {title.includes("음성") ? "🎙" : "💬"}
-=======
       <View style={styles.roomListHeader}>
         <Pressable style={styles.headerButton} onPress={() => go("mode")}>
           <Text style={styles.headerIcon}>‹</Text>
@@ -763,7 +488,6 @@ function RoomListScreen({
             <View style={styles.voiceRoomIcon}>
               <Text style={styles.voiceRoomIconText}>
                 {mode === "voice" ? "🎙" : "💬"}
->>>>>>> yurim
               </Text>
             </View>
             <View style={styles.roomPreview}>
@@ -901,18 +625,6 @@ function SituationScreen({
 
   return (
     <View style={styles.screenSoft}>
-<<<<<<< HEAD
-      <Header
-        title="상황 설정"
-        go={go}
-        backTo={mode === "voice" ? "voiceRooms" : "chatRooms"}
-      />
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.heroCard}>
-          <Text style={styles.heroIcon}>{mode === "voice" ? "🎙" : "💬"}</Text>
-          <Text style={styles.heroTitle}>{room.title}</Text>
-          <Text style={styles.heroDesc}>{room.desc}</Text>
-=======
       <View style={styles.roomListHeader}>
         <Pressable
           style={styles.headerButton}
@@ -923,7 +635,6 @@ function SituationScreen({
         <View style={styles.flex}>
           <Text style={styles.roomListTitle}>상황 설정</Text>
           <Text style={styles.roomListCount}>영어 대화</Text>
->>>>>>> yurim
         </View>
         <Pressable style={styles.randomButton} onPress={randomize}>
           <Text style={styles.randomButtonText}>↝ 랜덤</Text>
@@ -965,22 +676,6 @@ function SituationScreen({
             </Text>
           </Pressable>
         </View>
-<<<<<<< HEAD
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>설정</Text>
-          <PillRow
-            items={[
-              room.level ?? "맞춤",
-              "피드백 ON",
-              mode === "voice" ? "자막 ON" : "자동 피드백",
-            ]}
-          />
-        </View>
-        <PrimaryButton
-          label="연습 시작"
-          onPress={() => go(mode === "voice" ? "voiceChat" : "textChat")}
-        />
-=======
 
         {characters.map((char, index) => (
           <View
@@ -1034,7 +729,6 @@ function SituationScreen({
         </View>
 
         <PrimaryButton label="대화 시작하기" onPress={start} />
->>>>>>> yurim
       </ScrollView>
     </View>
   );
@@ -1280,284 +974,38 @@ function SimpleFormScreen({
   title,
   subtitle,
   go,
-<<<<<<< HEAD
-  onAuthenticated,
-=======
->>>>>>> yurim
 }: {
   title: string;
   subtitle: string;
   go: (screen: Screen) => void;
-<<<<<<< HEAD
-  onAuthenticated?: (userInfo: UserInfo) => void;
 }) {
-  const isSignup = title === "회원가입";
-  const [username, setUsername] = useState("");
-  const [nickname, setNickname] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const submitSignup = async () => {
-    if (
-      !email.trim() ||
-      !password.trim() ||
-      (isSignup && (!username.trim() || !nickname.trim()))
-    ) {
-      Alert.alert("입력 확인", "필수 정보를 모두 입력해주세요.");
-      return;
-    }
-
-    if (!isSignup) {
-      Alert.alert("안내", "계정 찾기 API는 아직 연결되지 않았어요.");
-      return;
-    }
-
-    const url = apiUrl(signupPath);
-    if (!url) {
-      Alert.alert(
-        "설정 확인",
-        ".env에 EXPO_PUBLIC_BASE_URL을 먼저 설정해주세요.",
-      );
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true",
-        },
-        body: JSON.stringify({
-          loginId: username.trim(),
-          nickname: nickname.trim(),
-          email: email.trim(),
-          password,
-        }),
-      });
-
-      const responseText = await response.text();
-      let responseBody: unknown = responseText;
-      try {
-        responseBody = responseText ? JSON.parse(responseText) : null;
-      } catch {
-        responseBody = responseText;
-      }
-
-      if (!response.ok) {
-        const message =
-          typeof responseBody === "object" &&
-          responseBody &&
-          "message" in responseBody
-            ? String((responseBody as { message?: unknown }).message)
-            : responseText || "회원가입에 실패했어요.";
-        Alert.alert("회원가입 실패", message);
-        return;
-      }
-
-      Alert.alert("회원가입 완료", "계정이 생성되었습니다.");
-      onAuthenticated?.({
-        loginId: username.trim(),
-        nickname: nickname.trim(),
-        email: email.trim(),
-      });
-      go("mode");
-    } catch {
-      Alert.alert(
-        "연결 실패",
-        "백엔드 서버 주소, 같은 와이파이, CORS 설정을 확인해주세요.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-=======
-}) {
->>>>>>> yurim
   return (
     <View style={styles.screenSoft}>
       <Header title={title} go={go} backTo="login" />
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
+      <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.h1}>{title}</Text>
         <Text style={styles.mutedBlock}>{subtitle}</Text>
-        {isSignup && (
-          <>
-            <Label text="아이디" />
-            <TextInput
-              value={username}
-              onChangeText={setUsername}
-              placeholder="아이디 입력"
-              style={styles.input}
-              autoCapitalize="none"
-            />
-            <Label text="닉네임" />
-            <TextInput
-              value={nickname}
-              onChangeText={setNickname}
-              placeholder="닉네임 입력"
-              style={styles.input}
-            />
-          </>
-        )}
         <Label text="이메일" />
         <TextInput
-<<<<<<< HEAD
-          value={email}
-          onChangeText={setEmail}
-          placeholder="email@example.com"
-          style={styles.input}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-        <Label text="비밀번호" />
-        <TextInput
-          value={password}
-          onChangeText={setPassword}
-=======
           placeholder="email@example.com"
           style={styles.input}
           keyboardType="email-address"
         />
         <Label text="비밀번호" />
         <TextInput
->>>>>>> yurim
           placeholder="비밀번호"
           secureTextEntry
           style={styles.input}
         />
         <PrimaryButton
-<<<<<<< HEAD
-          label={loading ? "처리 중..." : isSignup ? "가입하기" : "안내 받기"}
-          onPress={submitSignup}
-          disabled={loading}
-=======
           label={title === "회원가입" ? "가입하기" : "안내 받기"}
           onPress={() => go("mode")}
->>>>>>> yurim
         />
       </ScrollView>
     </View>
   );
 }
 
-<<<<<<< HEAD
-function MyPageScreen({
-  go,
-  userInfo,
-}: {
-  go: (screen: Screen) => void;
-  userInfo: UserInfo;
-}) {
-  const [userLevel, setUserLevel] = useState<LevelId>("중급");
-  const [pendingLevel, setPendingLevel] = useState<LevelId>("중급");
-  const [levelConfirmed, setLevelConfirmed] = useState(true);
-
-  const maxMinutes = Math.max(...studyData.map((item) => item.minutes));
-  const totalMinutes = studyData.reduce((sum, item) => sum + item.minutes, 0);
-  const avgMinutes = Math.round(totalMinutes / studyData.length);
-  const currentLevel =
-    levelOptions.find((level) => level.id === userLevel) ?? levelOptions[1];
-  const displayNickname = userInfo.nickname || userInfo.loginId || "영어마스터";
-  const displayEmail = userInfo.email || "로그인 이메일 없음";
-
-  const handleLevelButtonPress = () => {
-    if (levelConfirmed) {
-      setPendingLevel(userLevel);
-      setLevelConfirmed(false);
-      return;
-    }
-    setUserLevel(pendingLevel);
-    setLevelConfirmed(true);
-  };
-
-  const renderLevelCard = (level: LevelOption, selectable: boolean) => {
-    const selected = selectable
-      ? pendingLevel === level.id
-      : userLevel === level.id;
-    return (
-      <Pressable
-        key={level.id}
-        onPress={() => selectable && setPendingLevel(level.id)}
-        disabled={!selectable}
-        style={[
-          styles.levelCard,
-          {
-            borderColor: selected ? level.border : "#F3F4F6",
-            backgroundColor: selected ? level.bg : "#FFFFFF",
-          },
-        ]}
-      >
-        <View style={styles.flex}>
-          <View style={styles.levelTitleRow}>
-            <Text
-              style={[
-                styles.levelName,
-                { color: selected ? level.color : "#111827" },
-              ]}
-            >
-              {level.id}
-            </Text>
-            <Text
-              style={[
-                styles.levelEng,
-                { color: selected ? level.color : "#9CA3AF" },
-              ]}
-            >
-              {level.eng}
-            </Text>
-          </View>
-          <Text
-            style={[
-              styles.levelDesc,
-              { color: selected ? level.color : "#6B7280" },
-            ]}
-          >
-            {level.desc}
-          </Text>
-          <View style={styles.levelPillRow}>
-            {level.detail.map((item) => (
-              <View
-                key={item}
-                style={[
-                  styles.levelPill,
-                  {
-                    borderColor: selected ? level.border : "#E5E7EB",
-                    backgroundColor: selected ? "#FFFDF7" : "#F9FAFB",
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.levelPillText,
-                    { color: selected ? level.color : "#6B7280" },
-                  ]}
-                >
-                  {item}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-        <View
-          style={[
-            styles.levelRadio,
-            { borderColor: selected ? level.border : "#E5E7EB" },
-          ]}
-        >
-          {selected && (
-            <View
-              style={[styles.levelRadioDot, { backgroundColor: level.dot }]}
-            />
-          )}
-        </View>
-      </Pressable>
-=======
 function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
   interface Notice {
     id: string;
@@ -1823,93 +1271,11 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
           <Text style={bkStyles.deleteBtnText}>🗑</Text>
         </Pressable>
       </View>
->>>>>>> yurim
     );
   };
 
   return (
     <View style={styles.screenSoft}>
-<<<<<<< HEAD
-      <Header title="마이 페이지" go={go} backTo="mode" />
-      <ScrollView contentContainerStyle={styles.myPageContent}>
-        <View style={styles.profileCard}>
-          <View style={styles.profileAvatar}>
-            <Text style={styles.profileAvatarText}>
-              {displayNickname.slice(0, 1)}
-            </Text>
-          </View>
-          <View style={styles.flex}>
-            <Text style={styles.profileName} numberOfLines={1}>
-              {displayNickname}
-            </Text>
-            <Text style={styles.profileEmail} numberOfLines={1}>
-              {displayEmail}
-            </Text>
-            <View style={styles.profileLevelRow}>
-              <View
-                style={[
-                  styles.profileLevelDot,
-                  { backgroundColor: currentLevel.dot },
-                ]}
-              />
-              <Text style={styles.profileLevelText}>
-                {currentLevel.id} · {currentLevel.eng}
-              </Text>
-            </View>
-          </View>
-          <Pressable
-            style={styles.logoutButton}
-            onPress={() =>
-              Alert.alert("로그아웃", "정말 로그아웃 하시겠어요?", [
-                { text: "취소", style: "cancel" },
-                {
-                  text: "로그아웃",
-                  style: "destructive",
-                  onPress: () => go("login"),
-                },
-              ])
-            }
-          >
-            <Text style={styles.logoutText}>↪</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.myStatsGrid}>
-          <MyStat
-            label="이번 주"
-            value={`${Math.round((totalMinutes / 60) * 10) / 10}h`}
-          />
-          <MyStat label="일 평균" value={`${avgMinutes}분`} />
-          <MyStat label="연속 학습" value="5일" />
-        </View>
-
-        <View style={styles.myCard}>
-          <View style={styles.myCardHeader}>
-            <View>
-              <Text style={styles.myCardTitle}>주간 학습 시간</Text>
-              <Text style={styles.myCardSub}>최근 7일 기록</Text>
-            </View>
-            <Text style={styles.myCardTotal}>{totalMinutes}분</Text>
-          </View>
-          <View style={styles.myChart}>
-            {studyData.map((item, index) => {
-              const isToday = index === studyData.length - 1;
-              return (
-                <View key={item.id} style={styles.myBarWrap}>
-                  <View style={styles.myBarTrack}>
-                    <View
-                      style={[
-                        styles.myBar,
-                        {
-                          height: `${(item.minutes / maxMinutes) * 100}%`,
-                          backgroundColor: isToday ? primary : "#DCE5FF",
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text
-                    style={[styles.myBarDay, isToday && styles.primaryText]}
-=======
       {/* 헤더 */}
       {isInsideDetail ? (
         <View style={bkStyles.header}>
@@ -3371,7 +2737,6 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
                   />
                   <Text
                     style={[mpStyles.barDay, isToday && { color: primary }]}
->>>>>>> yurim
                   >
                     {item.day}
                   </Text>
@@ -3381,22 +2746,6 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
           </View>
         </View>
 
-<<<<<<< HEAD
-        <View style={styles.myCard}>
-          <View style={styles.myCardHeader}>
-            <Text style={styles.myCardTitle}>학습 레벨 설정</Text>
-            <Pressable
-              style={[
-                styles.changeButton,
-                !levelConfirmed && styles.confirmButton,
-              ]}
-              onPress={handleLevelButtonPress}
-            >
-              <Text
-                style={[
-                  styles.changeButtonText,
-                  !levelConfirmed && styles.confirmButtonText,
-=======
         {/* 학습 레벨 설정 */}
         <View style={mpStyles.card}>
           <View
@@ -3421,24 +2770,12 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
                 style={[
                   mpStyles.levelBtnText,
                   levelConfirmed ? { color: "#4B5563" } : { color: "#FFFFFF" },
->>>>>>> yurim
                 ]}
               >
                 {levelConfirmed ? "변경" : "결정"}
               </Text>
             </Pressable>
           </View>
-<<<<<<< HEAD
-          {levelConfirmed
-            ? renderLevelCard(currentLevel, false)
-            : levelOptions.map((level) => renderLevelCard(level, true))}
-        </View>
-
-        <Pressable style={styles.menuRow} onPress={() => go("payment")}>
-          <Text style={styles.menuRowText}>결제 및 구독</Text>
-          <Text style={styles.menuChevron}>›</Text>
-        </Pressable>
-=======
 
           {levelConfirmed ? (
             // 확정된 레벨만 표시
@@ -3636,22 +2973,11 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
         </View>
 
         <View style={{ height: 8 }} />
->>>>>>> yurim
       </ScrollView>
     </View>
   );
 }
 
-<<<<<<< HEAD
-function MyStat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.myStat}>
-      <Text style={styles.myStatLabel}>{label}</Text>
-      <Text style={styles.myStatValue}>{value}</Text>
-    </View>
-  );
-}
-=======
 // MyPageScreen 전용 스타일 (기존 styles에 추가하거나 별도 선언)
 const mpStyles = StyleSheet.create({
   header: {
@@ -3751,7 +3077,6 @@ const mpStyles = StyleSheet.create({
   radioInner: { width: 10, height: 10, borderRadius: 5 },
   menuText: { color: "#374151", fontSize: 14 },
 });
->>>>>>> yurim
 
 function InfoScreen({
   title,
@@ -3844,24 +3169,12 @@ function Header({
 function PrimaryButton({
   label,
   onPress,
-<<<<<<< HEAD
-  disabled,
 }: {
   label: string;
   onPress: () => void;
-  disabled?: boolean;
-=======
-}: {
-  label: string;
-  onPress: () => void;
->>>>>>> yurim
 }) {
   return (
-    <Pressable
-      style={[styles.primaryButton, disabled && styles.disabled]}
-      onPress={onPress}
-      disabled={disabled}
-    >
+    <Pressable style={styles.primaryButton} onPress={onPress}>
       <Text style={styles.primaryButtonText}>{label}</Text>
     </Pressable>
   );
@@ -4015,30 +3328,6 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-<<<<<<< HEAD
-function Checklist({ text }: { text: string }) {
-  return (
-    <View style={styles.checkRow}>
-      <Text style={styles.check}>✓</Text>
-      <Text style={styles.listText}>{text}</Text>
-    </View>
-  );
-}
-
-function PillRow({ items }: { items: string[] }) {
-  return (
-    <View style={styles.pillRow}>
-      {items.map((item) => (
-        <View key={item} style={styles.pill}>
-          <Text style={styles.pillText}>{item}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-=======
->>>>>>> yurim
 function RoundButton({
   label,
   onPress,
@@ -4170,8 +3459,6 @@ const styles = StyleSheet.create({
   },
   headerSpacer: { width: 36 },
   content: { padding: 20, gap: 14 },
-<<<<<<< HEAD
-=======
   roomListHeader: {
     minHeight: 70,
     backgroundColor: "#FFFFFF",
@@ -4200,7 +3487,6 @@ const styles = StyleSheet.create({
   randomButtonText: { color: "#6B7280", fontSize: 12, fontWeight: "800" },
   roomListContent: { paddingHorizontal: 20, paddingVertical: 16, gap: 10 },
   setupContent: { padding: 22, paddingBottom: 30 },
->>>>>>> yurim
   rowBetween: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -4256,8 +3542,6 @@ const styles = StyleSheet.create({
     borderColor: "#F3F4F6",
     padding: 16,
   },
-<<<<<<< HEAD
-=======
   profileCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -4325,7 +3609,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
->>>>>>> yurim
   cardTitle: { color: "#111827", fontSize: 15, fontWeight: "800" },
   chart: {
     flexDirection: "row",
@@ -4438,8 +3721,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   chevron: { color: "#C7CBD1", fontSize: 30 },
-<<<<<<< HEAD
-=======
   descriptionInput: { minHeight: 88, paddingTop: 14 },
   setupSectionHeader: {
     flexDirection: "row",
@@ -4501,7 +3782,6 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   warningText: { color: "#B45309", fontSize: 12, fontWeight: "800" },
->>>>>>> yurim
   heroCard: {
     alignItems: "center",
     backgroundColor: darkPrimary,
@@ -4516,26 +3796,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
-<<<<<<< HEAD
-  checkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 9,
-  },
-  check: { color: primary, fontWeight: "900" },
   listText: { color: "#374151", fontSize: 14, lineHeight: 20 },
-  pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
-  pill: {
-    backgroundColor: "#EEF2FF",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  pillText: { color: primary, fontSize: 12, fontWeight: "800" },
-=======
-  listText: { color: "#374151", fontSize: 14, lineHeight: 20 },
->>>>>>> yurim
   tabBar: {
     flexDirection: "row",
     gap: 8,
@@ -4664,10 +3925,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     padding: 14,
-<<<<<<< HEAD
-    paddingBottom: Platform.OS === "ios" ? 14 : 14, // 👈 안드로이드일 때만 바닥 여백을 0으로 덮어씌움
-=======
->>>>>>> yurim
     backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
     borderTopColor: "#F3F4F6",
@@ -4697,159 +3954,6 @@ const styles = StyleSheet.create({
     borderColor: "#F3F4F6",
     padding: 16,
   },
-<<<<<<< HEAD
-  myPageContent: {
-    paddingHorizontal: 10,
-    paddingTop: 16,
-    paddingBottom: 34,
-    gap: 14,
-  },
-  profileCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#EEF0F4",
-    padding: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-  },
-  profileAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: "#E8ECFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  profileAvatarText: { color: primary, fontSize: 16, fontWeight: "800" },
-  profileName: { color: "#111827", fontSize: 14, fontWeight: "800" },
-  profileEmail: { color: "#9CA3AF", fontSize: 11, marginTop: 3 },
-  profileLevelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    marginTop: 6,
-  },
-  profileLevelDot: { width: 6, height: 6, borderRadius: 3 },
-  profileLevelText: { color: "#6B7280", fontSize: 11 },
-  logoutButton: {
-    width: 30,
-    height: 30,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logoutText: { color: "#F87171", fontSize: 17, fontWeight: "900" },
-  myStatsGrid: { flexDirection: "row", gap: 8 },
-  myStat: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#EEF0F4",
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  myStatLabel: { color: "#9CA3AF", fontSize: 11, marginBottom: 4 },
-  myStatValue: { color: "#111827", fontSize: 13, fontWeight: "900" },
-  myCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#EEF0F4",
-    padding: 15,
-  },
-  myCardHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    marginBottom: 14,
-  },
-  myCardTitle: { color: "#111827", fontSize: 14, fontWeight: "900" },
-  myCardSub: { color: "#9CA3AF", fontSize: 11, marginTop: 3 },
-  myCardTotal: { color: "#8B91A1", fontSize: 11, marginTop: 3 },
-  myChart: {
-    height: 116,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  myBarWrap: {
-    flex: 1,
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 7,
-  },
-  myBarTrack: { flex: 1, width: "100%", justifyContent: "flex-end" },
-  myBar: {
-    width: "100%",
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-    minHeight: 8,
-  },
-  myBarDay: { color: "#A8AFBD", fontSize: 9 },
-  changeButton: {
-    backgroundColor: "#F3F4F6",
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 999,
-  },
-  confirmButton: { backgroundColor: primary },
-  changeButtonText: { color: "#4B5563", fontSize: 11, fontWeight: "800" },
-  confirmButtonText: { color: "#FFFFFF" },
-  levelCard: {
-    borderWidth: 1.5,
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    marginTop: 8,
-  },
-  levelTitleRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 6,
-    marginBottom: 4,
-  },
-  levelName: { fontSize: 13, fontWeight: "900" },
-  levelEng: { fontSize: 10, fontWeight: "800" },
-  levelDesc: { fontSize: 11, fontWeight: "700", marginBottom: 9 },
-  levelPillRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  levelPill: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  levelPillText: { fontSize: 10, fontWeight: "700" },
-  levelRadio: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  levelRadioDot: { width: 8, height: 8, borderRadius: 4 },
-  menuRow: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#EEF0F4",
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  menuRowText: { color: "#374151", fontSize: 14, fontWeight: "800" },
-  menuChevron: { color: "#CBD5E1", fontSize: 24, lineHeight: 24 },
-=======
->>>>>>> yurim
 });
 
 console.log(process.env.EXPO_PUBLIC_BASE_URL);

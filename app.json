@@ -20,13 +20,6 @@
     "web": {
       "bundler": "metro"
     },
-<<<<<<< HEAD
-    "extra": {
-      "eas": {
-        "projectId": "09c80f64-8b34-4130-8fa9-fc6d01c1a0eb"
-      }
-    }
-=======
     "plugins": [
       [
         "expo-image-picker",
@@ -35,6 +28,5 @@
         }
       ]
     ]
->>>>>>> yurim
   }
 }
