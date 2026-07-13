@@ -86,34 +86,37 @@ const voiceRooms = [
   },
 ];
 
-const chatRooms = [
-  {
-    id: "friend",
-    title: "친구와 스몰톡",
-    desc: "일상적인 표현을 편하게 연습",
-    lastMessage: "What did you do last weekend?",
-    date: "오늘",
-    duration: "8분",
-  },
-  {
-    id: "travel",
-    title: "여행 계획 세우기",
-    desc: "일정, 예약, 추천 표현 익히기",
-    lastMessage: "Could you recommend a place nearby?",
-    date: "어제",
-    duration: "16분",
-  },
-  {
-    id: "work",
-    title: "업무 메시지",
-    desc: "짧고 공손한 비즈니스 채팅",
-    lastMessage: "I'll send the file by this afternoon.",
-    date: "5일 전",
-    duration: "10분",
-  },
-];
-
 export default function App() {
+  // ⭐️ 1. 없었던 방 목록 그릇(State)을 새로 만들어줍니다!
+  const [chatRooms, setChatRooms] = useState<any[]>([]);
+
+  // ⭐️ 2. 앱이 처음 켜질 때 서버에서 내 방 목록을 가져오는 기능을 새로 만들어줍니다!
+  // ⭐️ 앱 켤 때 방 목록을 불러옵니다!
+  useEffect(() => {
+    const fetchMyRooms = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+
+        // 1. 채팅방(Text) 목록 가져오기 (roomType=CHAT 추가!)
+        const chatResponse = await axios.get(
+          `${API_URL}/api/rooms?roomType=CHAT`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          },
+        );
+        setChatRooms(chatResponse.data?.data || chatResponse.data || []);
+      } catch (error: any) {
+        console.error(
+          "🚨 방 목록 불러오기 실패 상세원인:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+
+    fetchMyRooms();
+  }, []);
+
   const [screen, setScreen] = useState<Screen>("login");
   const [selectedRoom, setSelectedRoom] = useState<PracticeRoom>(voiceRooms[0]);
   const [selectedMode, setSelectedMode] = useState<"voice" | "text">("voice");
@@ -560,6 +563,9 @@ function SituationScreen({
     },
   ]);
 
+  // 💡 통신 중 버튼을 비활성화하기 위한 로딩 상태 추가
+  const [loading, setLoading] = useState(false);
+
   const addCharacter = () => {
     if (characters.length >= 2) return;
     setCharacters((prev) => [
@@ -612,15 +618,81 @@ function SituationScreen({
     ]);
   };
 
-  const start = () => {
-    onStart({
-      ...room,
-      title: title.trim() || "새 영어 대화",
-      desc: desc.trim() || "직접 설정한 영어 대화 상황",
-      lastMessage: desc.trim() || room.lastMessage,
-      date: "오늘",
-    });
-    go(mode === "voice" ? "voiceChat" : "textChat");
+  const start = async () => {
+    // 💡 이 줄을 추가하면 사용자가 버튼을 다다닥 눌러도 한 번만 통신합니다.
+    if (loading) return;
+
+    if (!title.trim() || !desc.trim()) {
+      Alert.alert("입력 확인", "대화방 제목과 상황 설명을 입력해주세요.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      if (!accessToken) {
+        Alert.alert("로그인 만료", "다시 로그인해주세요.");
+        go("login");
+        return;
+      }
+
+      const requestBody = {
+        // ⭐️ 백엔드 변수명에 맞춰서 왼쪽 이름표들을 모두 수정했습니다!
+        roomName: title.trim(),
+        situation: desc.trim(),
+        difficulty: "BEGINNER",
+        roomType: mode === "voice" ? "VOICE" : "CHAT",
+
+        characters: characters.map((c) => ({
+          name: c.name, // 이건 똑같아서 잘 들어갔던 겁니다!
+          personality: c.trait, // trait -> personality 로 변경
+          iconType: c.avatar, // avatar -> iconType 으로 변경
+        })),
+      };
+
+      console.log("👉 방 생성 데이터 전송:", requestBody);
+
+      const response = await axios.post(
+        `${process.env.EXPO_PUBLIC_BASE_URL}/api/rooms`,
+        requestBody,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      const newRoomId = response.data?.data?.id || response.data?.id;
+
+      if (!newRoomId) {
+        throw new Error("서버에서 방 번호를 내려주지 않았습니다.");
+      }
+
+      onStart({
+        ...room,
+        id: newRoomId,
+        title: title.trim(),
+        desc: desc.trim(),
+        lastMessage: desc.trim() || room.lastMessage,
+        date: "오늘",
+        characters: characters,
+      } as any);
+
+      go(mode === "voice" ? "voiceChat" : "textChat");
+    } catch (error: any) {
+      console.error(
+        "🚨 방 생성 통신 에러:",
+        error.response?.data || error.message,
+      );
+      Alert.alert(
+        "방 생성 실패",
+        "상황을 설정하는 중 서버 오류가 발생했습니다.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -728,7 +800,10 @@ function SituationScreen({
           </Text>
         </View>
 
-        <PrimaryButton label="대화 시작하기" onPress={start} />
+        <PrimaryButton
+          label={loading ? "방을 생성하는 중..." : "대화 시작하기"}
+          onPress={start}
+        />
       </ScrollView>
     </View>
   );
@@ -853,22 +928,56 @@ function TextChatScreen({
   go: (screen: Screen) => void;
 }) {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    { id: "1", speaker: "ai", text: "Hey! What's up?", time: "10:30" },
-    {
-      id: "2",
-      speaker: "user",
-      text: "I'm good. What about you?",
-      time: "10:31",
-      feedback: ["더 자연스럽게: I'm doing well, thanks! How about you?"],
-    },
-    {
-      id: "3",
-      speaker: "ai",
-      text: "I'm doing great! Wanna grab some coffee later?",
-      time: "10:31",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  // ⭐️ 화면이 처음 켜질 때 딱 한 번 실행되는 마법의 코드
+  useEffect(() => {
+    const requestInitialGreeting = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const currentRoomId = room.id; // (만약 위에서 useParams로 꺼낸 roomId를 쓰고 있다면 roomId로 적어주세요!)
+
+        // 1. 화면(UI)에는 띄우지 않고, 서버로만 몰래 보내는 비밀 지령!
+        const payload = {
+          content:
+            "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
+        };
+
+        const response = await axios.post(
+          `${API_URL}/api/rooms/${currentRoomId}/messages/chat`,
+          payload,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+
+        // 2. 서버에서 AI의 첫인사가 도착하면, 내 메시지 없이 'AI 메시지'만 화면에 띄웁니다!
+        if (response.data) {
+          const aiMessage: Message = {
+            id: `${Date.now()}-ai-init`,
+            speaker: "ai",
+            text: response.data.data?.content || "Hello!",
+            time: new Date().toLocaleTimeString("ko-KR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          };
+          setMessages([aiMessage]);
+        }
+      } catch (error) {
+        console.error("🚨 AI 첫인사 로딩 실패:", error);
+      }
+    };
+
+    // 메시지가 텅 비어있을 때(방에 처음 들어왔을 때)만 인사말을 요청합니다.
+    if (messages.length === 0) {
+      requestInitialGreeting();
+    }
+  }, []); // 👈 빈 배열을 넣어야 무한 반복되지 않고 딱 한 번만 실행됩니다!
 
   const send = async () => {
     const text = input.trim();
@@ -891,17 +1000,21 @@ function TextChatScreen({
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
       const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
-      const roomId = 1;
 
-      // ⭐️ 핵심: axios.post는 객체를 그대로 보내는 게 좋습니다.
-      // JSON.stringify를 또 쓰면 이중 직렬화 문제가 생길 수 있어요.
+      // 🚨 범인 검거 완료! 1로 고정되어 있던 것을 진짜 방 번호로 바꿉니다!
+      const currentRoomId = room.id;
+
       const requestBody = { content: text };
 
-      console.log("👉 서버로 전송하는 최종 데이터:", requestBody);
+      // 방 번호가 잘 들어가는지 터미널에서 확인하기 위해 로그를 살짝 바꿨습니다.
+      console.log(
+        `👉 [방 번호: ${currentRoomId}] 서버로 전송하는 데이터:`,
+        requestBody,
+      );
 
       const response = await axios.post(
-        `${API_URL}/api/rooms/${roomId}/messages/chat`,
-        { content: text }, // 👈 이대로 유지! (이제 백엔드가 완벽하게 해석할 거예요)
+        `${API_URL}/api/rooms/${currentRoomId}/messages/chat`, // 👈 1 대신 currentRoomId가 들어갑니다.
+        { content: text },
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -912,7 +1025,6 @@ function TextChatScreen({
 
       // 서버 응답 성공 시 처리
       if (response.data) {
-        // ⭐️ 여기서 response.data.data.content로 접근해야 합니다!
         const aiMessage: Message = {
           id: `${Date.now()}-ai`,
           speaker: "ai",
@@ -925,7 +1037,6 @@ function TextChatScreen({
         setMessages((prev) => [...prev, aiMessage]);
       }
     } catch (error: any) {
-      // 🚨 여기가 제일 중요합니다! 에러가 나면 꼭 이 로그를 확인하세요.
       console.error(
         "🚨 통신 에러 상세:",
         error.response?.data || error.message,
