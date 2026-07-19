@@ -18,6 +18,8 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { WebView } from "react-native-webview";
+// ⭐️ 음성 재생을 위해 expo-av에서 Audio를 꼭 불러와야 합니다!
+import { Audio } from "expo-av";
 
 const KAKAO_REST_API_KEY = "5775a3641d33077c7adf61cbcc01d0a9";
 const KAKAO_REDIRECT_URI = "https://localhost/kakao";
@@ -883,43 +885,99 @@ function SituationScreen({
   );
 }
 
-function VoiceChatScreen({
-  room,
-  go,
-}: {
-  room: { title: string };
-  go: (screen: Screen) => void;
-}) {
+export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   const [inCall, setInCall] = useState(false);
   const [muted, setMuted] = useState(false);
   const [speakerOff, setSpeakerOff] = useState(false);
   const [feedbackOn, setFeedbackOn] = useState(true);
   const [tab, setTab] = useState<"call" | "history" | "feedback">("call");
 
-  const history = useMemo<Message[]>(
-    () => [
-      {
-        id: "1",
-        speaker: "ai",
-        text: "Hello! How can I help you today?",
-        time: "10:30",
-      },
-      {
-        id: "2",
-        speaker: "user",
-        text: "I want to order a coffee, please.",
-        time: "10:31",
-        feedback: ["더 자연스럽게: I'd like to order a coffee, please."],
-      },
-      {
-        id: "3",
-        speaker: "ai",
-        text: "Sure! What size would you like?",
-        time: "10:31",
-      },
-    ],
-    [],
-  );
+  // ⭐️ 1. 더미 데이터(useMemo) 대신, 진짜 대화를 담을 그릇을 만듭니다.
+  const [messages, setMessages] = useState<Message[]>([]);
+  // ⭐️ 2. 화면 중앙 자막에 띄울 AI의 가장 최근 메시지를 저장합니다.
+  const [latestAiText, setLatestAiText] = useState("");
+  // ⭐️ 3. 소리가 재생 중인지 확인하는 상태
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // ⭐️ 4. 방에 처음 들어왔을 때 실행되는 마법의 API 호출!
+  useEffect(() => {
+    const enterVoiceRoom = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const currentRoomId = room.id;
+
+        const response = await axios.post(
+          `${API_URL}/api/rooms/${currentRoomId}/enter`,
+          {},
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+
+        console.log("👉 AI 입장 응답:", response.data);
+
+        const aiText = response.data?.data?.aiText || response.data?.aiText;
+        const audioUrl =
+          response.data?.data?.audioUrl || response.data?.audioUrl;
+
+        if (aiText) {
+          const aiMessage: Message = {
+            id: Date.now().toString(),
+            speaker: "ai",
+            text: aiText,
+            time: new Date().toLocaleTimeString("ko-KR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          };
+          setMessages([aiMessage]);
+          setLatestAiText(aiText); // 자막 업데이트
+          setInCall(true); // AI가 인사했으니 자동으로 통화 중 상태로 변경!
+        }
+
+        if (audioUrl) {
+          await playAudio(audioUrl);
+        }
+      } catch (error: any) {
+        console.error(
+          "🚨 음성방 입장 실패:",
+          error.response?.data || error.message,
+        );
+        Alert.alert("오류", "AI 파트너와 연결할 수 없습니다.");
+      }
+    };
+
+    if (room?.id) {
+      enterVoiceRoom();
+    }
+  }, [room?.id]);
+
+  // 🎵 5. 오디오를 재생하는 함수
+  const playAudio = async (url: string) => {
+    try {
+      setIsPlaying(true);
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: url },
+        { shouldPlay: true },
+      );
+
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setIsPlaying(false);
+          sound.unloadAsync(); // 메모리 정리
+        }
+      });
+    } catch (error) {
+      console.error("🚨 오디오 재생 실패:", error);
+      setIsPlaying(false);
+    }
+  };
 
   return (
     <View style={styles.screen}>
@@ -932,20 +990,22 @@ function VoiceChatScreen({
       {tab === "call" && (
         <View style={styles.callBody}>
           <View style={[styles.avatarLarge, inCall && styles.avatarActive]}>
-            <Text style={styles.avatarEmoji}>🤖</Text>
+            {/* 오디오가 재생 중일 때 🎵 아이콘으로 바뀌게 살짝 포인트를 줬습니다! */}
+            <Text style={styles.avatarEmoji}>{isPlaying ? "🎵" : "🤖"}</Text>
           </View>
           <Text style={styles.h2}>AI 파트너</Text>
           <Text style={styles.muted}>
             {inCall ? "통화 중입니다" : "통화를 시작해 보세요"}
           </Text>
-          {inCall && (
+
+          {/* ⭐️ 고정 텍스트 대신, AI의 진짜 인삿말 자막을 띄워줍니다. */}
+          {inCall && latestAiText ? (
             <View style={styles.subtitleBox}>
               <Text style={styles.caption}>AI 파트너</Text>
-              <Text style={styles.subtitleText}>
-                Hello! How can I help you today?
-              </Text>
+              <Text style={styles.subtitleText}>{latestAiText}</Text>
             </View>
-          )}
+          ) : null}
+
           <View style={styles.controlRow}>
             {inCall && (
               <RoundButton
@@ -986,9 +1046,10 @@ function VoiceChatScreen({
           </Pressable>
         </View>
       )}
-      {tab === "history" && <MessageList messages={history} />}
+      {/* ⭐️ 더미 history 대신, 진짜 messages 배열을 넘겨줍니다! */}
+      {tab === "history" && <MessageList messages={messages} />}
       {tab === "feedback" && (
-        <FeedbackList messages={history} enabled={feedbackOn} />
+        <FeedbackList messages={messages} enabled={feedbackOn} />
       )}
     </View>
   );
