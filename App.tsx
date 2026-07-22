@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import {
   Alert,
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -104,7 +105,7 @@ export default function App() {
           return;
         }
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         // 1. 오직 채팅방(Text) 목록만 가져오기 (roomType=CHAT)
         const chatResponse = await axios.get(
@@ -511,8 +512,7 @@ function RoomListScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL =
-                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
               // 서버에 삭제 요청 보내기
               await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
@@ -904,7 +904,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
     const enterVoiceRoom = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const currentRoomId = room.id;
 
         const response = await axios.post(
@@ -1069,7 +1069,7 @@ export function TextChatScreen({
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const currentRoomId = room.id;
 
       const payload = {
@@ -1110,7 +1110,7 @@ export function TextChatScreen({
     const fetchChatHistory = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         // 서버에서 이 방의 전체 대화 내역을 요청합니다.
         const response = await axios.get(
@@ -1174,7 +1174,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const currentRoomId = room.id;
 
       const response = await axios.post(
@@ -1271,57 +1271,63 @@ function SimpleFormScreen({
   );
 }
 
-function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
+export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
+  // ⭐️ 1. 기존의 interface Notice는 그대로 두셔도 되고, 서버 데이터 형식에 맞게 쓰셔도 됩니다.
   interface Notice {
-    id: string;
+    announcementId: number; // 백엔드 필드명에 맞춤
     title: string;
     content: string;
-    date: string;
-    isImportant: boolean;
+    createdAt: string; // 백엔드 필드명에 맞춤
+    isPinned: boolean; // 백엔드 필드명에 맞춤
   }
 
   const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
 
-  const notices: Notice[] = [
-    {
-      id: "1",
-      title: "SenTic 정식 오픈을 축하합니다! 🎉",
-      content: `안녕하세요, SenTic 팀입니다.\n\n드디어 SenTic이 정식으로 오픈하게 되었습니다!\n\nAI와 함께하는 영어 회화 학습 서비스 SenTic은 여러분의 영어 실력 향상을 위해 최선을 다하겠습니다.\n\n주요 기능:\n• 음성 대화 모드 - 실시간 AI 음성 대화\n• 채팅 대화 모드 - 텍스트 기반 학습\n• 실시간 피드백 - 문법, 발음, 표현 교정\n• 표현 북마크 - 유용한 표현 저장 및 복습\n\n앞으로도 더 나은 서비스를 제공하기 위해 노력하겠습니다.\n감사합니다.`,
-      date: "2026-04-06",
-      isImportant: true,
-    },
-    {
-      id: "2",
-      title: "프리미엄 플랜 출시 안내",
-      content: `프리미엄 플랜이 새롭게 출시되었습니다.\n\n프리미엄 플랜 혜택:\n• 무제한 대화 이용\n• 고급 AI 튜터 이용\n• 상세한 학습 리포트\n• 우선 고객 지원\n\n지금 바로 프리미엄으로 업그레이드하고 더 많은 기능을 경험해보세요!`,
-      date: "2026-04-05",
-      isImportant: false,
-    },
-    {
-      id: "3",
-      title: "서버 점검 안내 (완료)",
-      content: `서비스 품질 향상을 위한 서버 점검이 완료되었습니다.\n\n점검 일시: 2026년 4월 4일 02:00 ~ 04:00 (2시간)\n점검 내용: 서버 성능 개선 및 안정화 작업\n\n점검 중 일시적으로 서비스 이용이 불가능했던 점 양해 부탁드립니다.`,
-      date: "2026-04-04",
-      isImportant: false,
-    },
-    {
-      id: "4",
-      title: "AI 대화 품질 개선 업데이트",
-      content: `AI 대화 엔진이 업데이트되었습니다.\n\n개선 사항:\n• 더욱 자연스러운 대화 흐름\n• 발음 피드백 정확도 향상\n• 문법 교정 기능 강화\n• 다양한 주제 대화 지원 확대`,
-      date: "2026-04-03",
-      isImportant: false,
-    },
-    {
-      id: "5",
-      title: "이용약관 및 개인정보처리방침 개정 안내",
-      content: `이용약관 및 개인정보처리방침이 개정되었습니다.\n\n주요 변경 사항:\n• 개인정보 보호 정책 강화\n• 서비스 이용 조건 명확화\n• 데이터 처리 방침 개선`,
-      date: "2026-04-01",
-      isImportant: true,
-    },
-  ];
+  // ⭐️ 2. 더미 배열 대신 서버에서 가져온 데이터를 담을 상태를 만듭니다!
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const importantNotices = notices.filter((n) => n.isImportant);
-  const regularNotices = notices.filter((n) => !n.isImportant);
+  // ⭐️ 3. 화면이 켜지자마자 서버에서 공지사항 목록을 가져오는 통신 코드
+  useEffect(() => {
+    const fetchAnnouncements = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+
+        // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
+        const FULL_URL =
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
+
+        console.log("🚀 최종 요청 주소:", FULL_URL);
+
+        // ⭐️ 2. ngrok 우회 헤더와 함께 요청 전송
+        const response = await axios.get(FULL_URL, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true", // ngrok 경고 페이지 우회 치트키
+          },
+        });
+
+        console.log("📢 공지사항 목록 조회 성공:", response.data);
+
+        const list = response.data?.data || response.data || [];
+        setNotices(list);
+      } catch (error: any) {
+        console.error(
+          "🚨 공지사항 조회 실패:",
+          error.response?.data || error.message,
+        );
+        Alert.alert("오류", "공지사항을 불러오지 못했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAnnouncements();
+  }, []);
+
+  // ⭐️ 4. 백엔드가 알려준 'isPinned' 필드로 중요/일반 공지를 분류합니다!
+  const importantNotices = notices.filter((n) => n.isPinned === true);
+  const regularNotices = notices.filter((n) => n.isPinned !== true);
 
   if (selectedNotice) {
     return (
@@ -1336,13 +1342,15 @@ function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
           <Text style={ntStyles.headerTitle}>공지사항</Text>
         </View>
         <ScrollView contentContainerStyle={ntStyles.detailContent}>
-          {selectedNotice.isImportant && (
+          {selectedNotice.isPinned && (
             <View style={ntStyles.importantBadge}>
               <Text style={ntStyles.importantBadgeText}>📌 중요 공지</Text>
             </View>
           )}
           <Text style={ntStyles.detailTitle}>{selectedNotice.title}</Text>
-          <Text style={ntStyles.detailDate}>{selectedNotice.date}</Text>
+          <Text style={ntStyles.detailDate}>
+            {selectedNotice.createdAt?.substring(0, 10)}
+          </Text>
           <View style={ntStyles.detailCard}>
             <Text style={ntStyles.detailBody}>{selectedNotice.content}</Text>
           </View>
@@ -1377,7 +1385,7 @@ function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
             <View style={{ gap: 8 }}>
               {importantNotices.map((notice) => (
                 <Pressable
-                  key={notice.id}
+                  key={notice.announcementId}
                   style={ntStyles.importantCard}
                   onPress={() => setSelectedNotice(notice)}
                 >
@@ -1385,7 +1393,9 @@ function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
                     <Text style={ntStyles.noticeTitle} numberOfLines={1}>
                       {notice.title}
                     </Text>
-                    <Text style={ntStyles.noticeDate}>{notice.date}</Text>
+                    <Text style={ntStyles.noticeDate}>
+                      {notice.createdAt?.substring(0, 10)}
+                    </Text>
                   </View>
                   <Text style={styles.chevron}>›</Text>
                 </Pressable>
@@ -1401,7 +1411,7 @@ function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
             <View style={{ gap: 8, marginTop: 10 }}>
               {regularNotices.map((notice) => (
                 <Pressable
-                  key={notice.id}
+                  key={notice.announcementId}
                   style={ntStyles.regularCard}
                   onPress={() => setSelectedNotice(notice)}
                 >
@@ -1409,7 +1419,9 @@ function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
                     <Text style={ntStyles.noticeTitle} numberOfLines={1}>
                       {notice.title}
                     </Text>
-                    <Text style={ntStyles.noticeDate}>{notice.date}</Text>
+                    <Text style={ntStyles.noticeDate}>
+                      {notice.createdAt?.substring(0, 10)}
+                    </Text>
                   </View>
                   <Text style={styles.chevron}>›</Text>
                 </Pressable>
@@ -2116,88 +2128,49 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
   );
 }
 
-function FaqScreen({ go }: { go: (screen: Screen) => void }) {
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+function FaqScreen({ go }: { go: (screen: any) => void }) {
+  // 1. 서버에서 받아온 데이터를 담을 상태 (초기값은 빈 배열)
+  const [faqs, setFaqs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const faqData = [
-    {
-      category: "학습 방법",
-      items: [
-        {
-          question: "음성 대화와 채팅 대화의 차이는 무엇인가요?",
-          answer:
-            "음성 대화는 실제 전화 통화처럼 AI와 실시간으로 대화하며 발음과 유창성을 연습할 수 있습니다. 채팅 대화는 메시지 형식으로 문법과 표현을 천천히 연습할 수 있어, 각자의 학습 목적에 맞게 선택하실 수 있습니다.",
-        },
-        {
-          question: "하루에 얼마나 학습해야 하나요?",
-          answer:
-            "매일 15-20분 정도 꾸준히 학습하는 것을 권장합니다. 짧은 시간이라도 매일 반복하는 것이 실력 향상에 가장 효과적입니다.",
-        },
-        {
-          question: "피드백은 어떻게 확인하나요?",
-          answer:
-            "각 대화 종료 후 자동으로 피드백 화면이 표시되며, 마이페이지에서 이전 피드백을 다시 확인할 수 있습니다.",
-        },
-      ],
-    },
-    {
-      category: "기능 사용",
-      items: [
-        {
-          question: "요정 캐릭터는 언제 나타나나요?",
-          answer:
-            "음성 대화 중 문법이나 표현이 틀렸을 때 화면이 흑백으로 변하며 요정 캐릭터가 나타나 올바른 표현을 알려줍니다.",
-        },
-        {
-          question: "대화 상황은 어떻게 설정하나요?",
-          answer:
-            "대화 모드를 선택한 후 상황 설정 화면에서 원하는 시나리오를 선택할 수 있습니다. 카페 주문, 여행, 비즈니스 등 다양한 상황이 준비되어 있습니다.",
-        },
-        {
-          question: "학습 기록은 어디서 볼 수 있나요?",
-          answer:
-            "홈 화면에서 이번 주 학습 차트를 확인할 수 있으며, 마이페이지에서 더 자세한 학습 통계를 볼 수 있습니다.",
-        },
-      ],
-    },
-    {
-      category: "계정 및 결제",
-      items: [
-        {
-          question: "프리미엄 플랜의 혜택은 무엇인가요?",
-          answer:
-            "프리미엄 플랜은 무제한 대화, 모든 상황 시나리오 이용, 상세한 피드백 분석, 광고 제거 등의 혜택을 제공합니다.",
-        },
-        {
-          question: "비밀번호를 잊어버렸어요.",
-          answer:
-            "로그인 화면에서 '비밀번호 찾기'를 클릭하여 등록된 이메일로 인증 후 비밀번호를 재설정하실 수 있습니다.",
-        },
-        {
-          question: "구독을 취소하려면 어떻게 하나요?",
-          answer:
-            "마이페이지 > 결제 및 구독에서 언제든지 구독을 취소하실 수 있습니다. 남은 기간까지는 프리미엄 혜택이 유지됩니다.",
-        },
-      ],
-    },
-    {
-      category: "문제 해결",
-      items: [
-        {
-          question: "음성 인식이 잘 안 돼요.",
-          answer:
-            "조용한 환경에서 마이크에 가까이 또렷하게 말씀해주세요. 설정에서 마이크 권한을 확인하시고, 앱을 재시작해보시는 것도 도움이 됩니다.",
-        },
-        {
-          question: "앱이 느리거나 멈춰요.",
-          answer:
-            "기기를 재부팅하거나 앱을 재설치해보세요. 문제가 계속되면 고객센터로 문의해주시면 신속히 도와드리겠습니다.",
-        },
-      ],
-    },
-  ];
+  // 2. 열려있는 항목을 추적할 상태 (globalIndex 대신 카테고리-아이템 인덱스 조합 사용)
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  let globalIndex = 0;
+  // 3. 백엔드에서 FAQ 목록 불러오기 (공지사항과 99.9% 동일!)
+  useEffect(() => {
+    const fetchFaqs = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const FULL_URL =
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
+
+        console.log("🚀 FAQ 요청 주소:", FULL_URL);
+
+        const response = await axios.get(FULL_URL, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true", // ngrok 경고 페이지 우회
+          },
+        });
+
+        console.log("📢 FAQ 목록 조회 성공:", response.data);
+
+        // 서버 응답 구조에 맞게 데이터 세팅 (data.data 또는 data 자체)
+        const list = response.data?.data || response.data || [];
+        setFaqs(list);
+      } catch (error: any) {
+        console.error(
+          "🚨 FAQ 조회 실패:",
+          error.response?.data || error.message,
+        );
+        Alert.alert("오류", "FAQ를 불러오지 못했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchFaqs();
+  }, []);
 
   return (
     <View style={styles.screenSoft}>
@@ -2209,67 +2182,82 @@ function FaqScreen({ go }: { go: (screen: Screen) => void }) {
         <Text style={fqStyles.headerTitle}>자주 묻는 질문</Text>
       </View>
 
-      <ScrollView contentContainerStyle={fqStyles.content}>
-        {faqData.map((category, catIdx) => {
-          return (
-            <View key={catIdx} style={{ marginBottom: 6 }}>
-              <Text style={fqStyles.categoryLabel}>{category.category}</Text>
-              <View style={fqStyles.card}>
-                {category.items.map((item) => {
-                  const currentIndex = globalIndex++;
-                  const isExpanded = expandedIndex === currentIndex;
-                  return (
-                    <View key={currentIndex}>
-                      <Pressable
-                        style={[
-                          fqStyles.qRow,
-                          currentIndex > 0 && fqStyles.qRowBorder,
-                        ]}
-                        onPress={() =>
-                          setExpandedIndex(isExpanded ? null : currentIndex)
-                        }
-                      >
-                        <Text style={fqStyles.qLabel}>Q.</Text>
-                        <Text style={fqStyles.qText}>{item.question}</Text>
-                        <Text
-                          style={[
-                            fqStyles.chevronIcon,
-                            isExpanded && { transform: [{ rotate: "180deg" }] },
-                          ]}
-                        >
-                          ⌄
-                        </Text>
-                      </Pressable>
-                      {isExpanded && (
-                        <View style={fqStyles.aBox}>
-                          <Text style={fqStyles.aLabel}>A.</Text>
-                          <Text style={fqStyles.aText}>{item.answer}</Text>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          );
-        })}
+      {loading ? (
+        <ActivityIndicator
+          size="large"
+          color="#0000ff"
+          style={{ marginTop: 50 }}
+        />
+      ) : (
+        <ScrollView contentContainerStyle={fqStyles.content}>
+          {/* ⭐️ 하드코딩된 faqData 대신 서버에서 받아온 faqs 사용 */}
+          {faqs.map((category, catIdx) => {
+            return (
+              <View key={catIdx} style={{ marginBottom: 6 }}>
+                <Text style={fqStyles.categoryLabel}>{category.category}</Text>
+                <View style={fqStyles.card}>
+                  {category.items?.map((item: any, itemIdx: number) => {
+                    // ⭐️ globalIndex 대신 고유 ID 생성 (예: "0-1")
+                    const currentId = `${catIdx}-${itemIdx}`;
+                    const isExpanded = expandedId === currentId;
 
-        {/* 추가 문의 */}
-        <View style={fqStyles.contactBox}>
-          <Text style={fqStyles.contactTitle}>더 궁금한 점이 있으신가요?</Text>
-          <Text style={fqStyles.contactSub}>
-            support@sentic.app으로 문의해주세요
-          </Text>
-          <Pressable
-            style={fqStyles.contactBtn}
-            onPress={() =>
-              Alert.alert("고객센터", "support@sentic.app으로 문의해주세요.")
-            }
-          >
-            <Text style={fqStyles.contactBtnText}>고객센터 문의하기</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+                    return (
+                      <View key={currentId}>
+                        <Pressable
+                          style={[
+                            fqStyles.qRow,
+                            itemIdx > 0 && fqStyles.qRowBorder,
+                          ]}
+                          onPress={() =>
+                            setExpandedId(isExpanded ? null : currentId)
+                          }
+                        >
+                          <Text style={fqStyles.qLabel}>Q.</Text>
+                          <Text style={fqStyles.qText}>{item.question}</Text>
+                          <Text
+                            style={[
+                              fqStyles.chevronIcon,
+                              isExpanded && {
+                                transform: [{ rotate: "180deg" }],
+                              },
+                            ]}
+                          >
+                            ⌄
+                          </Text>
+                        </Pressable>
+                        {isExpanded && (
+                          <View style={fqStyles.aBox}>
+                            <Text style={fqStyles.aLabel}>A.</Text>
+                            <Text style={fqStyles.aText}>{item.answer}</Text>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            );
+          })}
+
+          {/* 추가 문의 */}
+          <View style={fqStyles.contactBox}>
+            <Text style={fqStyles.contactTitle}>
+              더 궁금한 점이 있으신가요?
+            </Text>
+            <Text style={fqStyles.contactSub}>
+              support@sentic.app으로 문의해주세요
+            </Text>
+            <Pressable
+              style={fqStyles.contactBtn}
+              onPress={() =>
+                Alert.alert("고객센터", "support@sentic.app으로 문의해주세요.")
+              }
+            >
+              <Text style={fqStyles.contactBtnText}>고객센터 문의하기</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      )}
     </View>
   );
 }
