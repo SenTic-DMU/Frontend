@@ -1,5 +1,5 @@
-import { Eye, EyeOff, ArrowLeft, CheckCircle2 } from "lucide-react";
-import { useState } from "react";
+import { Eye, EyeOff, ArrowLeft, CheckCircle2, Camera, X } from "lucide-react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
 // 이미 사용 중인 아이디 목록 (mock)
@@ -19,7 +19,25 @@ export function SignupScreen() {
     password: "",
     confirmPassword: "",
   });
+  const [profileImage, setProfileImage] = useState<File | null>(null);
+  const [profileImagePreview, setProfileImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+
+  const handleProfileImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setProfileImage(file);
+    const reader = new FileReader();
+    reader.onload = () => setProfileImagePreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveProfileImage = () => {
+    setProfileImage(null);
+    setProfileImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const handleUsernameChange = (value: string) => {
     setFormData({ ...formData, username: value });
@@ -93,6 +111,40 @@ export function SignupScreen() {
           </div>
 
           <form onSubmit={handleSignup} className="space-y-5">
+            {/* 프로필 사진 */}
+            <div className="flex flex-col items-center">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-20 h-20 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center overflow-hidden hover:bg-gray-100 transition-colors"
+                >
+                  {profileImagePreview ? (
+                    <img src={profileImagePreview} alt="프로필 미리보기" className="w-full h-full object-cover" />
+                  ) : (
+                    <Camera size={22} className="text-gray-400" />
+                  )}
+                </button>
+                {profileImagePreview && (
+                  <button
+                    type="button"
+                    onClick={handleRemoveProfileImage}
+                    className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center hover:bg-gray-700 transition-colors"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleProfileImageChange}
+                  className="hidden"
+                />
+              </div>
+              <span className="text-xs text-gray-400 mt-2">프로필 사진 (선택)</span>
+            </div>
+
             {/* 아이디 */}
             <div>
               <label className={labelClass}>아이디</label>

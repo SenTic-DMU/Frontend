@@ -191,13 +191,7 @@ export default function App() {
       {screen === "login" && (
         <LoginScreen go={go} onKakaoLogin={handleKakaoLogin} />
       )}
-      {screen === "signup" && (
-        <SimpleFormScreen
-          title="회원가입"
-          subtitle="SenTic 계정을 만들고 학습을 시작하세요."
-          go={go}
-        />
-      )}
+      {screen === "signup" && <SignupScreen go={go} />}
       {screen === "findAccount" && (
         <SimpleFormScreen
           title="계정 찾기"
@@ -399,6 +393,237 @@ function LoginScreen({
             </Pressable>
           </View>
         </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+function SignupScreen({ go }: { go: (screen: Screen) => void }) {
+  const [username, setUsername] = useState("");
+  const [nickname, setNickname] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [verificationSent, setVerificationSent] = useState(false);
+  const [verificationCode, setVerificationCode] = useState("");
+  const [emailVerified, setEmailVerified] = useState(false);
+
+  const handleSendVerification = () => {
+    if (!email.trim()) {
+      Alert.alert("입력 확인", "이메일을 입력해주세요.");
+      return;
+    }
+    // TODO: 백엔드 이메일 인증 API 연동 후 실제 발송으로 교체
+    setVerificationSent(true);
+    Alert.alert("인증번호 발송", "인증번호가 발송되었습니다! (테스트: 123456)");
+  };
+
+  const handleVerifyCode = () => {
+    // TODO: 백엔드 이메일 인증 API 연동 후 실제 검증으로 교체
+    if (verificationCode === "123456") {
+      setEmailVerified(true);
+    } else {
+      Alert.alert("인증 실패", "인증번호가 일치하지 않습니다.");
+    }
+  };
+
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+    setVerificationSent(false);
+    setEmailVerified(false);
+    setVerificationCode("");
+  };
+
+  const pickProfileImage = async () => {
+    if (Platform.OS !== "web") {
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("권한 필요", "갤러리 접근 권한이 필요합니다.");
+        return;
+      }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      setPhotoUri(result.assets[0].uri);
+    }
+  };
+
+  const handleSignup = () => {
+    if (
+      !username.trim() ||
+      !nickname.trim() ||
+      !email.trim() ||
+      !password ||
+      !confirmPassword
+    ) {
+      Alert.alert("입력 확인", "모든 항목을 입력해주세요.");
+      return;
+    }
+    if (!emailVerified) {
+      Alert.alert("이메일 인증 필요", "이메일 인증을 완료해주세요.");
+      return;
+    }
+    if (password.length < 8) {
+      Alert.alert("비밀번호 확인", "비밀번호는 8자 이상이어야 합니다.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert("비밀번호 확인", "비밀번호가 일치하지 않습니다.");
+      return;
+    }
+    // TODO: 백엔드 회원가입 API 연동 후 실제 요청으로 교체
+    go("mode");
+  };
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      style={styles.screen}
+    >
+      <Header title="회원가입" go={go} backTo="login" />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.mutedBlock}>
+          SenTic 계정을 만들고 학습을 시작하세요.
+        </Text>
+
+        <View style={styles.signupProfileImageRow}>
+          <Pressable onPress={pickProfileImage}>
+            {photoUri ? (
+              <Image
+                source={{ uri: photoUri }}
+                style={styles.signupProfileAvatar}
+              />
+            ) : (
+              <View style={styles.signupProfileAvatarSlot}>
+                <Text style={styles.cameraText}>📷</Text>
+              </View>
+            )}
+          </Pressable>
+          <Text style={styles.mutedSmall}>프로필 사진 (선택)</Text>
+        </View>
+
+        <Label text="아이디" />
+        <TextInput
+          value={username}
+          onChangeText={setUsername}
+          placeholder="아이디 입력"
+          style={styles.input}
+          autoCapitalize="none"
+        />
+        <Label text="닉네임" />
+        <TextInput
+          value={nickname}
+          onChangeText={setNickname}
+          placeholder="앱에서 사용할 이름"
+          style={styles.input}
+        />
+        <Label text="이메일" />
+        <View style={styles.signupInlineRow}>
+          <TextInput
+            value={email}
+            onChangeText={handleEmailChange}
+            placeholder="email@example.com"
+            style={[
+              styles.input,
+              styles.signupInlineInput,
+              emailVerified && { opacity: 0.6 },
+            ]}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            editable={!emailVerified}
+          />
+          <Pressable
+            style={[
+              styles.signupEmailButton,
+              (emailVerified || !email.trim()) && { opacity: 0.5 },
+            ]}
+            onPress={handleSendVerification}
+            disabled={emailVerified || !email.trim()}
+          >
+            <Text style={styles.signupEmailButtonText}>
+              {emailVerified ? "완료" : verificationSent ? "재발송" : "인증"}
+            </Text>
+          </Pressable>
+        </View>
+        {emailVerified && (
+          <Text style={styles.signupSuccessText}>✓ 이메일 인증 완료</Text>
+        )}
+        {verificationSent && !emailVerified && (
+          <View style={[styles.signupInlineRow, { marginTop: 10 }]}>
+            <TextInput
+              value={verificationCode}
+              onChangeText={setVerificationCode}
+              placeholder="6자리 인증번호 (테스트: 123456)"
+              style={[styles.input, styles.signupInlineInput]}
+              keyboardType="number-pad"
+              maxLength={6}
+            />
+            <Pressable
+              style={styles.signupEmailButton}
+              onPress={handleVerifyCode}
+            >
+              <Text style={styles.signupEmailButtonText}>확인</Text>
+            </Pressable>
+          </View>
+        )}
+        <Label text="비밀번호" />
+        <View style={styles.passwordRow}>
+          <TextInput
+            value={password}
+            onChangeText={setPassword}
+            placeholder="8자 이상"
+            secureTextEntry={!showPassword}
+            style={[styles.input, styles.passwordInput]}
+          />
+          <Pressable
+            style={styles.eyeButton}
+            onPress={() => setShowPassword((v) => !v)}
+          >
+            <Text style={styles.iconText}>
+              {showPassword ? "숨김" : "보기"}
+            </Text>
+          </Pressable>
+        </View>
+        <Label text="비밀번호 확인" />
+        <View style={styles.passwordRow}>
+          <TextInput
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="비밀번호 재입력"
+            secureTextEntry={!showConfirmPassword}
+            style={[styles.input, styles.passwordInput]}
+          />
+          <Pressable
+            style={styles.eyeButton}
+            onPress={() => setShowConfirmPassword((v) => !v)}
+          >
+            <Text style={styles.iconText}>
+              {showConfirmPassword ? "숨김" : "보기"}
+            </Text>
+          </Pressable>
+        </View>
+        {confirmPassword.length > 0 && password !== confirmPassword && (
+          <Text style={styles.errorText}>비밀번호가 일치하지 않습니다</Text>
+        )}
+
+        <Pressable
+          style={[styles.primaryButton, { marginTop: 20 }]}
+          onPress={handleSignup}
+        >
+          <Text style={styles.primaryButtonText}>가입하기</Text>
+        </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -3648,6 +3873,35 @@ const styles = StyleSheet.create({
   iconText: { color: "#6B7280", fontSize: 12 },
   alignRight: { alignItems: "flex-end", marginVertical: 12 },
   linkText: { color: primary, fontSize: 13, fontWeight: "700" },
+  errorText: { color: "#DC2626", fontSize: 12, marginTop: 6 },
+  signupSuccessText: { color: "#16A34A", fontSize: 12, marginTop: 6 },
+  signupInlineRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  signupInlineInput: { flex: 1 },
+  signupEmailButton: {
+    backgroundColor: primary,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+  },
+  signupEmailButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+  signupProfileImageRow: { alignItems: "center", gap: 8, marginBottom: 8 },
+  signupProfileAvatar: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 1,
+    borderColor: border,
+  },
+  signupProfileAvatarSlot: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 1,
+    borderColor: border,
+    backgroundColor: "#F9FAFB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   primaryButton: {
     backgroundColor: primary,
     borderRadius: 14,
