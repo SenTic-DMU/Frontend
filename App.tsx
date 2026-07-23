@@ -68,71 +68,56 @@ const darkPrimary = "#4338CA";
 const softBg = "#F5F5F7";
 const border = "#E5E7EB";
 
-const voiceRooms = [
-  {
-    id: "cafe",
-    title: "카페에서 주문하기",
-    desc: "바리스타와 자연스럽게 말하기",
-    level: "초급",
-  },
-  {
-    id: "airport",
-    title: "공항 체크인",
-    desc: "탑승 수속과 수하물 대화",
-    level: "중급",
-  },
-  {
-    id: "meeting",
-    title: "팀 미팅 참여",
-    desc: "의견 말하기와 질문하기",
-    level: "고급",
-  },
-];
-
 export default function App() {
-  // 1. 이게 무조건 먼저 있어야 합니다! (이름이 screen이 맞는지도 확인해주세요)
   const [screen, setScreen] = useState<Screen>("login");
-  const [chatRooms, setChatRooms] = useState<any[]>([]);
 
-  // ⭐️ 로그인 후 화면이 바뀔 때 '채팅방' 목록만 깔끔하게 불러옵니다!
+  // ⭐️ 1. 더미 데이터를 지우고, 상태(State)로 음성방을 관리하도록 추가합니다!
+  const [chatRooms, setChatRooms] = useState<any[]>([]);
+  const [voiceRooms, setVoiceRooms] = useState<any[]>([]); // 👈 새로 추가!
+
+  // ⭐️ 2. 채팅방 + 음성방 목록을 한 번에 불러오도록 업그레이드합니다.
   useEffect(() => {
     const fetchMyRooms = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
 
         if (!accessToken) {
-          // 토큰 없으면 조용히 패스
           return;
         }
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const headers = {
+          Authorization: `Bearer ${accessToken}`,
+          "ngrok-skip-browser-warning": "true", // 👈 혹시 빠져있었다면 이거 꼭 넣어주세요!
+        };
 
-        // 1. 오직 채팅방(Text) 목록만 가져오기 (roomType=CHAT)
+        // 1. 채팅방(Text) 목록 가져오기
         const chatResponse = await axios.get(
           `${API_URL}/api/rooms?roomType=CHAT`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          },
+          { headers },
         );
 
-        // ⭐️ 이 줄을 추가해서 터미널에 데이터를 찍어봅니다!
-        console.log("👉 서버가 준 방 목록 원본 데이터:", chatResponse.data);
+        // 2. 음성방(Voice) 목록 가져오기 (백엔드 파라미터가 'VOICE'라고 가정)
+        const voiceResponse = await axios.get(
+          `${API_URL}/api/rooms?roomType=VOICE`,
+          { headers },
+        );
 
-        const rawRooms = chatResponse.data?.data || [];
+        // ⭐️ 번역(Mapping) 로직을 함수로 만들어서 둘 다 똑같이 예쁘게 포장해줍니다.
+        const formatRooms = (rawRooms: any[]) => {
+          return rawRooms.map((room: any) => ({
+            id: room.id,
+            title: room.roomName || "새로운 대화",
+            desc: room.situation || "대화 상황이 설정되지 않았습니다.",
+            date:
+              (room.lastActiveAt || room.createdAt)?.split("T")[0] || "오늘",
+            level: room.level || "맞춤", // 음성방에 필요했던 level 값 (없으면 '맞춤'으로 처리)
+          }));
+        };
 
-        // ⭐️ 백엔드 데이터를 프론트엔드 UI에 맞게 번역(Mapping)해줍니다.
-        const formattedRooms = rawRooms.map((room: any) => ({
-          id: room.id,
-          // roomName이 없으면(null) '새로운 대화'라고 띄워줍니다.
-          title: room.roomName || "새로운 대화",
-          // situation이 없으면 기본 문구를 띄워줍니다.
-          desc: room.situation || "대화 상황이 설정되지 않았습니다.",
-          // "2026-07-19T14:00:14" 처럼 생긴 날짜에서 "2026-07-19" 부분만 잘라서 씁니다.
-          date: (room.lastActiveAt || room.createdAt).split("T")[0],
-        }));
-
-        // 번역이 끝난 예쁜 데이터를 그릇에 담습니다!
-        setChatRooms(formattedRooms);
+        // 포장된 데이터를 각각의 그릇에 담습니다!
+        setChatRooms(formatRooms(chatResponse.data?.data || []));
+        setVoiceRooms(formatRooms(voiceResponse.data?.data || []));
       } catch (error: any) {
         console.error(
           "🚨 방 목록 불러오기 실패 상세원인:",
@@ -141,8 +126,12 @@ export default function App() {
       }
     };
 
-    // 🚨 조건에서도 voiceRooms를 뺐습니다! (채팅방이나 모드 선택 화면일 때만 실행)
-    if (screen === "chatRooms" || screen === "mode") {
+    // ⭐️ 3. 조건에 "voiceRooms" 화면일 때도 실행되도록 추가합니다!
+    if (
+      screen === "chatRooms" ||
+      screen === "voiceRooms" ||
+      screen === "mode"
+    ) {
       fetchMyRooms();
     }
   }, [screen]);
@@ -737,7 +726,8 @@ function RoomListScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+              const API_URL =
+                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
               // 서버에 삭제 요청 보내기
               await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
@@ -1111,6 +1101,10 @@ function SituationScreen({
 }
 
 export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
+  // ⭐️ 이거 딱 한 줄만 추가해서 터미널을 확인해 보세요!
+  console.log("🧐 현재 넘어온 방 정보 전체보기:", room);
+  console.log("🧐 전송할 때 쓰는 roomId 값:", room?.id);
+
   const [inCall, setInCall] = useState(false);
   const [muted, setMuted] = useState(false);
   const [speakerOff, setSpeakerOff] = useState(false);
@@ -1124,15 +1118,56 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   // ⭐️ 3. 소리가 재생 중인지 확인하는 상태
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // ⭐️ 4. 방에 처음 들어왔을 때 실행되는 마법의 API 호출!
+  // ⭐️ 추가: 녹음 상태 관리를 위한 변수
+  const [recording, setRecording] = useState<any>(null); // 실제 녹음 객체
+  const [isRecording, setIsRecording] = useState(false); // 녹음 중인지 여부 UI 표시용
+
+  // ⭐️ 4. 방에 처음 들어왔을 때 과거 기록을 깔고 AI 인사말을 부릅니다.
   useEffect(() => {
-    const enterVoiceRoom = async () => {
+    const fetchHistoryAndEnter = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const currentRoomId = room.id;
 
-        const response = await axios.post(
+        // 📜 1. 이전 대화 기록 먼저 불러오기 (채팅방과 같은 API 주소 사용)
+        const historyRes = await axios.get(
+          `${API_URL}/api/rooms/${currentRoomId}/messages`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "ngrok-skip-browser-warning": "true",
+            },
+          },
+        );
+
+        // ⭐️ 이 줄을 추가해서 터미널에 찍히는 진짜 데이터를 확인해 보세요!
+        console.log("🧐 서버가 준 과거 기록 원본:", historyRes.data);
+
+        const pastMessages = historyRes.data?.data || historyRes.data || [];
+
+        // ⭐️ 백엔드의 실제 필드명(senderType, contentText)에 맞게 수정 완료!
+        const formattedHistory = pastMessages.map((msg: any, idx: number) => ({
+          id: msg.id?.toString() || `history-${idx}`,
+          // msg.sender 가 아니라 msg.senderType 입니다!
+          speaker: msg.senderType === "USER" ? "user" : "ai",
+          // msg.content 가 아니라 msg.contentText 입니다!
+          text: msg.contentText || "",
+          // 시간 포맷 자르기 (예: "2026-07-24T00:04:08" -> "00:04")
+          time: msg.createdAt ? msg.createdAt.substring(11, 16) : "이전",
+        }));
+
+        // ⭐️ 번역된 과거 기록을 화면에 쫙 깔아줍니다.
+        setMessages(formattedHistory);
+
+        // 자막에 가장 최근 AI 말을 띄워놓습니다.
+        const lastAiMsg = [...formattedHistory]
+          .reverse()
+          .find((m: any) => m.speaker === "ai");
+        if (lastAiMsg) setLatestAiText(lastAiMsg.text);
+
+        // 🤖 2. 방 입장 처리 및 새로운 AI 인사말 받아오기
+        const enterRes = await axios.post(
           `${API_URL}/api/rooms/${currentRoomId}/enter`,
           {},
           {
@@ -1143,11 +1178,9 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
           },
         );
 
-        console.log("👉 AI 입장 응답:", response.data);
-
-        const aiText = response.data?.data?.aiText || response.data?.aiText;
+        const aiText = enterRes.data?.data?.aiText || enterRes.data?.aiText;
         const audioUrl =
-          response.data?.data?.audioUrl || response.data?.audioUrl;
+          enterRes.data?.data?.audioUrl || enterRes.data?.audioUrl;
 
         if (aiText) {
           const aiMessage: Message = {
@@ -1159,9 +1192,11 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
               minute: "2-digit",
             }),
           };
-          setMessages([aiMessage]);
-          setLatestAiText(aiText); // 자막 업데이트
-          setInCall(true); // AI가 인사했으니 자동으로 통화 중 상태로 변경!
+
+          // ⭐️ 핵심: 과거 기록(prev) 밑에 새로운 인사말을 살짝 추가합니다.
+          setMessages((prev) => [...prev, aiMessage]);
+          setLatestAiText(aiText);
+          setInCall(true);
         }
 
         if (audioUrl) {
@@ -1169,15 +1204,14 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
         }
       } catch (error: any) {
         console.error(
-          "🚨 음성방 입장 실패:",
+          "🚨 음성방 기록 불러오기/입장 실패:",
           error.response?.data || error.message,
         );
-        Alert.alert("오류", "AI 파트너와 연결할 수 없습니다.");
       }
     };
 
     if (room?.id) {
-      enterVoiceRoom();
+      fetchHistoryAndEnter();
     }
   }, [room?.id]);
 
@@ -1201,6 +1235,138 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
     } catch (error) {
       console.error("🚨 오디오 재생 실패:", error);
       setIsPlaying(false);
+    }
+  };
+
+  // 🎤 녹음 시작 함수
+  const startRecording = async () => {
+    try {
+      // 1. 마이크 권한 요청
+      const permission = await Audio.requestPermissionsAsync();
+      if (permission.status !== "granted") {
+        Alert.alert("권한 필요", "마이크 접근 권한을 허용해 주세요.");
+        return;
+      }
+
+      // 2. 오디오 모드를 '녹음 가능' 상태로 변경
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      // 3. 고음질로 녹음 시작
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+      );
+
+      setRecording(newRecording);
+      setIsRecording(true);
+      console.log("🎙️ 녹음 시작됨...");
+    } catch (err) {
+      console.error("🚨 녹음 시작 실패:", err);
+    }
+  };
+
+  // ⏹️ 녹음 종료 및 파일 전송 준비 함수
+  const stopRecordingAndSend = async () => {
+    try {
+      if (!recording) return;
+
+      setIsRecording(false);
+      await recording.stopAndUnloadAsync(); // 녹음 중지 및 메모리 정리
+      const uri = recording.getURI(); // ⭐️ 기기에 저장된 임시 파일 주소 획득!
+      setRecording(null);
+
+      console.log("저장된 녹음 파일 주소:", uri);
+
+      if (uri) {
+        // 서버로 전송!
+        await sendVoiceToServer(uri);
+      }
+    } catch (err) {
+      console.error("🚨 녹음 종료 실패:", err);
+    }
+  };
+
+  // 🚀 서버로 음성 파일 전송 (FormData 핵심 영역)
+  const sendVoiceToServer = async (fileUri: string) => {
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+      const formData = new FormData();
+      formData.append("file", {
+        uri: fileUri,
+        type: "audio/m4a",
+        name: "my_voice.m4a",
+      } as any);
+
+      const response = await axios.post(
+        `${API_URL}/api/rooms/${room.id}/messages/voice`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true",
+            "Content-Type": "multipart/form-data",
+          },
+        },
+      );
+
+      console.log("✅ 내 음성 전송 성공 응답 데이터:", response.data);
+
+      const responseData = response.data?.data || response.data;
+
+      // ⭐️ 백엔드에서 내가 한 말(STT 결과)과 AI의 대답을 가져옵니다.
+      // (백엔드 명세서에 따라 userText, recognizedText 등의 이름을 확인해야 합니다!)
+      const userText =
+        responseData?.userText || responseData?.content || "내가 한 말(STT)";
+      const aiText = responseData?.aiText;
+      const audioUrl = responseData?.audioUrl;
+
+      const newMessages: Message[] = [];
+
+      // 1. 내 말풍선 만들기
+      if (userText) {
+        newMessages.push({
+          id: Date.now().toString() + "-user",
+          speaker: "user",
+          text: userText, // 서버가 내 목소리를 글자로 변환해준 결과!
+          time: new Date().toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        });
+      }
+
+      // 2. AI 대답 말풍선 만들기
+      if (aiText) {
+        setLatestAiText(aiText);
+        newMessages.push({
+          id: Date.now().toString() + "-ai",
+          speaker: "ai",
+          text: aiText,
+          time: new Date().toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        });
+      }
+
+      // 3. 기존 대화 기록 밑에 내 말과 AI 말을 연달아 붙여줍니다!
+      if (newMessages.length > 0) {
+        setMessages((prev) => [...prev, ...newMessages]);
+      }
+
+      if (audioUrl) {
+        await playAudio(audioUrl); // AI 답변 다시 재생!
+      }
+    } catch (error: any) {
+      console.error(
+        "🚨 음성 전송 실패:",
+        error.response?.data || error.message,
+      );
+      Alert.alert("오류", "메시지를 전송하지 못했습니다.");
     }
   };
 
@@ -1242,6 +1408,13 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
               <RoundButton
                 label={speakerOff ? "스피커끔" : "스피커"}
                 onPress={() => setSpeakerOff((v) => !v)}
+              />
+            )}
+            {inCall && (
+              <RoundButton
+                label={isRecording ? "녹음 중지" : "내 답변 녹음"}
+                // isRecording 상태에 따라 시작할지, 멈추고 서버로 보낼지 결정!
+                onPress={isRecording ? stopRecordingAndSend : startRecording}
               />
             )}
             <Pressable
@@ -1294,7 +1467,7 @@ export function TextChatScreen({
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const currentRoomId = room.id;
 
       const payload = {
@@ -1335,7 +1508,7 @@ export function TextChatScreen({
     const fetchChatHistory = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // 서버에서 이 방의 전체 대화 내역을 요청합니다.
         const response = await axios.get(
@@ -1399,7 +1572,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const currentRoomId = room.id;
 
       const response = await axios.post(
@@ -1499,11 +1672,12 @@ function SimpleFormScreen({
 export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
   // ⭐️ 1. 기존의 interface Notice는 그대로 두셔도 되고, 서버 데이터 형식에 맞게 쓰셔도 됩니다.
   interface Notice {
-    announcementId: number; // 백엔드 필드명에 맞춤
+    id: number; // announcementId -> id 로 변경
     title: string;
     content: string;
-    createdAt: string; // 백엔드 필드명에 맞춤
-    isPinned: boolean; // 백엔드 필드명에 맞춤
+    createdAt: string;
+    updatedAt: string; // (선택) 서버에서 주니까 추가해 두면 좋습니다.
+    pinned: boolean; // isPinned -> pinned 로 변경
   }
 
   const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
@@ -1520,7 +1694,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
         // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
         const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/announcements";
 
         console.log("🚀 최종 요청 주소:", FULL_URL);
 
@@ -1551,8 +1725,8 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
   }, []);
 
   // ⭐️ 4. 백엔드가 알려준 'isPinned' 필드로 중요/일반 공지를 분류합니다!
-  const importantNotices = notices.filter((n) => n.isPinned === true);
-  const regularNotices = notices.filter((n) => n.isPinned !== true);
+  const importantNotices = notices.filter((n) => n.pinned === true);
+  const regularNotices = notices.filter((n) => n.pinned !== true);
 
   if (selectedNotice) {
     return (
@@ -1567,7 +1741,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
           <Text style={ntStyles.headerTitle}>공지사항</Text>
         </View>
         <ScrollView contentContainerStyle={ntStyles.detailContent}>
-          {selectedNotice.isPinned && (
+          {selectedNotice.pinned && (
             <View style={ntStyles.importantBadge}>
               <Text style={ntStyles.importantBadgeText}>📌 중요 공지</Text>
             </View>
@@ -1610,7 +1784,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
             <View style={{ gap: 8 }}>
               {importantNotices.map((notice) => (
                 <Pressable
-                  key={notice.announcementId}
+                  key={notice.id}
                   style={ntStyles.importantCard}
                   onPress={() => setSelectedNotice(notice)}
                 >
@@ -1636,7 +1810,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
             <View style={{ gap: 8, marginTop: 10 }}>
               {regularNotices.map((notice) => (
                 <Pressable
-                  key={notice.announcementId}
+                  key={notice.id}
                   style={ntStyles.regularCard}
                   onPress={() => setSelectedNotice(notice)}
                 >
@@ -2367,7 +2541,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/faq";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -2415,54 +2589,48 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
         />
       ) : (
         <ScrollView contentContainerStyle={fqStyles.content}>
-          {/* ⭐️ 하드코딩된 faqData 대신 서버에서 받아온 faqs 사용 */}
-          {faqs.map((category, catIdx) => {
-            return (
-              <View key={catIdx} style={{ marginBottom: 6 }}>
-                <Text style={fqStyles.categoryLabel}>{category.category}</Text>
-                <View style={fqStyles.card}>
-                  {category.items?.map((item: any, itemIdx: number) => {
-                    // ⭐️ globalIndex 대신 고유 ID 생성 (예: "0-1")
-                    const currentId = `${catIdx}-${itemIdx}`;
-                    const isExpanded = expandedId === currentId;
+          <View style={fqStyles.card}>
+            {/* ⭐️ 백엔드에서 받은 1단 배열(faqs)을 바로 map으로 돌립니다! */}
+            {faqs.map((faq, index) => {
+              // 고유 ID로 faq.id 를 사용합니다. (문자열로 변환하여 비교)
+              const isExpanded = expandedId === String(faq.id);
 
-                    return (
-                      <View key={currentId}>
-                        <Pressable
-                          style={[
-                            fqStyles.qRow,
-                            itemIdx > 0 && fqStyles.qRowBorder,
-                          ]}
-                          onPress={() =>
-                            setExpandedId(isExpanded ? null : currentId)
-                          }
-                        >
-                          <Text style={fqStyles.qLabel}>Q.</Text>
-                          <Text style={fqStyles.qText}>{item.question}</Text>
-                          <Text
-                            style={[
-                              fqStyles.chevronIcon,
-                              isExpanded && {
-                                transform: [{ rotate: "180deg" }],
-                              },
-                            ]}
-                          >
-                            ⌄
-                          </Text>
-                        </Pressable>
-                        {isExpanded && (
-                          <View style={fqStyles.aBox}>
-                            <Text style={fqStyles.aLabel}>A.</Text>
-                            <Text style={fqStyles.aText}>{item.answer}</Text>
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })}
+              return (
+                <View key={faq.id}>
+                  <Pressable
+                    style={[
+                      fqStyles.qRow,
+                      index > 0 && fqStyles.qRowBorder, // 두 번째 항목부터 윗줄 테두리 적용
+                    ]}
+                    onPress={() =>
+                      setExpandedId(isExpanded ? null : String(faq.id))
+                    }
+                  >
+                    <Text style={fqStyles.qLabel}>Q.</Text>
+                    {/* 데이터 필드명 question 사용 */}
+                    <Text style={fqStyles.qText}>{faq.question}</Text>
+                    <Text
+                      style={[
+                        fqStyles.chevronIcon,
+                        isExpanded && {
+                          transform: [{ rotate: "180deg" }],
+                        },
+                      ]}
+                    >
+                      ⌄
+                    </Text>
+                  </Pressable>
+                  {isExpanded && (
+                    <View style={fqStyles.aBox}>
+                      <Text style={fqStyles.aLabel}>A.</Text>
+                      {/* 데이터 필드명 answer 사용 */}
+                      <Text style={fqStyles.aText}>{faq.answer}</Text>
+                    </View>
+                  )}
                 </View>
-              </View>
-            );
-          })}
+              );
+            })}
+          </View>
 
           {/* 추가 문의 */}
           <View style={fqStyles.contactBox}>
