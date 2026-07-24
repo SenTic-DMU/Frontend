@@ -43,12 +43,24 @@ type Screen =
   | "notice"
   | "faq";
 
+// ⭐️ 피드백 객체의 생김새 정의
+interface FeedbackData {
+  id: number;
+  roomId?: number;
+  messageId?: number;
+  wordErrors?: string | null;
+  grammarErrors?: string | null;
+  expressionErrors?: string | null;
+  perfectSentence?: string | null;
+  createdAt?: string;
+}
+
 type Message = {
   id: string;
   speaker: "user" | "ai";
   text: string;
   time: string;
-  feedback?: string[];
+  feedback?: FeedbackData[];
 };
 
 type PracticeRoom = {
@@ -1453,30 +1465,86 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   );
 }
 
+// ⭐️ 1. 괄호([]) 찌꺼기를 없애고 예쁜 디자인을 입혀주는 도우미 함수 (컴포넌트 밖에 선언)
+const renderFeedbackSection = (
+  title: string,
+  jsonString: string | null | undefined,
+  icon: string,
+) => {
+  if (!jsonString || jsonString.trim() === "[]") return null;
+
+  try {
+    const parsedData =
+      typeof jsonString === "string" ? JSON.parse(jsonString) : jsonString;
+
+    if (!Array.isArray(parsedData) || parsedData.length === 0) return null;
+
+    return (
+      <View style={{ marginTop: 12 }}>
+        <Text style={{ fontWeight: "bold", marginBottom: 4, color: "#333" }}>
+          {icon} {title}
+        </Text>
+        {parsedData.map((errorItem: any, index: number) => (
+          <View
+            key={index}
+            style={{
+              backgroundColor: "rgba(255, 255, 255, 0.6)", // 살짝 투명한 흰색 박스
+              padding: 10,
+              borderRadius: 8,
+              marginBottom: 6,
+            }}
+          >
+            <Text style={{ fontSize: 15, marginBottom: 4 }}>
+              <Text
+                style={{ textDecorationLine: "line-through", color: "#ff5252" }}
+              >
+                {errorItem.original}
+              </Text>{" "}
+              ➡️{" "}
+              <Text style={{ color: "#4caf50", fontWeight: "bold" }}>
+                {errorItem.suggested || errorItem.corrected}
+              </Text>
+            </Text>
+            <Text style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
+              {errorItem.explanation}
+            </Text>
+          </View>
+        ))}
+      </View>
+    );
+  } catch (error) {
+    return (
+      <View style={{ marginTop: 12 }}>
+        <Text style={{ fontWeight: "bold", marginBottom: 4, color: "#333" }}>
+          {icon} {title}
+        </Text>
+        <Text style={{ fontSize: 14, color: "#333" }}>{jsonString}</Text>
+      </View>
+    );
+  }
+};
+
 export function TextChatScreen({
   room,
   go,
 }: {
   room: { id: number; title: string };
-  go: (screen: Screen) => void;
+  go: (screen: any) => void;
 }) {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<any[]>([]); // Message 타입 대체
 
-  // ⭐️ 1. [기존] AI 첫인사 요청 함수 (밖으로 안전하게 빼두었습니다!)
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
       const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
-      const currentRoomId = room.id;
-
       const payload = {
         content:
           "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
       };
 
       const response = await axios.post(
-        `${API_URL}/api/rooms/${currentRoomId}/messages/chat`,
+        `${API_URL}/api/rooms/${room.id}/messages/chat`,
         payload,
         {
           headers: {
@@ -1487,7 +1555,7 @@ export function TextChatScreen({
       );
 
       if (response.data) {
-        const aiMessage: Message = {
+        const aiMessage = {
           id: `${Date.now()}-ai-init`,
           speaker: "ai",
           text: response.data.data?.content || "Hello!",
@@ -1503,43 +1571,53 @@ export function TextChatScreen({
     }
   };
 
-  // ⭐️ 2. [신규] 화면이 켜질 때 과거 대화를 불러오는 마법의 공간!
   useEffect(() => {
     const fetchChatHistory = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
-
-        // 서버에서 이 방의 전체 대화 내역을 요청합니다.
         const response = await axios.get(
           `${API_URL}/api/rooms/${room.id}/messages`,
           { headers: { Authorization: `Bearer ${accessToken}` } },
         );
 
-        console.log("👉 서버가 준 대화 내역 원본:", response.data);
+        console.log(
+          "👉 백엔드 데이터 확인:",
+          JSON.stringify(response.data, null, 2),
+        );
 
-        // 백엔드에서 준 데이터 배열 (형태에 따라 수정이 필요할 수 있습니다)
         const history = response.data?.data || response.data || [];
-
-        // 🚨 핵심 로직: 대화 내역이 있으면 화면에 뿌리고, 없으면 첫인사를 시킵니다!
         if (history.length > 0) {
           const formattedHistory = history
-            // ⭐️ 1단계: "시스템"으로 시작하는 비밀 지령(첫 메시지)은 화면에 안 보이게 숨깁니다!
             .filter((msg: any) => !msg.contentText.includes("(시스템:"))
-            // ⭐️ 2단계: 백엔드의 이름표(senderType, contentText)를 프론트엔드에 맞게 번역합니다!
-            .map((msg: any) => ({
-              id: msg.id.toString(),
-              speaker: msg.senderType === "AI" ? "ai" : "user",
-              text: msg.contentText,
-              time: new Date(msg.createdAt).toLocaleTimeString("ko-KR", {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-            }));
+            .map((msg: any) => {
+              // ⭐️ 여기에 피드백 변환 로직이 들어갑니다!
+              let parsedFeedback = undefined;
+              if (msg.feedback) {
+                const rawFeedback =
+                  typeof msg.feedback === "string"
+                    ? JSON.parse(msg.feedback)
+                    : msg.feedback;
 
+                parsedFeedback = Array.isArray(rawFeedback)
+                  ? rawFeedback
+                  : [rawFeedback];
+              }
+
+              // ⭐️ 괄호가 ({ }) 에서 { return { ... } } 형태로 바뀌었습니다.
+              return {
+                id: msg.id.toString(),
+                speaker: msg.senderType === "AI" ? "ai" : "user",
+                text: msg.contentText,
+                time: new Date(msg.createdAt).toLocaleTimeString("ko-KR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+                feedback: parsedFeedback, // 👈 추출한 피드백 데이터를 추가!
+              };
+            });
           setMessages(formattedHistory);
         } else {
-          // 배열이 비어있다면? 처음 들어온 방이므로 첫인사 함수를 실행합니다!
           requestInitialGreeting();
         }
       } catch (error) {
@@ -1547,18 +1625,16 @@ export function TextChatScreen({
       }
     };
 
-    if (room?.id) {
-      fetchChatHistory();
-    }
-  }, [room?.id]); // 방 번호가 바뀔 때마다 다시 실행됩니다.
+    if (room?.id) fetchChatHistory();
+  }, [room?.id]);
 
-  // ⭐️ 3. [기존] 메시지 전송 함수
   const send = async () => {
     const text = input.trim();
     if (!text) return;
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
+    const userMsgId = Date.now().toString();
+    const userMessage = {
+      id: userMsgId,
       speaker: "user",
       text,
       time: new Date().toLocaleTimeString("ko-KR", {
@@ -1573,10 +1649,8 @@ export function TextChatScreen({
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
       const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
-      const currentRoomId = room.id;
-
       const response = await axios.post(
-        `${API_URL}/api/rooms/${currentRoomId}/messages/chat`,
+        `${API_URL}/api/rooms/${room.id}/messages/chat`,
         { content: text },
         {
           headers: {
@@ -1587,7 +1661,23 @@ export function TextChatScreen({
       );
 
       if (response.data) {
-        const aiMessage: Message = {
+        const aiFeedback = response.data.data?.feedback;
+        if (aiFeedback) {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === userMsgId
+                ? {
+                    ...msg,
+                    feedback: Array.isArray(aiFeedback)
+                      ? aiFeedback
+                      : [aiFeedback],
+                  }
+                : msg,
+            ),
+          );
+        }
+
+        const aiMessage = {
           id: `${Date.now()}-ai`,
           speaker: "ai",
           text: response.data.data?.content || "응답이 없습니다.",
@@ -1603,30 +1693,150 @@ export function TextChatScreen({
         "🚨 통신 에러 상세:",
         error.response?.data || error.message,
       );
-      // ... 에러 메시지 처리 ... (기존과 동일)
     }
   };
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0} // 👈 2. 안드로이드 상단 헤더 높이만큼 여백 추가
-      style={styles.screen}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+      style={{ flex: 1, backgroundColor: "#f5f5f5" }} // styles.screen 대체
     >
-      <Header title={room.title} go={go} backTo="chatRooms" />
-      <MessageList messages={messages} />
-      <View style={styles.composer}>
+      {<Header title={room.title} go={go} backTo="chatRooms" />}
+
+      {/* ⭐️ 3. MessageList를 빼버리고 여기서 직접 채팅과 피드백을 그립니다! */}
+      <ScrollView
+        style={{ flex: 1, paddingHorizontal: 16 }}
+        contentContainerStyle={{ paddingVertical: 20 }}
+      >
+        {messages.map((msg) => {
+          const isUser = msg.speaker === "user";
+
+          return (
+            <View
+              key={msg.id}
+              style={{
+                marginBottom: 20,
+                alignItems: isUser ? "flex-end" : "flex-start",
+                width: "100%",
+              }}
+            >
+              {/* 대화 말풍선 */}
+              <View
+                style={{
+                  backgroundColor: isUser ? "#5C6BC0" : "#ffffff", // 내 메시지는 파란색, AI는 흰색
+                  padding: 12,
+                  borderRadius: 16,
+                  borderBottomRightRadius: isUser ? 4 : 16,
+                  borderBottomLeftRadius: isUser ? 16 : 4,
+                  maxWidth: "80%",
+                  elevation: 1, // 안드로이드 그림자
+                }}
+              >
+                <Text style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}>
+                  {msg.text}
+                </Text>
+              </View>
+
+              {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에, feedback 데이터가 있을 때만 등장!) */}
+              {isUser &&
+                msg.feedback &&
+                msg.feedback.map((item: any, index: number) => (
+                  <View
+                    key={index}
+                    style={{
+                      marginTop: 8,
+                      backgroundColor: "#FFF9C4", // 연한 노란색
+                      padding: 16,
+                      borderRadius: 16,
+                      width: "85%", // 피드백 박스 크기
+                    }}
+                  >
+                    {renderFeedbackSection("단어 오류", item.wordErrors, "💡")}
+                    {renderFeedbackSection(
+                      "문법 오류",
+                      item.grammarErrors,
+                      "💡",
+                    )}
+                    {renderFeedbackSection(
+                      "어색한 표현",
+                      item.expressionErrors,
+                      "💡",
+                    )}
+
+                    {item.perfectSentence &&
+                      item.perfectSentence.trim() !== "[]" && (
+                        <View
+                          style={{
+                            marginTop: 12,
+                            paddingTop: 12,
+                            borderTopWidth: 1,
+                            borderColor: "#E0E0E0",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontWeight: "bold",
+                              color: "#333",
+                              marginBottom: 4,
+                            }}
+                          >
+                            ✨ 추천 문장
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 15,
+                              color: "#1976D2",
+                              fontWeight: "600",
+                            }}
+                          >
+                            {item.perfectSentence}
+                          </Text>
+                        </View>
+                      )}
+                  </View>
+                ))}
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {/* 입력창 (기존 styles.composer 적용 부분을 인라인으로 합쳤습니다) */}
+      <View
+        style={{
+          flexDirection: "row",
+          padding: 12,
+          backgroundColor: "#fff",
+          alignItems: "center",
+          borderTopWidth: 1,
+          borderColor: "#eee",
+        }}
+      >
         <TextInput
           value={input}
           onChangeText={setInput}
           placeholder="메시지를 입력하세요"
-          style={styles.composerInput}
+          style={{
+            flex: 1,
+            backgroundColor: "#f5f5f5",
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderRadius: 20,
+            fontSize: 16,
+          }}
         />
         <Pressable
-          style={[styles.sendButton, !input.trim() && styles.disabled]}
+          style={{
+            marginLeft: 10,
+            backgroundColor: input.trim() ? "#5C6BC0" : "#ccc",
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderRadius: 20,
+          }}
           onPress={send}
+          disabled={!input.trim()}
         >
-          <Text style={styles.sendText}>전송</Text>
+          <Text style={{ color: "#fff", fontWeight: "bold" }}>전송</Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -3871,28 +4081,77 @@ function MessageList({ messages }: { messages: Message[] }) {
           {message.speaker === "ai" && (
             <Text style={styles.smallAvatar}>🤖</Text>
           )}
+
+          {/* 💡 수정 포인트 1: 말풍선과 피드백을 세로로 배치하기 위해 View로 감싸줍니다. */}
           <View
-            style={[
-              styles.bubble,
-              message.speaker === "user" ? styles.userBubble : styles.aiBubble,
-            ]}
+            style={{
+              alignItems:
+                message.speaker === "user" ? "flex-end" : "flex-start",
+              maxWidth: "80%",
+            }}
           >
-            <Text
+            {/* 기존 말풍선 코드 */}
+            <View
               style={[
-                styles.messageText,
-                message.speaker === "user" && styles.userMessageText,
+                styles.bubble,
+                message.speaker === "user"
+                  ? styles.userBubble
+                  : styles.aiBubble,
               ]}
             >
-              {message.text}
-            </Text>
-            <Text
-              style={[
-                styles.timeText,
-                message.speaker === "user" && styles.userTimeText,
-              ]}
-            >
-              {message.time}
-            </Text>
+              <Text
+                style={[
+                  styles.messageText,
+                  message.speaker === "user" && styles.userMessageText,
+                ]}
+              >
+                {message.text}
+              </Text>
+              <Text
+                style={[
+                  styles.timeText,
+                  message.speaker === "user" && styles.userTimeText,
+                ]}
+              >
+                {message.time}
+              </Text>
+            </View>
+
+            {/* 💡 수정 포인트 2: 내 메시지이고, 피드백 배열에 데이터가 있을 때만 렌더링합니다. */}
+            {message.speaker === "user" &&
+              message.feedback &&
+              message.feedback.length > 0 && (
+                <View style={styles.feedbackContainer}>
+                  {message.feedback.map((fb, idx) => (
+                    <View key={idx}>
+                      {/* 데이터가 있는(null이나 빈 값이 아닌) 항목만 화면에 렌더링합니다 */}
+                      {fb.wordErrors && (
+                        <Text style={styles.feedbackText}>
+                          💡 단어 오류: {fb.wordErrors}
+                        </Text>
+                      )}
+
+                      {fb.grammarErrors && (
+                        <Text style={styles.feedbackText}>
+                          💡 문법 오류: {fb.grammarErrors}
+                        </Text>
+                      )}
+
+                      {fb.expressionErrors && (
+                        <Text style={styles.feedbackText}>
+                          💡 어색한 표현: {fb.expressionErrors}
+                        </Text>
+                      )}
+
+                      {fb.perfectSentence && (
+                        <Text style={styles.feedbackText}>
+                          ✨ 추천 문장: {fb.perfectSentence}
+                        </Text>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
           </View>
         </View>
       ))}
@@ -3900,32 +4159,95 @@ function MessageList({ messages }: { messages: Message[] }) {
   );
 }
 
-function FeedbackList({
+// ⭐️ 2. 피드백 리스트 컴포넌트 본체
+export function FeedbackList({
   messages,
   enabled,
 }: {
-  messages: Message[];
+  messages: any[]; // Message 타입을 import 해서 쓰셔도 됩니다.
   enabled: boolean;
 }) {
   if (!enabled) {
+    // (기존 emptyState 스타일은 프로젝트 설정에 맞게 유지)
     return (
-      <View style={styles.emptyState}>
-        <Text style={styles.emptyIcon}>🔕</Text>
-        <Text style={styles.muted}>피드백이 꺼져 있습니다.</Text>
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <Text style={{ fontSize: 30, marginBottom: 10 }}>🔕</Text>
+        <Text style={{ color: "#999" }}>피드백이 꺼져 있습니다.</Text>
       </View>
     );
   }
+
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    // styles.content나 styles.card 부분은 기존 프로젝트의 style을 그대로 쓰시면 됩니다.
+    <ScrollView contentContainerStyle={{ padding: 16 }}>
       {messages
         .filter((m) => m.feedback)
         .map((message) => (
-          <View key={message.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{message.text}</Text>
-            {message.feedback?.map((item) => (
-              <Text key={item} style={styles.feedbackText}>
-                {item}
-              </Text>
+          <View
+            key={message.id}
+            style={{
+              backgroundColor: "#fff",
+              padding: 16,
+              borderRadius: 12,
+              marginBottom: 16,
+              elevation: 2, // 그림자 효과 (안드로이드)
+            }}
+          >
+            {/* 내가 보낸 메시지 */}
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "bold",
+                color: "#5C6BC0",
+                marginBottom: 8,
+              }}
+            >
+              {message.text}
+            </Text>
+
+            {message.feedback?.map((item: any) => (
+              <View key={item.id}>
+                {/* ⭐️ 3. 여기서 위에서 만든 함수를 불러옵니다! 빈 배열은 알아서 숨겨집니다. */}
+                {renderFeedbackSection("단어 오류", item.wordErrors, "💡")}
+                {renderFeedbackSection("문법 오류", item.grammarErrors, "💡")}
+                {renderFeedbackSection(
+                  "어색한 표현",
+                  item.expressionErrors,
+                  "💡",
+                )}
+
+                {/* 모범 문장 처리 */}
+                {item.perfectSentence &&
+                  item.perfectSentence.trim() !== "[]" && (
+                    <View
+                      style={{
+                        marginTop: 12,
+                        paddingTop: 12,
+                        borderTopWidth: 1,
+                        borderColor: "#eee",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontWeight: "bold",
+                          color: "#333",
+                          marginBottom: 4,
+                        }}
+                      >
+                        ✨ 추천 문장
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 15,
+                          color: "#2196f3", // 파란색 텍스트
+                          fontWeight: "500",
+                        }}
+                      >
+                        {item.perfectSentence}
+                      </Text>
+                    </View>
+                  )}
+              </View>
             ))}
           </View>
         ))}
@@ -4581,6 +4903,13 @@ const styles = StyleSheet.create({
   userMessageText: { color: "#FFFFFF" },
   timeText: { color: "#9CA3AF", fontSize: 10, marginTop: 4 },
   userTimeText: { color: "#C7D2FE", textAlign: "right" },
+  feedbackContainer: {
+    marginTop: 4,
+    backgroundColor: "rgba(255, 235, 59, 0.2)", // 약간 노란빛 배경 (원하시는 색으로 변경 가능)
+    padding: 8,
+    borderRadius: 8,
+    alignSelf: "flex-end", // 내 채팅 기준 오른쪽 정렬
+  },
   feedbackText: {
     color: "#374151",
     backgroundColor: "#EEF2FF",
