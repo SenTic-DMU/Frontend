@@ -1,9 +1,9 @@
-import { StatusBar } from "expo-status-bar";
 import { useMemo, useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import {
   Alert,
+  StatusBar,
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
@@ -174,7 +174,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar style="dark" />
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <Modal visible={kakaoWebViewVisible} animationType="slide">
         <SafeAreaView style={{ flex: 1 }}>
           <Pressable
@@ -707,7 +707,7 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
   );
 }
 
-function RoomListScreen({
+export function RoomListScreen({
   title,
   rooms,
   go,
@@ -722,10 +722,8 @@ function RoomListScreen({
   onCreate: () => void;
   onPick: (room: PracticeRoom) => void;
 }) {
-  // ⭐️ 변경 후: 숫자와 글자 모두 담을 수 있는 보관함으로 바꿉니다!
   const [hiddenRooms, setHiddenRooms] = useState<(number | string)[]>([]);
 
-  // ⭐️ 2. 삭제 함수를 컴포넌트 바로 안쪽에 넣습니다!
   const handleDeleteRoom = (roomId: number | string, roomTitle: string) => {
     Alert.alert(
       "대화방 삭제",
@@ -741,12 +739,10 @@ function RoomListScreen({
               const API_URL =
                 "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
-              // 서버에 삭제 요청 보내기
               await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
               });
 
-              // ⭐️ 핵심: 서버 삭제가 완료되면, 내 화면의 '비밀 보관함'에 이 방 번호를 넣어서 숨깁니다!
               setHiddenRooms((prev) => [...prev, roomId]);
             } catch (error: any) {
               console.error(
@@ -761,19 +757,28 @@ function RoomListScreen({
     );
   };
 
-  // ⭐️ 1. return 바로 위에 이 줄을 추가합니다!
-  // 원본 방(rooms) 중에서 '비밀 보관함'에 없는 방들만 추려낸 '진짜 보여질 방 목록'입니다.
   const visibleRooms = rooms.filter((room) => !hiddenRooms.includes(room.id));
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          // ⭐️ 안드로이드 상태바 높이만큼 상단 패딩을 줍니다 (없으면 기본 24px)
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       <View style={styles.roomListHeader}>
         <Pressable style={styles.headerButton} onPress={() => go("mode")}>
           <Text style={styles.headerIcon}>‹</Text>
         </Pressable>
         <View style={styles.flex}>
           <Text style={styles.roomListTitle}>{title}</Text>
-          {/* ⭐️ 2. 기존 {rooms.length} 부분을 {visibleRooms.length}로 바꿉니다! */}
           <Text style={styles.roomListCount}>
             {visibleRooms.length}개의 대화방
           </Text>
@@ -783,13 +788,12 @@ function RoomListScreen({
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.roomListContent}>
-        {/* ⭐️ 3. 비밀 보관함(hiddenRooms)에 없는 방들만 골라서(filter) 화면에 그립니다! */}
         {visibleRooms.map((room) => (
           <Pressable
             key={room.id}
             style={styles.chatRoomCard}
             onPress={() => onPick(room)}
-            onLongPress={() => handleDeleteRoom(room.id, room.title)} // 👈 길게 누르기 연결!
+            onLongPress={() => handleDeleteRoom(room.id, room.title)}
           >
             <View style={styles.voiceRoomIcon}>
               <Text style={styles.voiceRoomIconText}>
