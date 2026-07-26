@@ -1113,36 +1113,27 @@ function SituationScreen({
 }
 
 export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
-  // ⭐️ 이거 딱 한 줄만 추가해서 터미널을 확인해 보세요!
-  console.log("🧐 현재 넘어온 방 정보 전체보기:", room);
-  console.log("🧐 전송할 때 쓰는 roomId 값:", room?.id);
-
   const [inCall, setInCall] = useState(false);
   const [muted, setMuted] = useState(false);
   const [speakerOff, setSpeakerOff] = useState(false);
   const [feedbackOn, setFeedbackOn] = useState(true);
   const [tab, setTab] = useState<"call" | "history" | "feedback">("call");
 
-  // ⭐️ 1. 더미 데이터(useMemo) 대신, 진짜 대화를 담을 그릇을 만듭니다.
   const [messages, setMessages] = useState<Message[]>([]);
-  // ⭐️ 2. 화면 중앙 자막에 띄울 AI의 가장 최근 메시지를 저장합니다.
   const [latestAiText, setLatestAiText] = useState("");
-  // ⭐️ 3. 소리가 재생 중인지 확인하는 상태
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // ⭐️ 추가: 녹음 상태 관리를 위한 변수
-  const [recording, setRecording] = useState<any>(null); // 실제 녹음 객체
-  const [isRecording, setIsRecording] = useState(false); // 녹음 중인지 여부 UI 표시용
+  const [recording, setRecording] = useState<any>(null);
+  const [isRecording, setIsRecording] = useState(false);
 
-  // ⭐️ 4. 방에 처음 들어왔을 때 과거 기록을 깔고 AI 인사말을 부릅니다.
+  // ⭐️ 1. 방에 처음 들어왔을 때는 '과거 대화 기록'만 불러오고 가만히 대기합니다.
   useEffect(() => {
-    const fetchHistoryAndEnter = async () => {
+    const fetchHistoryOnly = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const currentRoomId = room.id;
 
-        // 📜 1. 이전 대화 기록 먼저 불러오기 (채팅방과 같은 API 주소 사용)
         const historyRes = await axios.get(
           `${API_URL}/api/rooms/${currentRoomId}/messages`,
           {
@@ -1153,81 +1144,106 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
           },
         );
 
-        // ⭐️ 이 줄을 추가해서 터미널에 찍히는 진짜 데이터를 확인해 보세요!
-        console.log("🧐 서버가 준 과거 기록 원본:", historyRes.data);
-
         const pastMessages = historyRes.data?.data || historyRes.data || [];
 
-        // ⭐️ 백엔드의 실제 필드명(senderType, contentText)에 맞게 수정 완료!
-        const formattedHistory = pastMessages.map((msg: any, idx: number) => ({
-          id: msg.id?.toString() || `history-${idx}`,
-          // msg.sender 가 아니라 msg.senderType 입니다!
-          speaker: msg.senderType === "USER" ? "user" : "ai",
-          // msg.content 가 아니라 msg.contentText 입니다!
-          text: msg.contentText || "",
-          // 시간 포맷 자르기 (예: "2026-07-24T00:04:08" -> "00:04")
-          time: msg.createdAt ? msg.createdAt.substring(11, 16) : "이전",
-        }));
+        const formattedHistory = pastMessages.map((msg: any, idx: number) => {
+          let parsedFeedback = undefined;
+          if (msg.feedback) {
+            const rawFeedback =
+              typeof msg.feedback === "string"
+                ? JSON.parse(msg.feedback)
+                : msg.feedback;
 
-        // ⭐️ 번역된 과거 기록을 화면에 쫙 깔아줍니다.
+            parsedFeedback = Array.isArray(rawFeedback)
+              ? rawFeedback
+              : [rawFeedback];
+          }
+
+          return {
+            id: msg.id?.toString() || `history-${idx}`,
+            speaker: msg.senderType === "USER" ? "user" : "ai",
+            text: msg.contentText || "",
+            time: msg.createdAt ? msg.createdAt.substring(11, 16) : "이전",
+            feedback: parsedFeedback,
+          };
+        });
+
         setMessages(formattedHistory);
 
-        // 자막에 가장 최근 AI 말을 띄워놓습니다.
         const lastAiMsg = [...formattedHistory]
           .reverse()
           .find((m: any) => m.speaker === "ai");
         if (lastAiMsg) setLatestAiText(lastAiMsg.text);
-
-        // 🤖 2. 방 입장 처리 및 새로운 AI 인사말 받아오기
-        const enterRes = await axios.post(
-          `${API_URL}/api/rooms/${currentRoomId}/enter`,
-          {},
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-          },
-        );
-
-        const aiText = enterRes.data?.data?.aiText || enterRes.data?.aiText;
-        const audioUrl =
-          enterRes.data?.data?.audioUrl || enterRes.data?.audioUrl;
-
-        if (aiText) {
-          const aiMessage: Message = {
-            id: Date.now().toString(),
-            speaker: "ai",
-            text: aiText,
-            time: new Date().toLocaleTimeString("ko-KR", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-          };
-
-          // ⭐️ 핵심: 과거 기록(prev) 밑에 새로운 인사말을 살짝 추가합니다.
-          setMessages((prev) => [...prev, aiMessage]);
-          setLatestAiText(aiText);
-          setInCall(true);
-        }
-
-        if (audioUrl) {
-          await playAudio(audioUrl);
-        }
       } catch (error: any) {
         console.error(
-          "🚨 음성방 기록 불러오기/입장 실패:",
+          "🚨 음성방 기록 불러오기 실패:",
           error.response?.data || error.message,
         );
       }
     };
 
     if (room?.id) {
-      fetchHistoryAndEnter();
+      fetchHistoryOnly();
     }
   }, [room?.id]);
 
-  // 🎵 5. 오디오를 재생하는 함수
+  // ⭐️ 2. 사용자가 '시작' 버튼을 눌렀을 때만 실행되는 AI 인사말 호출 함수
+  const handleStartCall = async () => {
+    // 만약 이미 통화 중(inCall)이었다가 종료하는 거라면 통화만 끔
+    if (inCall) {
+      setInCall(false);
+      return;
+    }
+
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const currentRoomId = room.id;
+
+      // 통화 시작 상태로 변경
+      setInCall(true);
+
+      const enterRes = await axios.post(
+        `${API_URL}/api/rooms/${currentRoomId}/enter`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      const aiText = enterRes.data?.data?.aiText || enterRes.data?.aiText;
+      const audioUrl = enterRes.data?.data?.audioUrl || enterRes.data?.audioUrl;
+
+      if (aiText) {
+        const aiMessage: Message = {
+          id: Date.now().toString(),
+          speaker: "ai",
+          text: aiText,
+          time: new Date().toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        };
+
+        setMessages((prev) => [...prev, aiMessage]);
+        setLatestAiText(aiText);
+      }
+
+      if (audioUrl) {
+        await playAudio(audioUrl);
+      }
+    } catch (error: any) {
+      console.error(
+        "🚨 통화 시작(입장) 실패:",
+        error.response?.data || error.message,
+      );
+      setInCall(false); // 실패 시 다시 버튼 원복
+    }
+  };
+
   const playAudio = async (url: string) => {
     try {
       setIsPlaying(true);
@@ -1241,7 +1257,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && status.didJustFinish) {
           setIsPlaying(false);
-          sound.unloadAsync(); // 메모리 정리
+          sound.unloadAsync();
         }
       });
     } catch (error) {
@@ -1250,49 +1266,40 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
     }
   };
 
-  // 🎤 녹음 시작 함수
   const startRecording = async () => {
     try {
-      // 1. 마이크 권한 요청
       const permission = await Audio.requestPermissionsAsync();
       if (permission.status !== "granted") {
         Alert.alert("권한 필요", "마이크 접근 권한을 허용해 주세요.");
         return;
       }
 
-      // 2. 오디오 모드를 '녹음 가능' 상태로 변경
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
-      // 3. 고음질로 녹음 시작
       const { recording: newRecording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY,
       );
 
       setRecording(newRecording);
       setIsRecording(true);
-      console.log("🎙️ 녹음 시작됨...");
     } catch (err) {
       console.error("🚨 녹음 시작 실패:", err);
     }
   };
 
-  // ⏹️ 녹음 종료 및 파일 전송 준비 함수
   const stopRecordingAndSend = async () => {
     try {
       if (!recording) return;
 
       setIsRecording(false);
-      await recording.stopAndUnloadAsync(); // 녹음 중지 및 메모리 정리
-      const uri = recording.getURI(); // ⭐️ 기기에 저장된 임시 파일 주소 획득!
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
       setRecording(null);
 
-      console.log("저장된 녹음 파일 주소:", uri);
-
       if (uri) {
-        // 서버로 전송!
         await sendVoiceToServer(uri);
       }
     } catch (err) {
@@ -1300,7 +1307,6 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
     }
   };
 
-  // 🚀 서버로 음성 파일 전송 (FormData 핵심 영역)
   const sendVoiceToServer = async (fileUri: string) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
@@ -1325,33 +1331,35 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
         },
       );
 
-      console.log("✅ 내 음성 전송 성공 응답 데이터:", response.data);
-
       const responseData = response.data?.data || response.data;
 
-      // ⭐️ 백엔드에서 내가 한 말(STT 결과)과 AI의 대답을 가져옵니다.
-      // (백엔드 명세서에 따라 userText, recognizedText 등의 이름을 확인해야 합니다!)
-      const userText =
-        responseData?.userText || responseData?.content || "내가 한 말(STT)";
+      const userText = responseData?.userText || responseData?.content;
       const aiText = responseData?.aiText;
       const audioUrl = responseData?.audioUrl;
+      const rawFeedback = responseData?.feedback;
 
       const newMessages: Message[] = [];
 
-      // 1. 내 말풍선 만들기
       if (userText) {
+        let parsedFeedback = undefined;
+        if (rawFeedback) {
+          parsedFeedback = Array.isArray(rawFeedback)
+            ? rawFeedback
+            : [rawFeedback];
+        }
+
         newMessages.push({
           id: Date.now().toString() + "-user",
           speaker: "user",
-          text: userText, // 서버가 내 목소리를 글자로 변환해준 결과!
+          text: userText,
           time: new Date().toLocaleTimeString("ko-KR", {
             hour: "2-digit",
             minute: "2-digit",
           }),
+          feedback: parsedFeedback,
         });
       }
 
-      // 2. AI 대답 말풍선 만들기
       if (aiText) {
         setLatestAiText(aiText);
         newMessages.push({
@@ -1365,13 +1373,12 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
         });
       }
 
-      // 3. 기존 대화 기록 밑에 내 말과 AI 말을 연달아 붙여줍니다!
       if (newMessages.length > 0) {
         setMessages((prev) => [...prev, ...newMessages]);
       }
 
       if (audioUrl) {
-        await playAudio(audioUrl); // AI 답변 다시 재생!
+        await playAudio(audioUrl);
       }
     } catch (error: any) {
       console.error(
@@ -1393,7 +1400,6 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
       {tab === "call" && (
         <View style={styles.callBody}>
           <View style={[styles.avatarLarge, inCall && styles.avatarActive]}>
-            {/* 오디오가 재생 중일 때 🎵 아이콘으로 바뀌게 살짝 포인트를 줬습니다! */}
             <Text style={styles.avatarEmoji}>{isPlaying ? "🎵" : "🤖"}</Text>
           </View>
           <Text style={styles.h2}>AI 파트너</Text>
@@ -1401,7 +1407,6 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
             {inCall ? "통화 중입니다" : "통화를 시작해 보세요"}
           </Text>
 
-          {/* ⭐️ 고정 텍스트 대신, AI의 진짜 인삿말 자막을 띄워줍니다. */}
           {inCall && latestAiText ? (
             <View style={styles.subtitleBox}>
               <Text style={styles.caption}>AI 파트너</Text>
@@ -1425,13 +1430,13 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
             {inCall && (
               <RoundButton
                 label={isRecording ? "녹음 중지" : "내 답변 녹음"}
-                // isRecording 상태에 따라 시작할지, 멈추고 서버로 보낼지 결정!
                 onPress={isRecording ? stopRecordingAndSend : startRecording}
               />
             )}
+            {/* ⭐️ 시작 버튼을 누를 때만 handleStartCall이 실행되도록 연결! */}
             <Pressable
               style={[styles.callButton, inCall && styles.endCallButton]}
-              onPress={() => setInCall((v) => !v)}
+              onPress={handleStartCall}
             >
               <Text style={styles.callButtonText}>
                 {inCall ? "종료" : "시작"}
@@ -1456,7 +1461,6 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
           </Pressable>
         </View>
       )}
-      {/* ⭐️ 더미 history 대신, 진짜 messages 배열을 넘겨줍니다! */}
       {tab === "history" && <MessageList messages={messages} />}
       {tab === "feedback" && (
         <FeedbackList messages={messages} enabled={feedbackOn} />
@@ -1471,11 +1475,20 @@ const renderFeedbackSection = (
   jsonString: string | null | undefined,
   icon: string,
 ) => {
-  if (!jsonString || jsonString.trim() === "[]") return null;
+  if (
+    !jsonString ||
+    jsonString === "[]" ||
+    jsonString.toString().trim() === "[]"
+  )
+    return null;
 
   try {
-    const parsedData =
-      typeof jsonString === "string" ? JSON.parse(jsonString) : jsonString;
+    // ⭐️ [추가] 만약 데이터가 이미 배열(Array) 형태로 예쁘게 파싱되어 들어왔다면 JSON.parse를 건너뜁니다!
+    const parsedData = Array.isArray(jsonString)
+      ? jsonString
+      : typeof jsonString === "string"
+        ? JSON.parse(jsonString)
+        : [jsonString]; // 문자열도 객체도 아니라면 배열로 감싸서 방어
 
     if (!Array.isArray(parsedData) || parsedData.length === 0) return null;
 
@@ -4063,98 +4076,93 @@ function ModeCard({
   );
 }
 
-function MessageList({ messages }: { messages: Message[] }) {
+// ⭐️ 2. 기존 MessageList 컴포넌트 내부의 map 돌리는 곳을 수정합니다.
+export function MessageList({ messages }: { messages: any[] }) {
   return (
-    <ScrollView
-      style={styles.flex}
-      contentContainerStyle={styles.messageContent}
-    >
-      <Text style={styles.dateDivider}>오늘</Text>
-      {messages.map((message) => (
-        <View
-          key={message.id}
-          style={[
-            styles.messageRow,
-            message.speaker === "user" && styles.messageRowUser,
-          ]}
-        >
-          {message.speaker === "ai" && (
-            <Text style={styles.smallAvatar}>🤖</Text>
-          )}
+    <ScrollView contentContainerStyle={{ padding: 16 }}>
+      {messages.map((msg) => {
+        const isUser = msg.speaker === "user" || msg.speaker === "USER";
 
-          {/* 💡 수정 포인트 1: 말풍선과 피드백을 세로로 배치하기 위해 View로 감싸줍니다. */}
+        return (
           <View
+            key={msg.id}
             style={{
-              alignItems:
-                message.speaker === "user" ? "flex-end" : "flex-start",
-              maxWidth: "80%",
+              marginBottom: 16,
+              alignItems: isUser ? "flex-end" : "flex-start",
             }}
           >
-            {/* 기존 말풍선 코드 */}
+            {/* 기본 말풍선 */}
             <View
-              style={[
-                styles.bubble,
-                message.speaker === "user"
-                  ? styles.userBubble
-                  : styles.aiBubble,
-              ]}
+              style={{
+                backgroundColor: isUser ? "#5C6BC0" : "#ffffff",
+                padding: 12,
+                borderRadius: 16,
+                maxWidth: "80%",
+              }}
             >
-              <Text
-                style={[
-                  styles.messageText,
-                  message.speaker === "user" && styles.userMessageText,
-                ]}
-              >
-                {message.text}
-              </Text>
-              <Text
-                style={[
-                  styles.timeText,
-                  message.speaker === "user" && styles.userTimeText,
-                ]}
-              >
-                {message.time}
+              <Text style={{ color: isUser ? "#fff" : "#333", fontSize: 15 }}>
+                {msg.text}
               </Text>
             </View>
 
-            {/* 💡 수정 포인트 2: 내 메시지이고, 피드백 배열에 데이터가 있을 때만 렌더링합니다. */}
-            {message.speaker === "user" &&
-              message.feedback &&
-              message.feedback.length > 0 && (
-                <View style={styles.feedbackContainer}>
-                  {message.feedback.map((fb, idx) => (
-                    <View key={idx}>
-                      {/* 데이터가 있는(null이나 빈 값이 아닌) 항목만 화면에 렌더링합니다 */}
-                      {fb.wordErrors && (
-                        <Text style={styles.feedbackText}>
-                          💡 단어 오류: {fb.wordErrors}
-                        </Text>
-                      )}
+            {/* ⭐️ 3. 내가 보낸 메시지(user)이고 피드백이 존재할 때만 노란색 박스를 띄웁니다! */}
+            {isUser &&
+              msg.feedback &&
+              msg.feedback.map((item: any, index: number) => (
+                <View
+                  key={index}
+                  style={{
+                    marginTop: 6,
+                    backgroundColor: "#FFF9C4", // 연한 노란색
+                    padding: 12,
+                    borderRadius: 12,
+                    width: "85%",
+                  }}
+                >
+                  {renderFeedbackSection("단어 오류", item.wordErrors, "💡")}
+                  {renderFeedbackSection("문법 오류", item.grammarErrors, "💡")}
+                  {renderFeedbackSection(
+                    "어색한 표현",
+                    item.expressionErrors,
+                    "💡",
+                  )}
 
-                      {fb.grammarErrors && (
-                        <Text style={styles.feedbackText}>
-                          💡 문법 오류: {fb.grammarErrors}
+                  {item.perfectSentence &&
+                    item.perfectSentence.trim() !== "[]" && (
+                      <View
+                        style={{
+                          marginTop: 8,
+                          paddingTop: 8,
+                          borderTopWidth: 1,
+                          borderColor: "#E0E0E0",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontWeight: "bold",
+                            color: "#333",
+                            marginBottom: 2,
+                            fontSize: 13,
+                          }}
+                        >
+                          ✨ 추천 문장
                         </Text>
-                      )}
-
-                      {fb.expressionErrors && (
-                        <Text style={styles.feedbackText}>
-                          💡 어색한 표현: {fb.expressionErrors}
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            color: "#1976D2",
+                            fontWeight: "600",
+                          }}
+                        >
+                          {item.perfectSentence}
                         </Text>
-                      )}
-
-                      {fb.perfectSentence && (
-                        <Text style={styles.feedbackText}>
-                          ✨ 추천 문장: {fb.perfectSentence}
-                        </Text>
-                      )}
-                    </View>
-                  ))}
+                      </View>
+                    )}
                 </View>
-              )}
+              ))}
           </View>
-        </View>
-      ))}
+        );
+      })}
     </ScrollView>
   );
 }
