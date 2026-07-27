@@ -3326,13 +3326,61 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
     return () => clearTimeout(t);
   }, []);
 
-  const handleLevelButtonClick = () => {
+  // 🚀 한글 레벨을 백엔드가 원하는 영어 대문자로 바꿔주는 매핑 딕셔너리
+  const levelMapping: Record<Level, string> = {
+    초급: "BEGINNER",
+    중급: "INTERMEDIATE",
+    고급: "ADVANCED",
+  };
+
+  // 🚀 학습 레벨 변경 및 백엔드 연동 함수
+  const handleLevelButtonClick = async () => {
     if (levelConfirmed) {
+      // '변경' 버튼을 눌렀을 때 -> 수정 모드로 진입
       setPendingLevel(userLevel);
       setLevelConfirmed(false);
     } else {
-      setUserLevel(pendingLevel);
-      setLevelConfirmed(true);
+      // '결정' 버튼을 눌렀을 때 -> 서버로 변경된 레벨 전송
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+        // ⭐️ 1. 저장된 토큰이 아예 없거나 null인지 확인!
+        console.log("📌 현재 저장된 토큰:", accessToken);
+
+        // 한글을 영어 대문자로 변환 (예: "중급" -> "INTERMEDIATE")
+        const mappedDifficulty = levelMapping[pendingLevel];
+
+        // ⭐️ 2. 어떤 주소와 파라미터로 요청을 날리는지 확인!
+        console.log(
+          "📌 요청 URL:",
+          `${API_URL}/api/users/me/level?difficulty=${mappedDifficulty}`,
+        );
+
+        // ⭐️ 명세에 맞춘 PUT 요청 (Query Parameter로 전달)
+        await axios.put(
+          `${API_URL}/api/users/me/level?difficulty=${mappedDifficulty}`,
+          {}, // Body가 아니므로 빈 객체 전달
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+
+        // 서버 통신 성공 시 화면 상태 업데이트
+        setUserLevel(pendingLevel);
+        setLevelConfirmed(true);
+      } catch (error: any) {
+        console.error(
+          "🚨 레벨 변경 실패:",
+          error.response?.data || error.message,
+        );
+        Alert.alert(
+          "오류",
+          "학습 레벨 변경에 실패했습니다. 다시 시도해 주세요.",
+        );
+      }
     }
   };
 
