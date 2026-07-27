@@ -151,6 +151,7 @@ export default function App() {
   const [selectedRoom, setSelectedRoom] = useState<PracticeRoom>(voiceRooms[0]);
   const [selectedMode, setSelectedMode] = useState<"voice" | "text">("voice");
   const [kakaoWebViewVisible, setKakaoWebViewVisible] = useState(false);
+  const [kakaoLoggingIn, setKakaoLoggingIn] = useState(false);
 
   const go = (next: Screen) => setScreen(next);
   const startNewConversation = (mode: "voice" | "text") => {
@@ -161,14 +162,36 @@ export default function App() {
 
   const handleKakaoLogin = () => setKakaoWebViewVisible(true);
 
-  const handleWebViewNavChange = (navState: { url: string }) => {
-    if (navState.url.startsWith(KAKAO_REDIRECT_URI)) {
-      setKakaoWebViewVisible(false);
-      const code = new URL(navState.url).searchParams.get("code");
-      if (code) {
-        console.log("카카오 인증 코드:", code);
+  const handleWebViewNavChange = async (navState: { url: string }) => {
+    if (!navState.url.startsWith(KAKAO_REDIRECT_URI)) return;
+    setKakaoWebViewVisible(false);
+
+    const code = new URL(navState.url).searchParams.get("code");
+    if (!code) {
+      Alert.alert("카카오 로그인 실패", "인증 코드를 받지 못했습니다.");
+      return;
+    }
+
+    setKakaoLoggingIn(true);
+    try {
+      const { ok, data } = await authPost("/api/auth/kakao", { code });
+      if (ok && data?.success) {
+        await AsyncStorage.setItem("accessToken", data.data.accessToken);
+        if (data.data.refreshToken) {
+          await AsyncStorage.setItem("refreshToken", data.data.refreshToken);
+        }
         go("mode");
+      } else {
+        Alert.alert(
+          "카카오 로그인 실패",
+          data?.message ?? "잠시 후 다시 시도해주세요.",
+        );
       }
+    } catch (e) {
+      Alert.alert("연결 실패", "서버와 연결할 수 없습니다.");
+      console.error("카카오 로그인 에러:", e);
+    } finally {
+      setKakaoLoggingIn(false);
     }
   };
 
@@ -189,17 +212,19 @@ export default function App() {
           />
         </SafeAreaView>
       </Modal>
+      <Modal visible={kakaoLoggingIn} animationType="fade" transparent>
+        <View style={styles.kakaoLoadingOverlay}>
+          <ActivityIndicator size="large" color="#FFFFFF" />
+          <Text style={styles.kakaoLoadingText}>카카오 로그인 처리 중...</Text>
+        </View>
+      </Modal>
       {screen === "login" && (
         <LoginScreen go={go} onKakaoLogin={handleKakaoLogin} />
       )}
+
       {screen === "signup" && <SignupScreen go={go} />}
-      {screen === "findAccount" && (
-        <SimpleFormScreen
-          title="계정 찾기"
-          subtitle="가입한 이메일로 아이디와 비밀번호 안내를 받을 수 있어요."
-          go={go}
-        />
-      )}
+      {screen === "findAccount" && <FindAccountScreen go={go} />}
+
       {screen === "mode" && <ModeScreen go={go} />}
       {screen === "voiceRooms" && (
         <RoomListScreen
@@ -277,7 +302,7 @@ function LoginScreen({
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type": "application/json; charset=UTF-8",
             "ngrok-skip-browser-warning": "true",
           },
           body: JSON.stringify({ loginId: username, password }),
@@ -399,6 +424,21 @@ function LoginScreen({
   );
 }
 
+
+async function authPost(path: string, body: object) {
+  const res = await fetch(`${process.env.EXPO_PUBLIC_BASE_URL}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json; charset=UTF-8",
+      "ngrok-skip-browser-warning": "true",
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => null);
+  return { ok: res.ok, data };
+}
+
+
 function SignupScreen({ go }: { go: (screen: Screen) => void }) {
   const [username, setUsername] = useState("");
   const [nickname, setNickname] = useState("");
@@ -407,58 +447,45 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [verificationSent, setVerificationSent] = useState(false);
-  const [verificationCode, setVerificationCode] = useState("");
-  const [emailVerified, setEmailVerified] = useState(false);
+  const [signingUp, setSigningUp] = useState(false);
+  const [usernameChecked, setUsernameChecked] = useState
+    null | "available" | "taken"
+  >(null);
+  const [checkingUsername, setCheckingUsername] = useState(false);
 
-  const handleSendVerification = () => {
-    if (!email.trim()) {
-      Alert.alert("입력 확인", "이메일을 입력해주세요.");
+  const handleUsernameChange = (value: string) => {
+    setUsername(value);
+    setUsernameChecked(null);
+  };
+
+  const handleCheckUsername = async () => {
+    if (!username.trim()) {
+      Alert.alert("입력 확인", "아이디를 입력해주세요.");
       return;
     }
-    // TODO: 백엔드 이메일 인증 API 연동 후 실제 발송으로 교체
-    setVerificationSent(true);
-    Alert.alert("인증번호 발송", "인증번호가 발송되었습니다! (테스트: 123456)");
-  };
-
-  const handleVerifyCode = () => {
-    // TODO: 백엔드 이메일 인증 API 연동 후 실제 검증으로 교체
-    if (verificationCode === "123456") {
-      setEmailVerified(true);
-    } else {
-      Alert.alert("인증 실패", "인증번호가 일치하지 않습니다.");
+    if (!/^[a-zA-Z0-9]+$/.test(username)) {
+      Alert.alert("입력 확인", "아이디는 영문/숫자 조합만 가능합니다.");
+      return;
     }
-  };
-
-  const handleEmailChange = (value: string) => {
-    setEmail(value);
-    setVerificationSent(false);
-    setEmailVerified(false);
-    setVerificationCode("");
-  };
-
-  const pickProfileImage = async () => {
-    if (Platform.OS !== "web") {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("권한 필요", "갤러리 접근 권한이 필요합니다.");
-        return;
+    setCheckingUsername(true);
+    try {
+      const { ok, data } = await authPost("/api/auth/check-loginid", {
+        loginId: username,
+      });
+      if (ok && data?.success) {
+        setUsernameChecked(data.data ? "available" : "taken");
+      } else {
+        Alert.alert("확인 실패", data?.message ?? "아이디 중복 확인에 실패했습니다.");
       }
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled) {
-      setPhotoUri(result.assets[0].uri);
+    } catch (e) {
+      Alert.alert("연결 실패", "서버와 연결할 수 없습니다.");
+      console.error("아이디 중복 확인 에러:", e);
+    } finally {
+      setCheckingUsername(false);
     }
   };
 
-  const handleSignup = () => {
+  const handleSignup = async () => {
     if (
       !username.trim() ||
       !nickname.trim() ||
@@ -469,8 +496,12 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
       Alert.alert("입력 확인", "모든 항목을 입력해주세요.");
       return;
     }
-    if (!emailVerified) {
-      Alert.alert("이메일 인증 필요", "이메일 인증을 완료해주세요.");
+    if (!/^[a-zA-Z0-9]+$/.test(username)) {
+      Alert.alert("입력 확인", "아이디는 영문/숫자 조합만 가능합니다.");
+      return;
+    }
+    if (usernameChecked !== "available") {
+      Alert.alert("아이디 중복 확인", "아이디 중복 확인을 완료해주세요.");
       return;
     }
     if (password.length < 8) {
@@ -481,9 +512,26 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
       Alert.alert("비밀번호 확인", "비밀번호가 일치하지 않습니다.");
       return;
     }
-    // TODO: 백엔드 회원가입 API 연동 후 실제 요청으로 교체
-    go("mode");
-  };
+    setSigningUp(true);
+    try {
+      const { ok, data } = await authPost("/api/auth/signup", {
+        loginId: username,
+        password,
+        nickname,
+        email,
+      });
+      if (ok && data?.success) {
+        Alert.alert("가입 완료", "회원가입이 완료되었습니다. 로그인해주세요.");
+        go("login");
+      } else {
+        Alert.alert("가입 실패", data?.message ?? "회원가입에 실패했습니다.");
+      }
+    } catch (e) {
+      Alert.alert("연결 실패", "서버와 연결할 수 없습니다.");
+      console.error("회원가입 에러:", e);
+    } finally {
+      setSigningUp(false);
+    }
 
   return (
     <KeyboardAvoidingView
@@ -499,30 +547,41 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
           SenTic 계정을 만들고 학습을 시작하세요.
         </Text>
 
-        <View style={styles.signupProfileImageRow}>
-          <Pressable onPress={pickProfileImage}>
-            {photoUri ? (
-              <Image
-                source={{ uri: photoUri }}
-                style={styles.signupProfileAvatar}
-              />
-            ) : (
-              <View style={styles.signupProfileAvatarSlot}>
-                <Text style={styles.cameraText}>📷</Text>
-              </View>
-            )}
-          </Pressable>
-          <Text style={styles.mutedSmall}>프로필 사진 (선택)</Text>
-        </View>
-
         <Label text="아이디" />
-        <TextInput
-          value={username}
-          onChangeText={setUsername}
-          placeholder="아이디 입력"
-          style={styles.input}
-          autoCapitalize="none"
-        />
+        <View style={styles.signupInlineRow}>
+          <TextInput
+            value={username}
+            onChangeText={handleUsernameChange}
+            placeholder="영문/숫자 조합"
+            style={[styles.input, styles.signupInlineInput]}
+            autoCapitalize="none"
+          />
+          <Pressable
+            style={[
+              styles.signupEmailButton,
+              (!username.trim() || checkingUsername) && { opacity: 0.5 },
+            ]}
+            onPress={handleCheckUsername}
+            disabled={!username.trim() || checkingUsername}
+          >
+            <Text style={styles.signupEmailButtonText}>
+              {checkingUsername
+                ? "확인 중..."
+                : usernameChecked === "available"
+                  ? "사용가능"
+                  : "중복확인"}
+            </Text>
+          </Pressable>
+        </View>
+        {usernameChecked === "taken" && (
+          <Text style={styles.errorText}>이미 사용 중인 아이디입니다</Text>
+        )}
+        {usernameChecked === "available" && (
+          <Text style={styles.signupSuccessText}>
+            ✓ 사용 가능한 아이디입니다
+          </Text>
+        )}
+
         <Label text="닉네임" />
         <TextInput
           value={nickname}
@@ -530,55 +589,17 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
           placeholder="앱에서 사용할 이름"
           style={styles.input}
         />
+
         <Label text="이메일" />
-        <View style={styles.signupInlineRow}>
-          <TextInput
-            value={email}
-            onChangeText={handleEmailChange}
-            placeholder="email@example.com"
-            style={[
-              styles.input,
-              styles.signupInlineInput,
-              emailVerified && { opacity: 0.6 },
-            ]}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            editable={!emailVerified}
-          />
-          <Pressable
-            style={[
-              styles.signupEmailButton,
-              (emailVerified || !email.trim()) && { opacity: 0.5 },
-            ]}
-            onPress={handleSendVerification}
-            disabled={emailVerified || !email.trim()}
-          >
-            <Text style={styles.signupEmailButtonText}>
-              {emailVerified ? "완료" : verificationSent ? "재발송" : "인증"}
-            </Text>
-          </Pressable>
-        </View>
-        {emailVerified && (
-          <Text style={styles.signupSuccessText}>✓ 이메일 인증 완료</Text>
-        )}
-        {verificationSent && !emailVerified && (
-          <View style={[styles.signupInlineRow, { marginTop: 10 }]}>
-            <TextInput
-              value={verificationCode}
-              onChangeText={setVerificationCode}
-              placeholder="6자리 인증번호 (테스트: 123456)"
-              style={[styles.input, styles.signupInlineInput]}
-              keyboardType="number-pad"
-              maxLength={6}
-            />
-            <Pressable
-              style={styles.signupEmailButton}
-              onPress={handleVerifyCode}
-            >
-              <Text style={styles.signupEmailButtonText}>확인</Text>
-            </Pressable>
-          </View>
-        )}
+        <TextInput
+          value={email}
+          onChangeText={setEmail}
+          placeholder="email@example.com"
+          style={styles.input}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+
         <Label text="비밀번호" />
         <View style={styles.passwordRow}>
           <TextInput
@@ -620,10 +641,17 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
         )}
 
         <Pressable
-          style={[styles.primaryButton, { marginTop: 20 }]}
+          style={[
+            styles.primaryButton,
+            { marginTop: 20 },
+            signingUp && { opacity: 0.6 },
+          ]}
           onPress={handleSignup}
+          disabled={signingUp}
         >
-          <Text style={styles.primaryButtonText}>가입하기</Text>
+          <Text style={styles.primaryButtonText}>
+            {signingUp ? "가입 중..." : "가입하기"}
+          </Text>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -1860,39 +1888,336 @@ export function TextChatScreen({
   );
 }
 
-function SimpleFormScreen({
-  title,
-  subtitle,
-  go,
-}: {
-  title: string;
-  subtitle: string;
-  go: (screen: Screen) => void;
-}) {
+function FindAccountScreen({ go }: { go: (screen: Screen) => void }) {
+  const [tab, setTab] = useState<"findId" | "resetPassword">("findId");
+
+  const [findIdEmail, setFindIdEmail] = useState("");
+  const [findIdLoading, setFindIdLoading] = useState(false);
+  const [foundLoginId, setFoundLoginId] = useState<string | null>(null);
+
+  const handleFindId = async () => {
+    if (!findIdEmail.trim()) {
+      Alert.alert("입력 확인", "이메일을 입력해주세요.");
+      return;
+    }
+    setFindIdLoading(true);
+    setFoundLoginId(null);
+    try {
+      const { ok, data } = await authPost("/api/auth/find-id", {
+        email: findIdEmail,
+      });
+      if (ok && data?.success) {
+        setFoundLoginId(data.data?.loginId ?? data.data ?? null);
+      } else {
+        Alert.alert("조회 실패", data?.message ?? "가입된 이메일을 찾을 수 없습니다.");
+      }
+    } catch (e) {
+      Alert.alert("연결 실패", "서버와 연결할 수 없습니다.");
+      console.error("아이디 찾기 에러:", e);
+    } finally {
+      setFindIdLoading(false);
+    }
+  };
+
+  const [rpEmail, setRpEmail] = useState("");
+  const [rpCodeSent, setRpCodeSent] = useState(false);
+  const [rpCode, setRpCode] = useState("");
+  const [rpVerified, setRpVerified] = useState(false);
+  const [rpNewPassword, setRpNewPassword] = useState("");
+  const [rpConfirmPassword, setRpConfirmPassword] = useState("");
+  const [rpSendingCode, setRpSendingCode] = useState(false);
+  const [rpVerifyingCode, setRpVerifyingCode] = useState(false);
+  const [rpResetting, setRpResetting] = useState(false);
+
+  const handleRpEmailChange = (value: string) => {
+    setRpEmail(value);
+    setRpCodeSent(false);
+    setRpVerified(false);
+    setRpCode("");
+  };
+
+  const handleSendResetCode = async () => {
+    if (!rpEmail.trim()) {
+      Alert.alert("입력 확인", "이메일을 입력해주세요.");
+      return;
+    }
+    setRpSendingCode(true);
+    try {
+      const { ok, data } = await authPost("/api/auth/password/reset-request", {
+        email: rpEmail,
+      });
+      if (ok && data?.success) {
+        setRpCodeSent(true);
+        Alert.alert("인증번호 발송", "인증번호가 이메일로 발송되었습니다.");
+      } else {
+        Alert.alert("발송 실패", data?.message ?? "인증번호 발송에 실패했습니다.");
+      }
+    } catch (e) {
+      Alert.alert("연결 실패", "서버와 연결할 수 없습니다.");
+      console.error("비밀번호 재설정 코드 발송 에러:", e);
+    } finally {
+      setRpSendingCode(false);
+    }
+  };
+
+  const handleVerifyResetCode = async () => {
+    if (!rpCode.trim()) {
+      Alert.alert("입력 확인", "인증번호를 입력해주세요.");
+      return;
+    }
+    setRpVerifyingCode(true);
+    try {
+      const { ok, data } = await authPost("/api/auth/password/verify-code", {
+        email: rpEmail,
+        code: rpCode,
+      });
+      if (ok && data?.success) {
+        setRpVerified(true);
+      } else {
+        Alert.alert("인증 실패", data?.message ?? "인증번호가 일치하지 않습니다.");
+      }
+    } catch (e) {
+      Alert.alert("연결 실패", "서버와 연결할 수 없습니다.");
+      console.error("비밀번호 재설정 코드 확인 에러:", e);
+    } finally {
+      setRpVerifyingCode(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!rpNewPassword || !rpConfirmPassword) {
+      Alert.alert("입력 확인", "새 비밀번호를 입력해주세요.");
+      return;
+    }
+    if (rpNewPassword.length < 8) {
+      Alert.alert("비밀번호 확인", "비밀번호는 8자 이상이어야 합니다.");
+      return;
+    }
+    if (rpNewPassword !== rpConfirmPassword) {
+      Alert.alert("비밀번호 확인", "비밀번호가 일치하지 않습니다.");
+      return;
+    }
+    setRpResetting(true);
+    try {
+      const { ok, data } = await authPost("/api/auth/password/reset", {
+        email: rpEmail,
+        code: rpCode,
+        newPassword: rpNewPassword,
+      });
+      if (ok && data?.success) {
+        Alert.alert("재설정 완료", "비밀번호가 변경되었습니다. 로그인해주세요.");
+        go("login");
+      } else {
+        Alert.alert("재설정 실패", data?.message ?? "비밀번호 재설정에 실패했습니다.");
+      }
+    } catch (e) {
+      Alert.alert("연결 실패", "서버와 연결할 수 없습니다.");
+      console.error("비밀번호 재설정 에러:", e);
+    } finally {
+      setRpResetting(false);
+    }
+  };
+
   return (
-    <View style={styles.screenSoft}>
-      <Header title={title} go={go} backTo="login" />
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.h1}>{title}</Text>
-        <Text style={styles.mutedBlock}>{subtitle}</Text>
-        <Label text="이메일" />
-        <TextInput
-          placeholder="email@example.com"
-          style={styles.input}
-          keyboardType="email-address"
-        />
-        <Label text="비밀번호" />
-        <TextInput
-          placeholder="비밀번호"
-          secureTextEntry
-          style={styles.input}
-        />
-        <PrimaryButton
-          label={title === "회원가입" ? "가입하기" : "안내 받기"}
-          onPress={() => go("mode")}
-        />
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      style={styles.screen}
+    >
+      <Header title="계정 찾기" go={go} backTo="login" />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.findAccountTabRow}>
+          <Pressable
+            style={[
+              styles.findAccountTabButton,
+              tab === "findId" && styles.findAccountTabButtonActive,
+            ]}
+            onPress={() => setTab("findId")}
+          >
+            <Text
+              style={[
+                styles.findAccountTabText,
+                tab === "findId" && styles.findAccountTabTextActive,
+              ]}
+            >
+              아이디 찾기
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.findAccountTabButton,
+              tab === "resetPassword" && styles.findAccountTabButtonActive,
+            ]}
+            onPress={() => setTab("resetPassword")}
+          >
+            <Text
+              style={[
+                styles.findAccountTabText,
+                tab === "resetPassword" && styles.findAccountTabTextActive,
+              ]}
+            >
+              비밀번호 재설정
+            </Text>
+          </Pressable>
+        </View>
+
+        {tab === "findId" ? (
+          <>
+            <Text style={styles.mutedBlock}>
+              가입할 때 사용한 이메일을 입력하면 아이디를 알려드려요.
+            </Text>
+            <Label text="이메일" />
+            <TextInput
+              value={findIdEmail}
+              onChangeText={(v) => {
+                setFindIdEmail(v);
+                setFoundLoginId(null);
+              }}
+              placeholder="email@example.com"
+              style={styles.input}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            {foundLoginId && (
+              <Text style={styles.signupSuccessText}>
+                ✓ 가입된 아이디: {foundLoginId}
+              </Text>
+            )}
+            <Pressable
+              style={[
+                styles.primaryButton,
+                { marginTop: 20 },
+                !foundLoginId &&
+                  (!findIdEmail.trim() || findIdLoading) && { opacity: 0.6 },
+              ]}
+              onPress={foundLoginId ? () => go("login") : handleFindId}
+              disabled={
+                !foundLoginId && (!findIdEmail.trim() || findIdLoading)
+              }
+            >
+              <Text style={styles.primaryButtonText}>
+                {foundLoginId
+                  ? "로그인 화면으로 이동"
+                  : findIdLoading
+                    ? "조회 중..."
+                    : "아이디 찾기"}
+              </Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <Text style={styles.mutedBlock}>
+              가입한 이메일로 인증번호를 받아 비밀번호를 재설정하세요.
+            </Text>
+            <Label text="이메일" />
+            <View style={styles.signupInlineRow}>
+              <TextInput
+                value={rpEmail}
+                onChangeText={handleRpEmailChange}
+                placeholder="email@example.com"
+                style={[
+                  styles.input,
+                  styles.signupInlineInput,
+                  rpVerified && { opacity: 0.6 },
+                ]}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                editable={!rpVerified}
+              />
+              <Pressable
+                style={[
+                  styles.signupEmailButton,
+                  (rpVerified || !rpEmail.trim() || rpSendingCode) && {
+                    opacity: 0.5,
+                  },
+                ]}
+                onPress={handleSendResetCode}
+                disabled={rpVerified || !rpEmail.trim() || rpSendingCode}
+              >
+                <Text style={styles.signupEmailButtonText}>
+                  {rpVerified
+                    ? "완료"
+                    : rpSendingCode
+                      ? "발송 중..."
+                      : rpCodeSent
+                        ? "재발송"
+                        : "인증"}
+                </Text>
+              </Pressable>
+            </View>
+            {rpVerified && (
+              <Text style={styles.signupSuccessText}>✓ 인증 완료</Text>
+            )}
+            {rpCodeSent && !rpVerified && (
+              <View style={[styles.signupInlineRow, { marginTop: 10 }]}>
+                <TextInput
+                  value={rpCode}
+                  onChangeText={setRpCode}
+                  placeholder="6자리 인증번호"
+                  style={[styles.input, styles.signupInlineInput]}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+                <Pressable
+                  style={[
+                    styles.signupEmailButton,
+                    rpVerifyingCode && { opacity: 0.5 },
+                  ]}
+                  onPress={handleVerifyResetCode}
+                  disabled={rpVerifyingCode}
+                >
+                  <Text style={styles.signupEmailButtonText}>
+                    {rpVerifyingCode ? "확인 중..." : "확인"}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
+            {rpVerified && (
+              <>
+                <Label text="새 비밀번호" />
+                <TextInput
+                  value={rpNewPassword}
+                  onChangeText={setRpNewPassword}
+                  placeholder="8자 이상"
+                  secureTextEntry
+                  style={styles.input}
+                />
+                <Label text="새 비밀번호 확인" />
+                <TextInput
+                  value={rpConfirmPassword}
+                  onChangeText={setRpConfirmPassword}
+                  placeholder="비밀번호 재입력"
+                  secureTextEntry
+                  style={styles.input}
+                />
+                {rpConfirmPassword.length > 0 &&
+                  rpNewPassword !== rpConfirmPassword && (
+                    <Text style={styles.errorText}>
+                      비밀번호가 일치하지 않습니다
+                    </Text>
+                  )}
+                <Pressable
+                  style={[
+                    styles.primaryButton,
+                    { marginTop: 20 },
+                    rpResetting && { opacity: 0.6 },
+                  ]}
+                  onPress={handleResetPassword}
+                  disabled={rpResetting}
+                >
+                  <Text style={styles.primaryButtonText}>
+                    {rpResetting ? "변경 중..." : "비밀번호 재설정"}
+                  </Text>
+                </Pressable>
+              </>
+            )}
+          </>
+        )}
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -2345,12 +2670,55 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
 
 function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
   const [notifications, setNotifications] = useState(true);
+  const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
+  const [withdrawPassword, setWithdrawPassword] = useState("");
+  const [withdrawing, setWithdrawing] = useState(false);
 
   const logout = () => {
     Alert.alert("로그아웃", "로그아웃 하시겠습니까?", [
       { text: "취소", style: "cancel" },
       { text: "로그아웃", style: "destructive", onPress: () => go("login") },
     ]);
+  };
+
+  const openWithdrawModal = () => {
+    setWithdrawPassword("");
+    setWithdrawModalVisible(true);
+  };
+
+  const handleWithdraw = async () => {
+    if (!withdrawPassword.trim()) {
+      Alert.alert("입력 확인", "비밀번호를 입력해주세요.");
+      return;
+    }
+    setWithdrawing(true);
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      await axios.delete(
+        `${process.env.EXPO_PUBLIC_BASE_URL}/api/users/me`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json; charset=UTF-8",
+            "ngrok-skip-browser-warning": "true",
+          },
+          data: { password: withdrawPassword },
+        },
+      );
+      await AsyncStorage.removeItem("accessToken");
+      await AsyncStorage.removeItem("refreshToken");
+      setWithdrawModalVisible(false);
+      Alert.alert("탈퇴 완료", "회원탈퇴가 완료되었습니다.");
+      go("login");
+    } catch (error: any) {
+      Alert.alert(
+        "탈퇴 실패",
+        error.response?.data?.message ?? "비밀번호를 확인해주세요.",
+      );
+      console.error("회원탈퇴 에러:", error.response?.data || error.message);
+    } finally {
+      setWithdrawing(false);
+    }
   };
 
   const Toggle = ({
@@ -2439,9 +2807,69 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
           <Text style={stStyles.logoutText}>로그아웃</Text>
         </Pressable>
 
+        {/* 회원탈퇴 */}
+        <Pressable
+          style={[stStyles.logoutBtn, { marginTop: 10 }]}
+          onPress={openWithdrawModal}
+        >
+          <View style={stStyles.iconWrapGray}>
+            <Text style={{ fontSize: 15 }}>🚫</Text>
+          </View>
+          <Text style={stStyles.withdrawText}>회원탈퇴</Text>
+        </Pressable>
+
         {/* 버전 */}
         <Text style={stStyles.version}>SenTic v1.0.0</Text>
       </ScrollView>
+
+      <Modal
+        visible={withdrawModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setWithdrawModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={stStyles.withdrawModalOverlay}
+        >
+          <View style={stStyles.withdrawModalCard}>
+            <Text style={stStyles.withdrawModalTitle}>회원탈퇴</Text>
+            <Text style={stStyles.withdrawModalDesc}>
+              탈퇴 시 모든 데이터가 삭제되며 복구할 수 없습니다.{"\n"}
+              계속하려면 비밀번호를 입력해주세요.
+            </Text>
+            <TextInput
+              value={withdrawPassword}
+              onChangeText={setWithdrawPassword}
+              placeholder="비밀번호"
+              secureTextEntry
+              style={styles.input}
+              autoFocus
+            />
+            <View style={stStyles.withdrawModalActions}>
+              <Pressable
+                style={stStyles.withdrawModalCancelBtn}
+                onPress={() => setWithdrawModalVisible(false)}
+                disabled={withdrawing}
+              >
+                <Text style={stStyles.withdrawModalCancelText}>취소</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  stStyles.withdrawModalConfirmBtn,
+                  withdrawing && { opacity: 0.6 },
+                ]}
+                onPress={handleWithdraw}
+                disabled={withdrawing}
+              >
+                <Text style={stStyles.withdrawModalConfirmText}>
+                  {withdrawing ? "탈퇴 중..." : "탈퇴하기"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -3168,6 +3596,14 @@ const stStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  iconWrapGray: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   toggle: {
     width: 44,
     height: 24,
@@ -3202,6 +3638,53 @@ const stStyles = StyleSheet.create({
     gap: 12,
   },
   logoutText: { color: "#EF4444", fontSize: 14 },
+  withdrawText: { color: "#6B7280", fontSize: 14 },
+  withdrawModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  withdrawModalCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
+  },
+  withdrawModalTitle: {
+    color: "#111827",
+    fontSize: 17,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  withdrawModalDesc: {
+    color: "#6B7280",
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  withdrawModalActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 16,
+  },
+  withdrawModalCancelBtn: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: "#F3F4F6",
+  },
+  withdrawModalCancelText: { color: "#374151", fontSize: 14, fontWeight: "600" },
+  withdrawModalConfirmBtn: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: "#EF4444",
+  },
+  withdrawModalConfirmText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
   version: {
     color: "#D1D5DB",
     fontSize: 12,
@@ -4330,6 +4813,14 @@ const styles = StyleSheet.create({
     borderBottomColor: "#E5E7EB",
   },
   webViewCloseText: { color: "#6B7280", fontSize: 14 },
+  kakaoLoadingOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  kakaoLoadingText: { color: "#FFFFFF", fontSize: 14 },
   screen: { flex: 1, backgroundColor: "#FFFFFF" },
   screenSoft: { flex: 1, backgroundColor: softBg },
   flex: { flex: 1 },
@@ -4404,6 +4895,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  findAccountTabRow: {
+    flexDirection: "row",
+    backgroundColor: "#F3F4F6",
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 16,
+  },
+  findAccountTabButton: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  findAccountTabButtonActive: {
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  findAccountTabText: { color: "#6B7280", fontSize: 13, fontWeight: "600" },
+  findAccountTabTextActive: { color: primary },
   primaryButton: {
     backgroundColor: primary,
     borderRadius: 14,
