@@ -1,9 +1,10 @@
-import { StatusBar } from "expo-status-bar";
 import { useMemo, useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import {
   Alert,
+  StatusBar,
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -18,6 +19,8 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { WebView } from "react-native-webview";
+// ⭐️ 음성 재생을 위해 expo-av에서 Audio를 꼭 불러와야 합니다!
+import { Audio } from "expo-av";
 
 const KAKAO_REST_API_KEY = "5775a3641d33077c7adf61cbcc01d0a9";
 const KAKAO_REDIRECT_URI = "https://localhost/kakao";
@@ -40,12 +43,24 @@ type Screen =
   | "notice"
   | "faq";
 
+// ⭐️ 피드백 객체의 생김새 정의
+interface FeedbackData {
+  id: number;
+  roomId?: number;
+  messageId?: number;
+  wordErrors?: string | null;
+  grammarErrors?: string | null;
+  expressionErrors?: string | null;
+  perfectSentence?: string | null;
+  createdAt?: string;
+}
+
 type Message = {
   id: string;
   speaker: "user" | "ai";
   text: string;
   time: string;
-  feedback?: string[];
+  feedback?: FeedbackData[];
 };
 
 type PracticeRoom = {
@@ -65,56 +80,74 @@ const darkPrimary = "#4338CA";
 const softBg = "#F5F5F7";
 const border = "#E5E7EB";
 
-const voiceRooms = [
-  {
-    id: "cafe",
-    title: "카페에서 주문하기",
-    desc: "바리스타와 자연스럽게 말하기",
-    level: "초급",
-  },
-  {
-    id: "airport",
-    title: "공항 체크인",
-    desc: "탑승 수속과 수하물 대화",
-    level: "중급",
-  },
-  {
-    id: "meeting",
-    title: "팀 미팅 참여",
-    desc: "의견 말하기와 질문하기",
-    level: "고급",
-  },
-];
-
-const chatRooms = [
-  {
-    id: "friend",
-    title: "친구와 스몰톡",
-    desc: "일상적인 표현을 편하게 연습",
-    lastMessage: "What did you do last weekend?",
-    date: "오늘",
-    duration: "8분",
-  },
-  {
-    id: "travel",
-    title: "여행 계획 세우기",
-    desc: "일정, 예약, 추천 표현 익히기",
-    lastMessage: "Could you recommend a place nearby?",
-    date: "어제",
-    duration: "16분",
-  },
-  {
-    id: "work",
-    title: "업무 메시지",
-    desc: "짧고 공손한 비즈니스 채팅",
-    lastMessage: "I'll send the file by this afternoon.",
-    date: "5일 전",
-    duration: "10분",
-  },
-];
-
 export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
+
+  // ⭐️ 1. 더미 데이터를 지우고, 상태(State)로 음성방을 관리하도록 추가합니다!
+  const [chatRooms, setChatRooms] = useState<any[]>([]);
+  const [voiceRooms, setVoiceRooms] = useState<any[]>([]); // 👈 새로 추가!
+
+  // ⭐️ 2. 채팅방 + 음성방 목록을 한 번에 불러오도록 업그레이드합니다.
+  useEffect(() => {
+    const fetchMyRooms = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+
+        if (!accessToken) {
+          return;
+        }
+
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const headers = {
+          Authorization: `Bearer ${accessToken}`,
+          "ngrok-skip-browser-warning": "true", // 👈 혹시 빠져있었다면 이거 꼭 넣어주세요!
+        };
+
+        // 1. 채팅방(Text) 목록 가져오기
+        const chatResponse = await axios.get(
+          `${API_URL}/api/rooms?roomType=CHAT`,
+          { headers },
+        );
+
+        // 2. 음성방(Voice) 목록 가져오기 (백엔드 파라미터가 'VOICE'라고 가정)
+        const voiceResponse = await axios.get(
+          `${API_URL}/api/rooms?roomType=VOICE`,
+          { headers },
+        );
+
+        // ⭐️ 번역(Mapping) 로직을 함수로 만들어서 둘 다 똑같이 예쁘게 포장해줍니다.
+        const formatRooms = (rawRooms: any[]) => {
+          return rawRooms.map((room: any) => ({
+            id: room.id,
+            title: room.roomName || "새로운 대화",
+            desc: room.situation || "대화 상황이 설정되지 않았습니다.",
+            date:
+              (room.lastActiveAt || room.createdAt)?.split("T")[0] || "오늘",
+            level: room.level || "맞춤", // 음성방에 필요했던 level 값 (없으면 '맞춤'으로 처리)
+          }));
+        };
+
+        // 포장된 데이터를 각각의 그릇에 담습니다!
+        setChatRooms(formatRooms(chatResponse.data?.data || []));
+        setVoiceRooms(formatRooms(voiceResponse.data?.data || []));
+      } catch (error: any) {
+        console.error(
+          "🚨 방 목록 불러오기 실패 상세원인:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+
+    // ⭐️ 3. 조건에 "voiceRooms" 화면일 때도 실행되도록 추가합니다!
+    if (
+      screen === "chatRooms" ||
+      screen === "voiceRooms" ||
+      screen === "mode"
+    ) {
+      fetchMyRooms();
+    }
+  }, [screen]);
+
   const [selectedRoom, setSelectedRoom] = useState<PracticeRoom>(voiceRooms[0]);
   const [selectedMode, setSelectedMode] = useState<"voice" | "text">("voice");
   const [kakaoWebViewVisible, setKakaoWebViewVisible] = useState(false);
@@ -164,7 +197,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar style="dark" />
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <Modal visible={kakaoWebViewVisible} animationType="slide">
         <SafeAreaView style={{ flex: 1 }}>
           <Pressable
@@ -188,25 +221,10 @@ export default function App() {
       {screen === "login" && (
         <LoginScreen go={go} onKakaoLogin={handleKakaoLogin} />
       )}
-<<<<<<< Updated upstream
-      {screen === "signup" && (
-        <SimpleFormScreen
-          title="회원가입"
-          subtitle="SenTic 계정을 만들고 학습을 시작하세요."
-          go={go}
-        />
-      )}
-      {screen === "findAccount" && (
-        <SimpleFormScreen
-          title="계정 찾기"
-          subtitle="가입한 이메일로 아이디와 비밀번호 안내를 받을 수 있어요."
-          go={go}
-        />
-      )}
-=======
+
       {screen === "signup" && <SignupScreen go={go} />}
       {screen === "findAccount" && <FindAccountScreen go={go} />}
->>>>>>> Stashed changes
+
       {screen === "mode" && <ModeScreen go={go} />}
       {screen === "voiceRooms" && (
         <RoomListScreen
@@ -406,8 +424,7 @@ function LoginScreen({
   );
 }
 
-<<<<<<< Updated upstream
-=======
+
 async function authPost(path: string, body: object) {
   const res = await fetch(`${process.env.EXPO_PUBLIC_BASE_URL}${path}`, {
     method: "POST",
@@ -420,6 +437,7 @@ async function authPost(path: string, body: object) {
   const data = await res.json().catch(() => null);
   return { ok: res.ok, data };
 }
+
 
 function SignupScreen({ go }: { go: (screen: Screen) => void }) {
   const [username, setUsername] = useState("");
@@ -641,7 +659,6 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
   );
 }
 
->>>>>>> Stashed changes
 function ModeScreen({ go }: { go: (screen: Screen) => void }) {
   const weekly = [33, 42, 27, 36, 48, 24, 60];
   return (
@@ -719,7 +736,7 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
   );
 }
 
-function RoomListScreen({
+export function RoomListScreen({
   title,
   rooms,
   go,
@@ -734,26 +751,78 @@ function RoomListScreen({
   onCreate: () => void;
   onPick: (room: PracticeRoom) => void;
 }) {
+  const [hiddenRooms, setHiddenRooms] = useState<(number | string)[]>([]);
+
+  const handleDeleteRoom = (roomId: number | string, roomTitle: string) => {
+    Alert.alert(
+      "대화방 삭제",
+      `'${roomTitle}' 대화방을 정말 삭제하시겠습니까?\n(삭제 후 복구할 수 없습니다.)`,
+      [
+        { text: "취소", style: "cancel" },
+        {
+          text: "삭제",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const accessToken = await AsyncStorage.getItem("accessToken");
+              const API_URL =
+                "https://rundown-irrigate-majesty.ngrok-free.dev";
+
+              await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+              });
+
+              setHiddenRooms((prev) => [...prev, roomId]);
+            } catch (error: any) {
+              console.error(
+                "🚨 방 삭제 실패:",
+                error.response?.data || error.message,
+              );
+              Alert.alert("오류", "대화방 삭제에 실패했습니다.");
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const visibleRooms = rooms.filter((room) => !hiddenRooms.includes(room.id));
+
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          // ⭐️ 안드로이드 상태바 높이만큼 상단 패딩을 줍니다 (없으면 기본 24px)
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       <View style={styles.roomListHeader}>
         <Pressable style={styles.headerButton} onPress={() => go("mode")}>
           <Text style={styles.headerIcon}>‹</Text>
         </Pressable>
         <View style={styles.flex}>
           <Text style={styles.roomListTitle}>{title}</Text>
-          <Text style={styles.roomListCount}>{rooms.length}개의 대화방</Text>
+          <Text style={styles.roomListCount}>
+            {visibleRooms.length}개의 대화방
+          </Text>
         </View>
         <Pressable style={styles.newRoomButton} onPress={onCreate}>
           <Text style={styles.newRoomButtonText}>+ 새 대화</Text>
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.roomListContent}>
-        {rooms.map((room) => (
+        {visibleRooms.map((room) => (
           <Pressable
             key={room.id}
             style={styles.chatRoomCard}
             onPress={() => onPick(room)}
+            onLongPress={() => handleDeleteRoom(room.id, room.title)}
           >
             <View style={styles.voiceRoomIcon}>
               <Text style={styles.voiceRoomIconText}>
@@ -830,6 +899,9 @@ function SituationScreen({
     },
   ]);
 
+  // 💡 통신 중 버튼을 비활성화하기 위한 로딩 상태 추가
+  const [loading, setLoading] = useState(false);
+
   const addCharacter = () => {
     if (characters.length >= 2) return;
     setCharacters((prev) => [
@@ -882,15 +954,81 @@ function SituationScreen({
     ]);
   };
 
-  const start = () => {
-    onStart({
-      ...room,
-      title: title.trim() || "새 영어 대화",
-      desc: desc.trim() || "직접 설정한 영어 대화 상황",
-      lastMessage: desc.trim() || room.lastMessage,
-      date: "오늘",
-    });
-    go(mode === "voice" ? "voiceChat" : "textChat");
+  const start = async () => {
+    // 💡 이 줄을 추가하면 사용자가 버튼을 다다닥 눌러도 한 번만 통신합니다.
+    if (loading) return;
+
+    if (!title.trim() || !desc.trim()) {
+      Alert.alert("입력 확인", "대화방 제목과 상황 설명을 입력해주세요.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      if (!accessToken) {
+        Alert.alert("로그인 만료", "다시 로그인해주세요.");
+        go("login");
+        return;
+      }
+
+      const requestBody = {
+        // ⭐️ 백엔드 변수명에 맞춰서 왼쪽 이름표들을 모두 수정했습니다!
+        roomName: title.trim(),
+        situation: desc.trim(),
+        difficulty: "BEGINNER",
+        roomType: mode === "voice" ? "VOICE" : "CHAT",
+
+        characters: characters.map((c) => ({
+          name: c.name, // 이건 똑같아서 잘 들어갔던 겁니다!
+          personality: c.trait, // trait -> personality 로 변경
+          iconType: c.avatar, // avatar -> iconType 으로 변경
+        })),
+      };
+
+      console.log("👉 방 생성 데이터 전송:", requestBody);
+
+      const response = await axios.post(
+        `${process.env.EXPO_PUBLIC_BASE_URL}/api/rooms`,
+        requestBody,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      const newRoomId = response.data?.data?.id || response.data?.id;
+
+      if (!newRoomId) {
+        throw new Error("서버에서 방 번호를 내려주지 않았습니다.");
+      }
+
+      onStart({
+        ...room,
+        id: newRoomId,
+        title: title.trim(),
+        desc: desc.trim(),
+        lastMessage: desc.trim() || room.lastMessage,
+        date: "오늘",
+        characters: characters,
+      } as any);
+
+      go(mode === "voice" ? "voiceChat" : "textChat");
+    } catch (error: any) {
+      console.error(
+        "🚨 방 생성 통신 에러:",
+        error.response?.data || error.message,
+      );
+      Alert.alert(
+        "방 생성 실패",
+        "상황을 설정하는 중 서버 오류가 발생했습니다.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -998,49 +1136,291 @@ function SituationScreen({
           </Text>
         </View>
 
-        <PrimaryButton label="대화 시작하기" onPress={start} />
+        <PrimaryButton
+          label={loading ? "방을 생성하는 중..." : "대화 시작하기"}
+          onPress={start}
+        />
       </ScrollView>
     </View>
   );
 }
 
-function VoiceChatScreen({
-  room,
-  go,
-}: {
-  room: { title: string };
-  go: (screen: Screen) => void;
-}) {
+export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   const [inCall, setInCall] = useState(false);
   const [muted, setMuted] = useState(false);
   const [speakerOff, setSpeakerOff] = useState(false);
   const [feedbackOn, setFeedbackOn] = useState(true);
   const [tab, setTab] = useState<"call" | "history" | "feedback">("call");
 
-  const history = useMemo<Message[]>(
-    () => [
-      {
-        id: "1",
-        speaker: "ai",
-        text: "Hello! How can I help you today?",
-        time: "10:30",
-      },
-      {
-        id: "2",
-        speaker: "user",
-        text: "I want to order a coffee, please.",
-        time: "10:31",
-        feedback: ["더 자연스럽게: I'd like to order a coffee, please."],
-      },
-      {
-        id: "3",
-        speaker: "ai",
-        text: "Sure! What size would you like?",
-        time: "10:31",
-      },
-    ],
-    [],
-  );
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [latestAiText, setLatestAiText] = useState("");
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const [recording, setRecording] = useState<any>(null);
+  const [isRecording, setIsRecording] = useState(false);
+
+  // ⭐️ 1. 방에 처음 들어왔을 때는 '과거 대화 기록'만 불러오고 가만히 대기합니다.
+  useEffect(() => {
+    const fetchHistoryOnly = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const currentRoomId = room.id;
+
+        const historyRes = await axios.get(
+          `${API_URL}/api/rooms/${currentRoomId}/messages`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "ngrok-skip-browser-warning": "true",
+            },
+          },
+        );
+
+        const pastMessages = historyRes.data?.data || historyRes.data || [];
+
+        const formattedHistory = pastMessages.map((msg: any, idx: number) => {
+          let parsedFeedback = undefined;
+          if (msg.feedback) {
+            const rawFeedback =
+              typeof msg.feedback === "string"
+                ? JSON.parse(msg.feedback)
+                : msg.feedback;
+
+            parsedFeedback = Array.isArray(rawFeedback)
+              ? rawFeedback
+              : [rawFeedback];
+          }
+
+          return {
+            id: msg.id?.toString() || `history-${idx}`,
+            speaker: msg.senderType === "USER" ? "user" : "ai",
+            text: msg.contentText || "",
+            time: msg.createdAt ? msg.createdAt.substring(11, 16) : "이전",
+            feedback: parsedFeedback,
+          };
+        });
+
+        setMessages(formattedHistory);
+
+        const lastAiMsg = [...formattedHistory]
+          .reverse()
+          .find((m: any) => m.speaker === "ai");
+        if (lastAiMsg) setLatestAiText(lastAiMsg.text);
+      } catch (error: any) {
+        console.error(
+          "🚨 음성방 기록 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+
+    if (room?.id) {
+      fetchHistoryOnly();
+    }
+  }, [room?.id]);
+
+  // ⭐️ 2. 사용자가 '시작' 버튼을 눌렀을 때만 실행되는 AI 인사말 호출 함수
+  const handleStartCall = async () => {
+    // 만약 이미 통화 중(inCall)이었다가 종료하는 거라면 통화만 끔
+    if (inCall) {
+      setInCall(false);
+      return;
+    }
+
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const currentRoomId = room.id;
+
+      // 통화 시작 상태로 변경
+      setInCall(true);
+
+      const enterRes = await axios.post(
+        `${API_URL}/api/rooms/${currentRoomId}/enter`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      const aiText = enterRes.data?.data?.aiText || enterRes.data?.aiText;
+      const audioUrl = enterRes.data?.data?.audioUrl || enterRes.data?.audioUrl;
+
+      if (aiText) {
+        const aiMessage: Message = {
+          id: Date.now().toString(),
+          speaker: "ai",
+          text: aiText,
+          time: new Date().toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        };
+
+        setMessages((prev) => [...prev, aiMessage]);
+        setLatestAiText(aiText);
+      }
+
+      if (audioUrl) {
+        await playAudio(audioUrl);
+      }
+    } catch (error: any) {
+      console.error(
+        "🚨 통화 시작(입장) 실패:",
+        error.response?.data || error.message,
+      );
+      setInCall(false); // 실패 시 다시 버튼 원복
+    }
+  };
+
+  const playAudio = async (url: string) => {
+    try {
+      setIsPlaying(true);
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: url },
+        { shouldPlay: true },
+      );
+
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setIsPlaying(false);
+          sound.unloadAsync();
+        }
+      });
+    } catch (error) {
+      console.error("🚨 오디오 재생 실패:", error);
+      setIsPlaying(false);
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (permission.status !== "granted") {
+        Alert.alert("권한 필요", "마이크 접근 권한을 허용해 주세요.");
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+      );
+
+      setRecording(newRecording);
+      setIsRecording(true);
+    } catch (err) {
+      console.error("🚨 녹음 시작 실패:", err);
+    }
+  };
+
+  const stopRecordingAndSend = async () => {
+    try {
+      if (!recording) return;
+
+      setIsRecording(false);
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
+
+      if (uri) {
+        await sendVoiceToServer(uri);
+      }
+    } catch (err) {
+      console.error("🚨 녹음 종료 실패:", err);
+    }
+  };
+
+  const sendVoiceToServer = async (fileUri: string) => {
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+
+      const formData = new FormData();
+      formData.append("file", {
+        uri: fileUri,
+        type: "audio/m4a",
+        name: "my_voice.m4a",
+      } as any);
+
+      const response = await axios.post(
+        `${API_URL}/api/rooms/${room.id}/messages/voice`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true",
+            "Content-Type": "multipart/form-data",
+          },
+        },
+      );
+
+      const responseData = response.data?.data || response.data;
+
+      const userText = responseData?.userText || responseData?.content;
+      const aiText = responseData?.aiText;
+      const audioUrl = responseData?.audioUrl;
+      const rawFeedback = responseData?.feedback;
+
+      const newMessages: Message[] = [];
+
+      if (userText) {
+        let parsedFeedback = undefined;
+        if (rawFeedback) {
+          parsedFeedback = Array.isArray(rawFeedback)
+            ? rawFeedback
+            : [rawFeedback];
+        }
+
+        newMessages.push({
+          id: Date.now().toString() + "-user",
+          speaker: "user",
+          text: userText,
+          time: new Date().toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          feedback: parsedFeedback,
+        });
+      }
+
+      if (aiText) {
+        setLatestAiText(aiText);
+        newMessages.push({
+          id: Date.now().toString() + "-ai",
+          speaker: "ai",
+          text: aiText,
+          time: new Date().toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        });
+      }
+
+      if (newMessages.length > 0) {
+        setMessages((prev) => [...prev, ...newMessages]);
+      }
+
+      if (audioUrl) {
+        await playAudio(audioUrl);
+      }
+    } catch (error: any) {
+      console.error(
+        "🚨 음성 전송 실패:",
+        error.response?.data || error.message,
+      );
+      Alert.alert("오류", "메시지를 전송하지 못했습니다.");
+    }
+  };
 
   return (
     <View style={styles.screen}>
@@ -1053,20 +1433,20 @@ function VoiceChatScreen({
       {tab === "call" && (
         <View style={styles.callBody}>
           <View style={[styles.avatarLarge, inCall && styles.avatarActive]}>
-            <Text style={styles.avatarEmoji}>🤖</Text>
+            <Text style={styles.avatarEmoji}>{isPlaying ? "🎵" : "🤖"}</Text>
           </View>
           <Text style={styles.h2}>AI 파트너</Text>
           <Text style={styles.muted}>
             {inCall ? "통화 중입니다" : "통화를 시작해 보세요"}
           </Text>
-          {inCall && (
+
+          {inCall && latestAiText ? (
             <View style={styles.subtitleBox}>
               <Text style={styles.caption}>AI 파트너</Text>
-              <Text style={styles.subtitleText}>
-                Hello! How can I help you today?
-              </Text>
+              <Text style={styles.subtitleText}>{latestAiText}</Text>
             </View>
-          )}
+          ) : null}
+
           <View style={styles.controlRow}>
             {inCall && (
               <RoundButton
@@ -1080,9 +1460,16 @@ function VoiceChatScreen({
                 onPress={() => setSpeakerOff((v) => !v)}
               />
             )}
+            {inCall && (
+              <RoundButton
+                label={isRecording ? "녹음 중지" : "내 답변 녹음"}
+                onPress={isRecording ? stopRecordingAndSend : startRecording}
+              />
+            )}
+            {/* ⭐️ 시작 버튼을 누를 때만 handleStartCall이 실행되도록 연결! */}
             <Pressable
               style={[styles.callButton, inCall && styles.endCallButton]}
-              onPress={() => setInCall((v) => !v)}
+              onPress={handleStartCall}
             >
               <Text style={styles.callButtonText}>
                 {inCall ? "종료" : "시작"}
@@ -1107,46 +1494,193 @@ function VoiceChatScreen({
           </Pressable>
         </View>
       )}
-      {tab === "history" && <MessageList messages={history} />}
+      {tab === "history" && <MessageList messages={messages} />}
       {tab === "feedback" && (
-        <FeedbackList messages={history} enabled={feedbackOn} />
+        <FeedbackList messages={messages} enabled={feedbackOn} />
       )}
     </View>
   );
 }
 
-function TextChatScreen({
+// ⭐️ 1. 괄호([]) 찌꺼기를 없애고 예쁜 디자인을 입혀주는 도우미 함수 (컴포넌트 밖에 선언)
+const renderFeedbackSection = (
+  title: string,
+  jsonString: string | null | undefined,
+  icon: string,
+) => {
+  if (
+    !jsonString ||
+    jsonString === "[]" ||
+    jsonString.toString().trim() === "[]"
+  )
+    return null;
+
+  try {
+    // ⭐️ [추가] 만약 데이터가 이미 배열(Array) 형태로 예쁘게 파싱되어 들어왔다면 JSON.parse를 건너뜁니다!
+    const parsedData = Array.isArray(jsonString)
+      ? jsonString
+      : typeof jsonString === "string"
+        ? JSON.parse(jsonString)
+        : [jsonString]; // 문자열도 객체도 아니라면 배열로 감싸서 방어
+
+    if (!Array.isArray(parsedData) || parsedData.length === 0) return null;
+
+    return (
+      <View style={{ marginTop: 12 }}>
+        <Text style={{ fontWeight: "bold", marginBottom: 4, color: "#333" }}>
+          {icon} {title}
+        </Text>
+        {parsedData.map((errorItem: any, index: number) => (
+          <View
+            key={index}
+            style={{
+              backgroundColor: "rgba(255, 255, 255, 0.6)", // 살짝 투명한 흰색 박스
+              padding: 10,
+              borderRadius: 8,
+              marginBottom: 6,
+            }}
+          >
+            <Text style={{ fontSize: 15, marginBottom: 4 }}>
+              <Text
+                style={{ textDecorationLine: "line-through", color: "#ff5252" }}
+              >
+                {errorItem.original}
+              </Text>{" "}
+              ➡️{" "}
+              <Text style={{ color: "#4caf50", fontWeight: "bold" }}>
+                {errorItem.suggested || errorItem.corrected}
+              </Text>
+            </Text>
+            <Text style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
+              {errorItem.explanation}
+            </Text>
+          </View>
+        ))}
+      </View>
+    );
+  } catch (error) {
+    return (
+      <View style={{ marginTop: 12 }}>
+        <Text style={{ fontWeight: "bold", marginBottom: 4, color: "#333" }}>
+          {icon} {title}
+        </Text>
+        <Text style={{ fontSize: 14, color: "#333" }}>{jsonString}</Text>
+      </View>
+    );
+  }
+};
+
+export function TextChatScreen({
   room,
   go,
 }: {
   room: { id: number; title: string };
-  go: (screen: Screen) => void;
+  go: (screen: any) => void;
 }) {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    { id: "1", speaker: "ai", text: "Hey! What's up?", time: "10:30" },
-    {
-      id: "2",
-      speaker: "user",
-      text: "I'm good. What about you?",
-      time: "10:31",
-      feedback: ["더 자연스럽게: I'm doing well, thanks! How about you?"],
-    },
-    {
-      id: "3",
-      speaker: "ai",
-      text: "I'm doing great! Wanna grab some coffee later?",
-      time: "10:31",
-    },
-  ]);
+  const [messages, setMessages] = useState<any[]>([]); // Message 타입 대체
+
+  const requestInitialGreeting = async () => {
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const payload = {
+        content:
+          "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
+      };
+
+      const response = await axios.post(
+        `${API_URL}/api/rooms/${room.id}/messages/chat`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      if (response.data) {
+        const aiMessage = {
+          id: `${Date.now()}-ai-init`,
+          speaker: "ai",
+          text: response.data.data?.content || "Hello!",
+          time: new Date().toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        };
+        setMessages([aiMessage]);
+      }
+    } catch (error) {
+      console.error("🚨 AI 첫인사 로딩 실패:", error);
+    }
+  };
+
+  useEffect(() => {
+    const fetchChatHistory = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const response = await axios.get(
+          `${API_URL}/api/rooms/${room.id}/messages`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+
+        console.log(
+          "👉 백엔드 데이터 확인:",
+          JSON.stringify(response.data, null, 2),
+        );
+
+        const history = response.data?.data || response.data || [];
+        if (history.length > 0) {
+          const formattedHistory = history
+            .filter((msg: any) => !msg.contentText.includes("(시스템:"))
+            .map((msg: any) => {
+              // ⭐️ 여기에 피드백 변환 로직이 들어갑니다!
+              let parsedFeedback = undefined;
+              if (msg.feedback) {
+                const rawFeedback =
+                  typeof msg.feedback === "string"
+                    ? JSON.parse(msg.feedback)
+                    : msg.feedback;
+
+                parsedFeedback = Array.isArray(rawFeedback)
+                  ? rawFeedback
+                  : [rawFeedback];
+              }
+
+              // ⭐️ 괄호가 ({ }) 에서 { return { ... } } 형태로 바뀌었습니다.
+              return {
+                id: msg.id.toString(),
+                speaker: msg.senderType === "AI" ? "ai" : "user",
+                text: msg.contentText,
+                time: new Date(msg.createdAt).toLocaleTimeString("ko-KR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+                feedback: parsedFeedback, // 👈 추출한 피드백 데이터를 추가!
+              };
+            });
+          setMessages(formattedHistory);
+        } else {
+          requestInitialGreeting();
+        }
+      } catch (error) {
+        console.error("🚨 대화 내역 불러오기 실패:", error);
+      }
+    };
+
+    if (room?.id) fetchChatHistory();
+  }, [room?.id]);
 
   const send = async () => {
     const text = input.trim();
     if (!text) return;
 
-    // 1. 내 메시지 화면에 먼저 띄우기
-    const userMessage: Message = {
-      id: Date.now().toString(),
+    const userMsgId = Date.now().toString();
+    const userMessage = {
+      id: userMsgId,
       speaker: "user",
       text,
       time: new Date().toLocaleTimeString("ko-KR", {
@@ -1161,17 +1695,9 @@ function TextChatScreen({
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
       const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
-      const roomId = 1;
-
-      // ⭐️ 핵심: axios.post는 객체를 그대로 보내는 게 좋습니다.
-      // JSON.stringify를 또 쓰면 이중 직렬화 문제가 생길 수 있어요.
-      const requestBody = { content: text };
-
-      console.log("👉 서버로 전송하는 최종 데이터:", requestBody);
-
       const response = await axios.post(
-        `${API_URL}/api/rooms/${roomId}/messages/chat`,
-        { content: text }, // 👈 이대로 유지! (이제 백엔드가 완벽하게 해석할 거예요)
+        `${API_URL}/api/rooms/${room.id}/messages/chat`,
+        { content: text },
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -1180,10 +1706,24 @@ function TextChatScreen({
         },
       );
 
-      // 서버 응답 성공 시 처리
       if (response.data) {
-        // ⭐️ 여기서 response.data.data.content로 접근해야 합니다!
-        const aiMessage: Message = {
+        const aiFeedback = response.data.data?.feedback;
+        if (aiFeedback) {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === userMsgId
+                ? {
+                    ...msg,
+                    feedback: Array.isArray(aiFeedback)
+                      ? aiFeedback
+                      : [aiFeedback],
+                  }
+                : msg,
+            ),
+          );
+        }
+
+        const aiMessage = {
           id: `${Date.now()}-ai`,
           speaker: "ai",
           text: response.data.data?.content || "응답이 없습니다.",
@@ -1195,45 +1735,154 @@ function TextChatScreen({
         setMessages((prev) => [...prev, aiMessage]);
       }
     } catch (error: any) {
-      // 🚨 여기가 제일 중요합니다! 에러가 나면 꼭 이 로그를 확인하세요.
       console.error(
         "🚨 통신 에러 상세:",
         error.response?.data || error.message,
       );
-
-      const errorMessage: Message = {
-        id: `${Date.now()}-error`,
-        speaker: "ai",
-        text: "서버 연결에 실패했습니다.",
-        time: new Date().toLocaleTimeString("ko-KR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
     }
   };
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0} // 👈 2. 안드로이드 상단 헤더 높이만큼 여백 추가
-      style={styles.screen}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+      style={{ flex: 1, backgroundColor: "#f5f5f5" }} // styles.screen 대체
     >
-      <Header title={room.title} go={go} backTo="chatRooms" />
-      <MessageList messages={messages} />
-      <View style={styles.composer}>
+      {<Header title={room.title} go={go} backTo="chatRooms" />}
+
+      {/* ⭐️ 3. MessageList를 빼버리고 여기서 직접 채팅과 피드백을 그립니다! */}
+      <ScrollView
+        style={{ flex: 1, paddingHorizontal: 16 }}
+        contentContainerStyle={{ paddingVertical: 20 }}
+      >
+        {messages.map((msg) => {
+          const isUser = msg.speaker === "user";
+
+          return (
+            <View
+              key={msg.id}
+              style={{
+                marginBottom: 20,
+                alignItems: isUser ? "flex-end" : "flex-start",
+                width: "100%",
+              }}
+            >
+              {/* 대화 말풍선 */}
+              <View
+                style={{
+                  backgroundColor: isUser ? "#5C6BC0" : "#ffffff", // 내 메시지는 파란색, AI는 흰색
+                  padding: 12,
+                  borderRadius: 16,
+                  borderBottomRightRadius: isUser ? 4 : 16,
+                  borderBottomLeftRadius: isUser ? 16 : 4,
+                  maxWidth: "80%",
+                  elevation: 1, // 안드로이드 그림자
+                }}
+              >
+                <Text style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}>
+                  {msg.text}
+                </Text>
+              </View>
+
+              {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에, feedback 데이터가 있을 때만 등장!) */}
+              {isUser &&
+                msg.feedback &&
+                msg.feedback.map((item: any, index: number) => (
+                  <View
+                    key={index}
+                    style={{
+                      marginTop: 8,
+                      backgroundColor: "#FFF9C4", // 연한 노란색
+                      padding: 16,
+                      borderRadius: 16,
+                      width: "85%", // 피드백 박스 크기
+                    }}
+                  >
+                    {renderFeedbackSection("단어 오류", item.wordErrors, "💡")}
+                    {renderFeedbackSection(
+                      "문법 오류",
+                      item.grammarErrors,
+                      "💡",
+                    )}
+                    {renderFeedbackSection(
+                      "어색한 표현",
+                      item.expressionErrors,
+                      "💡",
+                    )}
+
+                    {item.perfectSentence &&
+                      item.perfectSentence.trim() !== "[]" && (
+                        <View
+                          style={{
+                            marginTop: 12,
+                            paddingTop: 12,
+                            borderTopWidth: 1,
+                            borderColor: "#E0E0E0",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontWeight: "bold",
+                              color: "#333",
+                              marginBottom: 4,
+                            }}
+                          >
+                            ✨ 추천 문장
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 15,
+                              color: "#1976D2",
+                              fontWeight: "600",
+                            }}
+                          >
+                            {item.perfectSentence}
+                          </Text>
+                        </View>
+                      )}
+                  </View>
+                ))}
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {/* 입력창 (기존 styles.composer 적용 부분을 인라인으로 합쳤습니다) */}
+      <View
+        style={{
+          flexDirection: "row",
+          padding: 12,
+          backgroundColor: "#fff",
+          alignItems: "center",
+          borderTopWidth: 1,
+          borderColor: "#eee",
+        }}
+      >
         <TextInput
           value={input}
           onChangeText={setInput}
           placeholder="메시지를 입력하세요"
-          style={styles.composerInput}
+          style={{
+            flex: 1,
+            backgroundColor: "#f5f5f5",
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderRadius: 20,
+            fontSize: 16,
+          }}
         />
         <Pressable
-          style={[styles.sendButton, !input.trim() && styles.disabled]}
+          style={{
+            marginLeft: 10,
+            backgroundColor: input.trim() ? "#5C6BC0" : "#ccc",
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderRadius: 20,
+          }}
           onPress={send}
+          disabled={!input.trim()}
         >
-          <Text style={styles.sendText}>전송</Text>
+          <Text style={{ color: "#fff", fontWeight: "bold" }}>전송</Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -1573,57 +2222,64 @@ function FindAccountScreen({ go }: { go: (screen: Screen) => void }) {
   );
 }
 
-function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
+export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
+  // ⭐️ 1. 기존의 interface Notice는 그대로 두셔도 되고, 서버 데이터 형식에 맞게 쓰셔도 됩니다.
   interface Notice {
-    id: string;
+    id: number; // announcementId -> id 로 변경
     title: string;
     content: string;
-    date: string;
-    isImportant: boolean;
+    createdAt: string;
+    updatedAt: string; // (선택) 서버에서 주니까 추가해 두면 좋습니다.
+    pinned: boolean; // isPinned -> pinned 로 변경
   }
 
   const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
 
-  const notices: Notice[] = [
-    {
-      id: "1",
-      title: "SenTic 정식 오픈을 축하합니다! 🎉",
-      content: `안녕하세요, SenTic 팀입니다.\n\n드디어 SenTic이 정식으로 오픈하게 되었습니다!\n\nAI와 함께하는 영어 회화 학습 서비스 SenTic은 여러분의 영어 실력 향상을 위해 최선을 다하겠습니다.\n\n주요 기능:\n• 음성 대화 모드 - 실시간 AI 음성 대화\n• 채팅 대화 모드 - 텍스트 기반 학습\n• 실시간 피드백 - 문법, 발음, 표현 교정\n• 표현 북마크 - 유용한 표현 저장 및 복습\n\n앞으로도 더 나은 서비스를 제공하기 위해 노력하겠습니다.\n감사합니다.`,
-      date: "2026-04-06",
-      isImportant: true,
-    },
-    {
-      id: "2",
-      title: "프리미엄 플랜 출시 안내",
-      content: `프리미엄 플랜이 새롭게 출시되었습니다.\n\n프리미엄 플랜 혜택:\n• 무제한 대화 이용\n• 고급 AI 튜터 이용\n• 상세한 학습 리포트\n• 우선 고객 지원\n\n지금 바로 프리미엄으로 업그레이드하고 더 많은 기능을 경험해보세요!`,
-      date: "2026-04-05",
-      isImportant: false,
-    },
-    {
-      id: "3",
-      title: "서버 점검 안내 (완료)",
-      content: `서비스 품질 향상을 위한 서버 점검이 완료되었습니다.\n\n점검 일시: 2026년 4월 4일 02:00 ~ 04:00 (2시간)\n점검 내용: 서버 성능 개선 및 안정화 작업\n\n점검 중 일시적으로 서비스 이용이 불가능했던 점 양해 부탁드립니다.`,
-      date: "2026-04-04",
-      isImportant: false,
-    },
-    {
-      id: "4",
-      title: "AI 대화 품질 개선 업데이트",
-      content: `AI 대화 엔진이 업데이트되었습니다.\n\n개선 사항:\n• 더욱 자연스러운 대화 흐름\n• 발음 피드백 정확도 향상\n• 문법 교정 기능 강화\n• 다양한 주제 대화 지원 확대`,
-      date: "2026-04-03",
-      isImportant: false,
-    },
-    {
-      id: "5",
-      title: "이용약관 및 개인정보처리방침 개정 안내",
-      content: `이용약관 및 개인정보처리방침이 개정되었습니다.\n\n주요 변경 사항:\n• 개인정보 보호 정책 강화\n• 서비스 이용 조건 명확화\n• 데이터 처리 방침 개선`,
-      date: "2026-04-01",
-      isImportant: true,
-    },
-  ];
+  // ⭐️ 2. 더미 배열 대신 서버에서 가져온 데이터를 담을 상태를 만듭니다!
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const importantNotices = notices.filter((n) => n.isImportant);
-  const regularNotices = notices.filter((n) => !n.isImportant);
+  // ⭐️ 3. 화면이 켜지자마자 서버에서 공지사항 목록을 가져오는 통신 코드
+  useEffect(() => {
+    const fetchAnnouncements = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+
+        // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
+        const FULL_URL =
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
+
+        console.log("🚀 최종 요청 주소:", FULL_URL);
+
+        // ⭐️ 2. ngrok 우회 헤더와 함께 요청 전송
+        const response = await axios.get(FULL_URL, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true", // ngrok 경고 페이지 우회 치트키
+          },
+        });
+
+        console.log("📢 공지사항 목록 조회 성공:", response.data);
+
+        const list = response.data?.data || response.data || [];
+        setNotices(list);
+      } catch (error: any) {
+        console.error(
+          "🚨 공지사항 조회 실패:",
+          error.response?.data || error.message,
+        );
+        Alert.alert("오류", "공지사항을 불러오지 못했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAnnouncements();
+  }, []);
+
+  // ⭐️ 4. 백엔드가 알려준 'isPinned' 필드로 중요/일반 공지를 분류합니다!
+  const importantNotices = notices.filter((n) => n.pinned === true);
+  const regularNotices = notices.filter((n) => n.pinned !== true);
 
   if (selectedNotice) {
     return (
@@ -1638,13 +2294,15 @@ function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
           <Text style={ntStyles.headerTitle}>공지사항</Text>
         </View>
         <ScrollView contentContainerStyle={ntStyles.detailContent}>
-          {selectedNotice.isImportant && (
+          {selectedNotice.pinned && (
             <View style={ntStyles.importantBadge}>
               <Text style={ntStyles.importantBadgeText}>📌 중요 공지</Text>
             </View>
           )}
           <Text style={ntStyles.detailTitle}>{selectedNotice.title}</Text>
-          <Text style={ntStyles.detailDate}>{selectedNotice.date}</Text>
+          <Text style={ntStyles.detailDate}>
+            {selectedNotice.createdAt?.substring(0, 10)}
+          </Text>
           <View style={ntStyles.detailCard}>
             <Text style={ntStyles.detailBody}>{selectedNotice.content}</Text>
           </View>
@@ -1687,7 +2345,9 @@ function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
                     <Text style={ntStyles.noticeTitle} numberOfLines={1}>
                       {notice.title}
                     </Text>
-                    <Text style={ntStyles.noticeDate}>{notice.date}</Text>
+                    <Text style={ntStyles.noticeDate}>
+                      {notice.createdAt?.substring(0, 10)}
+                    </Text>
                   </View>
                   <Text style={styles.chevron}>›</Text>
                 </Pressable>
@@ -1711,7 +2371,9 @@ function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
                     <Text style={ntStyles.noticeTitle} numberOfLines={1}>
                       {notice.title}
                     </Text>
-                    <Text style={ntStyles.noticeDate}>{notice.date}</Text>
+                    <Text style={ntStyles.noticeDate}>
+                      {notice.createdAt?.substring(0, 10)}
+                    </Text>
                   </View>
                   <Text style={styles.chevron}>›</Text>
                 </Pressable>
@@ -2016,7 +2678,15 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
   const logout = () => {
     Alert.alert("로그아웃", "로그아웃 하시겠습니까?", [
       { text: "취소", style: "cancel" },
-      { text: "로그아웃", style: "destructive", onPress: () => go("login") },
+      {
+        text: "로그아웃",
+        style: "destructive",
+        onPress: async () => {
+          await AsyncStorage.removeItem("accessToken");
+          await AsyncStorage.removeItem("refreshToken");
+          go("login");
+        },
+      },
     ]);
   };
 
@@ -2521,88 +3191,49 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
   );
 }
 
-function FaqScreen({ go }: { go: (screen: Screen) => void }) {
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+function FaqScreen({ go }: { go: (screen: any) => void }) {
+  // 1. 서버에서 받아온 데이터를 담을 상태 (초기값은 빈 배열)
+  const [faqs, setFaqs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const faqData = [
-    {
-      category: "학습 방법",
-      items: [
-        {
-          question: "음성 대화와 채팅 대화의 차이는 무엇인가요?",
-          answer:
-            "음성 대화는 실제 전화 통화처럼 AI와 실시간으로 대화하며 발음과 유창성을 연습할 수 있습니다. 채팅 대화는 메시지 형식으로 문법과 표현을 천천히 연습할 수 있어, 각자의 학습 목적에 맞게 선택하실 수 있습니다.",
-        },
-        {
-          question: "하루에 얼마나 학습해야 하나요?",
-          answer:
-            "매일 15-20분 정도 꾸준히 학습하는 것을 권장합니다. 짧은 시간이라도 매일 반복하는 것이 실력 향상에 가장 효과적입니다.",
-        },
-        {
-          question: "피드백은 어떻게 확인하나요?",
-          answer:
-            "각 대화 종료 후 자동으로 피드백 화면이 표시되며, 마이페이지에서 이전 피드백을 다시 확인할 수 있습니다.",
-        },
-      ],
-    },
-    {
-      category: "기능 사용",
-      items: [
-        {
-          question: "요정 캐릭터는 언제 나타나나요?",
-          answer:
-            "음성 대화 중 문법이나 표현이 틀렸을 때 화면이 흑백으로 변하며 요정 캐릭터가 나타나 올바른 표현을 알려줍니다.",
-        },
-        {
-          question: "대화 상황은 어떻게 설정하나요?",
-          answer:
-            "대화 모드를 선택한 후 상황 설정 화면에서 원하는 시나리오를 선택할 수 있습니다. 카페 주문, 여행, 비즈니스 등 다양한 상황이 준비되어 있습니다.",
-        },
-        {
-          question: "학습 기록은 어디서 볼 수 있나요?",
-          answer:
-            "홈 화면에서 이번 주 학습 차트를 확인할 수 있으며, 마이페이지에서 더 자세한 학습 통계를 볼 수 있습니다.",
-        },
-      ],
-    },
-    {
-      category: "계정 및 결제",
-      items: [
-        {
-          question: "프리미엄 플랜의 혜택은 무엇인가요?",
-          answer:
-            "프리미엄 플랜은 무제한 대화, 모든 상황 시나리오 이용, 상세한 피드백 분석, 광고 제거 등의 혜택을 제공합니다.",
-        },
-        {
-          question: "비밀번호를 잊어버렸어요.",
-          answer:
-            "로그인 화면에서 '비밀번호 찾기'를 클릭하여 등록된 이메일로 인증 후 비밀번호를 재설정하실 수 있습니다.",
-        },
-        {
-          question: "구독을 취소하려면 어떻게 하나요?",
-          answer:
-            "마이페이지 > 결제 및 구독에서 언제든지 구독을 취소하실 수 있습니다. 남은 기간까지는 프리미엄 혜택이 유지됩니다.",
-        },
-      ],
-    },
-    {
-      category: "문제 해결",
-      items: [
-        {
-          question: "음성 인식이 잘 안 돼요.",
-          answer:
-            "조용한 환경에서 마이크에 가까이 또렷하게 말씀해주세요. 설정에서 마이크 권한을 확인하시고, 앱을 재시작해보시는 것도 도움이 됩니다.",
-        },
-        {
-          question: "앱이 느리거나 멈춰요.",
-          answer:
-            "기기를 재부팅하거나 앱을 재설치해보세요. 문제가 계속되면 고객센터로 문의해주시면 신속히 도와드리겠습니다.",
-        },
-      ],
-    },
-  ];
+  // 2. 열려있는 항목을 추적할 상태 (globalIndex 대신 카테고리-아이템 인덱스 조합 사용)
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  let globalIndex = 0;
+  // 3. 백엔드에서 FAQ 목록 불러오기 (공지사항과 99.9% 동일!)
+  useEffect(() => {
+    const fetchFaqs = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const FULL_URL =
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
+
+        console.log("🚀 FAQ 요청 주소:", FULL_URL);
+
+        const response = await axios.get(FULL_URL, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true", // ngrok 경고 페이지 우회
+          },
+        });
+
+        console.log("📢 FAQ 목록 조회 성공:", response.data);
+
+        // 서버 응답 구조에 맞게 데이터 세팅 (data.data 또는 data 자체)
+        const list = response.data?.data || response.data || [];
+        setFaqs(list);
+      } catch (error: any) {
+        console.error(
+          "🚨 FAQ 조회 실패:",
+          error.response?.data || error.message,
+        );
+        Alert.alert("오류", "FAQ를 불러오지 못했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchFaqs();
+  }, []);
 
   return (
     <View style={styles.screenSoft}>
@@ -2614,67 +3245,76 @@ function FaqScreen({ go }: { go: (screen: Screen) => void }) {
         <Text style={fqStyles.headerTitle}>자주 묻는 질문</Text>
       </View>
 
-      <ScrollView contentContainerStyle={fqStyles.content}>
-        {faqData.map((category, catIdx) => {
-          return (
-            <View key={catIdx} style={{ marginBottom: 6 }}>
-              <Text style={fqStyles.categoryLabel}>{category.category}</Text>
-              <View style={fqStyles.card}>
-                {category.items.map((item) => {
-                  const currentIndex = globalIndex++;
-                  const isExpanded = expandedIndex === currentIndex;
-                  return (
-                    <View key={currentIndex}>
-                      <Pressable
-                        style={[
-                          fqStyles.qRow,
-                          currentIndex > 0 && fqStyles.qRowBorder,
-                        ]}
-                        onPress={() =>
-                          setExpandedIndex(isExpanded ? null : currentIndex)
-                        }
-                      >
-                        <Text style={fqStyles.qLabel}>Q.</Text>
-                        <Text style={fqStyles.qText}>{item.question}</Text>
-                        <Text
-                          style={[
-                            fqStyles.chevronIcon,
-                            isExpanded && { transform: [{ rotate: "180deg" }] },
-                          ]}
-                        >
-                          ⌄
-                        </Text>
-                      </Pressable>
-                      {isExpanded && (
-                        <View style={fqStyles.aBox}>
-                          <Text style={fqStyles.aLabel}>A.</Text>
-                          <Text style={fqStyles.aText}>{item.answer}</Text>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          );
-        })}
+      {loading ? (
+        <ActivityIndicator
+          size="large"
+          color="#0000ff"
+          style={{ marginTop: 50 }}
+        />
+      ) : (
+        <ScrollView contentContainerStyle={fqStyles.content}>
+          <View style={fqStyles.card}>
+            {/* ⭐️ 백엔드에서 받은 1단 배열(faqs)을 바로 map으로 돌립니다! */}
+            {faqs.map((faq, index) => {
+              // 고유 ID로 faq.id 를 사용합니다. (문자열로 변환하여 비교)
+              const isExpanded = expandedId === String(faq.id);
 
-        {/* 추가 문의 */}
-        <View style={fqStyles.contactBox}>
-          <Text style={fqStyles.contactTitle}>더 궁금한 점이 있으신가요?</Text>
-          <Text style={fqStyles.contactSub}>
-            support@sentic.app으로 문의해주세요
-          </Text>
-          <Pressable
-            style={fqStyles.contactBtn}
-            onPress={() =>
-              Alert.alert("고객센터", "support@sentic.app으로 문의해주세요.")
-            }
-          >
-            <Text style={fqStyles.contactBtnText}>고객센터 문의하기</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+              return (
+                <View key={faq.id}>
+                  <Pressable
+                    style={[
+                      fqStyles.qRow,
+                      index > 0 && fqStyles.qRowBorder, // 두 번째 항목부터 윗줄 테두리 적용
+                    ]}
+                    onPress={() =>
+                      setExpandedId(isExpanded ? null : String(faq.id))
+                    }
+                  >
+                    <Text style={fqStyles.qLabel}>Q.</Text>
+                    {/* 데이터 필드명 question 사용 */}
+                    <Text style={fqStyles.qText}>{faq.question}</Text>
+                    <Text
+                      style={[
+                        fqStyles.chevronIcon,
+                        isExpanded && {
+                          transform: [{ rotate: "180deg" }],
+                        },
+                      ]}
+                    >
+                      ⌄
+                    </Text>
+                  </Pressable>
+                  {isExpanded && (
+                    <View style={fqStyles.aBox}>
+                      <Text style={fqStyles.aLabel}>A.</Text>
+                      {/* 데이터 필드명 answer 사용 */}
+                      <Text style={fqStyles.aText}>{faq.answer}</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+
+          {/* 추가 문의 */}
+          <View style={fqStyles.contactBox}>
+            <Text style={fqStyles.contactTitle}>
+              더 궁금한 점이 있으신가요?
+            </Text>
+            <Text style={fqStyles.contactSub}>
+              support@sentic.app으로 문의해주세요
+            </Text>
+            <Pressable
+              style={fqStyles.contactBtn}
+              onPress={() =>
+                Alert.alert("고객센터", "support@sentic.app으로 문의해주세요.")
+              }
+            >
+              <Text style={fqStyles.contactBtnText}>고객센터 문의하기</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -3387,7 +4027,15 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
   const logout = () => {
     Alert.alert("로그아웃", "정말 로그아웃 하시겠습니까?", [
       { text: "취소", style: "cancel" },
-      { text: "로그아웃", style: "destructive", onPress: () => go("login") },
+      {
+        text: "로그아웃",
+        style: "destructive",
+        onPress: async () => {
+          await AsyncStorage.removeItem("accessToken");
+          await AsyncStorage.removeItem("refreshToken");
+          go("login");
+        },
+      },
     ]);
   };
 
@@ -3980,79 +4628,186 @@ function ModeCard({
   );
 }
 
-function MessageList({ messages }: { messages: Message[] }) {
+// ⭐️ 2. 기존 MessageList 컴포넌트 내부의 map 돌리는 곳을 수정합니다.
+export function MessageList({ messages }: { messages: any[] }) {
   return (
-    <ScrollView
-      style={styles.flex}
-      contentContainerStyle={styles.messageContent}
-    >
-      <Text style={styles.dateDivider}>오늘</Text>
-      {messages.map((message) => (
-        <View
-          key={message.id}
-          style={[
-            styles.messageRow,
-            message.speaker === "user" && styles.messageRowUser,
-          ]}
-        >
-          {message.speaker === "ai" && (
-            <Text style={styles.smallAvatar}>🤖</Text>
-          )}
+    <ScrollView contentContainerStyle={{ padding: 16 }}>
+      {messages.map((msg) => {
+        const isUser = msg.speaker === "user" || msg.speaker === "USER";
+
+        return (
           <View
-            style={[
-              styles.bubble,
-              message.speaker === "user" ? styles.userBubble : styles.aiBubble,
-            ]}
+            key={msg.id}
+            style={{
+              marginBottom: 16,
+              alignItems: isUser ? "flex-end" : "flex-start",
+            }}
           >
-            <Text
-              style={[
-                styles.messageText,
-                message.speaker === "user" && styles.userMessageText,
-              ]}
+            {/* 기본 말풍선 */}
+            <View
+              style={{
+                backgroundColor: isUser ? "#5C6BC0" : "#ffffff",
+                padding: 12,
+                borderRadius: 16,
+                maxWidth: "80%",
+              }}
             >
-              {message.text}
-            </Text>
-            <Text
-              style={[
-                styles.timeText,
-                message.speaker === "user" && styles.userTimeText,
-              ]}
-            >
-              {message.time}
-            </Text>
+              <Text style={{ color: isUser ? "#fff" : "#333", fontSize: 15 }}>
+                {msg.text}
+              </Text>
+            </View>
+
+            {/* ⭐️ 3. 내가 보낸 메시지(user)이고 피드백이 존재할 때만 노란색 박스를 띄웁니다! */}
+            {isUser &&
+              msg.feedback &&
+              msg.feedback.map((item: any, index: number) => (
+                <View
+                  key={index}
+                  style={{
+                    marginTop: 6,
+                    backgroundColor: "#FFF9C4", // 연한 노란색
+                    padding: 12,
+                    borderRadius: 12,
+                    width: "85%",
+                  }}
+                >
+                  {renderFeedbackSection("단어 오류", item.wordErrors, "💡")}
+                  {renderFeedbackSection("문법 오류", item.grammarErrors, "💡")}
+                  {renderFeedbackSection(
+                    "어색한 표현",
+                    item.expressionErrors,
+                    "💡",
+                  )}
+
+                  {item.perfectSentence &&
+                    item.perfectSentence.trim() !== "[]" && (
+                      <View
+                        style={{
+                          marginTop: 8,
+                          paddingTop: 8,
+                          borderTopWidth: 1,
+                          borderColor: "#E0E0E0",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontWeight: "bold",
+                            color: "#333",
+                            marginBottom: 2,
+                            fontSize: 13,
+                          }}
+                        >
+                          ✨ 추천 문장
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            color: "#1976D2",
+                            fontWeight: "600",
+                          }}
+                        >
+                          {item.perfectSentence}
+                        </Text>
+                      </View>
+                    )}
+                </View>
+              ))}
           </View>
-        </View>
-      ))}
+        );
+      })}
     </ScrollView>
   );
 }
 
-function FeedbackList({
+// ⭐️ 2. 피드백 리스트 컴포넌트 본체
+export function FeedbackList({
   messages,
   enabled,
 }: {
-  messages: Message[];
+  messages: any[]; // Message 타입을 import 해서 쓰셔도 됩니다.
   enabled: boolean;
 }) {
   if (!enabled) {
+    // (기존 emptyState 스타일은 프로젝트 설정에 맞게 유지)
     return (
-      <View style={styles.emptyState}>
-        <Text style={styles.emptyIcon}>🔕</Text>
-        <Text style={styles.muted}>피드백이 꺼져 있습니다.</Text>
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <Text style={{ fontSize: 30, marginBottom: 10 }}>🔕</Text>
+        <Text style={{ color: "#999" }}>피드백이 꺼져 있습니다.</Text>
       </View>
     );
   }
+
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    // styles.content나 styles.card 부분은 기존 프로젝트의 style을 그대로 쓰시면 됩니다.
+    <ScrollView contentContainerStyle={{ padding: 16 }}>
       {messages
         .filter((m) => m.feedback)
         .map((message) => (
-          <View key={message.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{message.text}</Text>
-            {message.feedback?.map((item) => (
-              <Text key={item} style={styles.feedbackText}>
-                {item}
-              </Text>
+          <View
+            key={message.id}
+            style={{
+              backgroundColor: "#fff",
+              padding: 16,
+              borderRadius: 12,
+              marginBottom: 16,
+              elevation: 2, // 그림자 효과 (안드로이드)
+            }}
+          >
+            {/* 내가 보낸 메시지 */}
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "bold",
+                color: "#5C6BC0",
+                marginBottom: 8,
+              }}
+            >
+              {message.text}
+            </Text>
+
+            {message.feedback?.map((item: any) => (
+              <View key={item.id}>
+                {/* ⭐️ 3. 여기서 위에서 만든 함수를 불러옵니다! 빈 배열은 알아서 숨겨집니다. */}
+                {renderFeedbackSection("단어 오류", item.wordErrors, "💡")}
+                {renderFeedbackSection("문법 오류", item.grammarErrors, "💡")}
+                {renderFeedbackSection(
+                  "어색한 표현",
+                  item.expressionErrors,
+                  "💡",
+                )}
+
+                {/* 모범 문장 처리 */}
+                {item.perfectSentence &&
+                  item.perfectSentence.trim() !== "[]" && (
+                    <View
+                      style={{
+                        marginTop: 12,
+                        paddingTop: 12,
+                        borderTopWidth: 1,
+                        borderColor: "#eee",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontWeight: "bold",
+                          color: "#333",
+                          marginBottom: 4,
+                        }}
+                      >
+                        ✨ 추천 문장
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 15,
+                          color: "#2196f3", // 파란색 텍스트
+                          fontWeight: "500",
+                        }}
+                      >
+                        {item.perfectSentence}
+                      </Text>
+                    </View>
+                  )}
+              </View>
             ))}
           </View>
         ))}
@@ -4176,8 +4931,6 @@ const styles = StyleSheet.create({
   iconText: { color: "#6B7280", fontSize: 12 },
   alignRight: { alignItems: "flex-end", marginVertical: 12 },
   linkText: { color: primary, fontSize: 13, fontWeight: "700" },
-<<<<<<< Updated upstream
-=======
   errorText: { color: "#DC2626", fontSize: 12, marginTop: 6 },
   signupSuccessText: { color: "#16A34A", fontSize: 12, marginTop: 6 },
   signupInlineRow: { flexDirection: "row", gap: 8, alignItems: "center" },
@@ -4189,6 +4942,24 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   signupEmailButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+  signupProfileImageRow: { alignItems: "center", gap: 8, marginBottom: 8 },
+  signupProfileAvatar: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 1,
+    borderColor: border,
+  },
+  signupProfileAvatarSlot: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 1,
+    borderColor: border,
+    backgroundColor: "#F9FAFB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   findAccountTabRow: {
     flexDirection: "row",
     backgroundColor: "#F3F4F6",
@@ -4212,7 +4983,6 @@ const styles = StyleSheet.create({
   },
   findAccountTabText: { color: "#6B7280", fontSize: 13, fontWeight: "600" },
   findAccountTabTextActive: { color: primary },
->>>>>>> Stashed changes
   primaryButton: {
     backgroundColor: primary,
     borderRadius: 14,
@@ -4724,6 +5494,13 @@ const styles = StyleSheet.create({
   userMessageText: { color: "#FFFFFF" },
   timeText: { color: "#9CA3AF", fontSize: 10, marginTop: 4 },
   userTimeText: { color: "#C7D2FE", textAlign: "right" },
+  feedbackContainer: {
+    marginTop: 4,
+    backgroundColor: "rgba(255, 235, 59, 0.2)", // 약간 노란빛 배경 (원하시는 색으로 변경 가능)
+    padding: 8,
+    borderRadius: 8,
+    alignSelf: "flex-end", // 내 채팅 기준 오른쪽 정렬
+  },
   feedbackText: {
     color: "#374151",
     backgroundColor: "#EEF2FF",

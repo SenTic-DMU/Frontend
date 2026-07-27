@@ -63,7 +63,7 @@ const generateMockFeedback = (text: string): FeedbackData | undefined => {
 export function TextChatScreen() {
   const navigate = useNavigate();
   const { roomId } = useParams();
-  const [inputText, setInputText] = useState("");
+  const [input, setInput] = useState("");
   const [savedToast, setSavedToast] = useState(false);
   const [expandedFeedbacks, setExpandedFeedbacks] = useState<Set<string>>(
     new Set(),
@@ -75,28 +75,56 @@ export function TextChatScreen() {
     avatarType: "female",
   });
 
-  const [messages, setMessages] = useState<Message[]>([
-    { id: "1", speaker: "ai", text: "Hey! What's up? 😊", timestamp: "10:30" },
-    {
-      id: "2",
-      speaker: "user",
-      text: "I'm good. What about you?",
-      timestamp: "10:31",
-      feedback: {
-        grammar: [],
-        suggestions: [
-          "더 자연스러운 표현: 'I'm doing well, thanks! How about you?'",
-        ],
-        slang: ["What's up? = 안녕? / 어떻게 지내?"],
-      },
-    },
-    {
-      id: "3",
-      speaker: "ai",
-      text: "I'm doing great! Wanna grab some coffee later?",
-      timestamp: "10:31",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  // ⭐️ 화면이 처음 켜질 때 딱 한 번 실행되는 마법의 코드
+  useEffect(() => {
+    const requestInitialGreeting = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const currentRoomId = room.id; // (만약 위에서 useParams로 꺼낸 roomId를 쓰고 있다면 roomId로 적어주세요!)
+
+        // 1. 화면(UI)에는 띄우지 않고, 서버로만 몰래 보내는 비밀 지령!
+        const payload = {
+          content:
+            "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
+        };
+
+        const response = await axios.post(
+          `${API_URL}/api/rooms/${currentRoomId}/messages/chat`,
+          payload,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+
+        // 2. 서버에서 AI의 첫인사가 도착하면, 내 메시지 없이 'AI 메시지'만 화면에 띄웁니다!
+        if (response.data) {
+          const aiMessage: Message = {
+            id: `${Date.now()}-ai-init`,
+            speaker: "ai",
+            text: response.data.data?.content || "Hello!",
+            time: new Date().toLocaleTimeString("ko-KR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          };
+          setMessages([aiMessage]);
+        }
+      } catch (error) {
+        console.error("🚨 AI 첫인사 로딩 실패:", error);
+      }
+    };
+
+    // 메시지가 텅 비어있을 때(방에 처음 들어왔을 때)만 인사말을 요청합니다.
+    if (messages.length === 0) {
+      requestInitialGreeting();
+    }
+  }, []); // 👈 빈 배열을 넣어야 무한 반복되지 않고 딱 한 번만 실행됩니다!
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -115,37 +143,47 @@ export function TextChatScreen() {
   };
 
   // 1. 함수 이름 앞에 async를 붙여야 await를 쓸 수 있습니다!
-  const handleSend = async () => {
-    if (!inputText.trim()) return;
+  const send = async () => {
+    // ⭐️ 1. 함수가 실행되었는지, 현재 글자를 제대로 인식하는지 확인
+    console.log("🔥 [디버깅] 전송 버튼 눌림! 현재 input 값:", input);
+
+    if (!input.trim()) {
+      // ⭐️ 2. 여기서 튕겨나가는 건 아닌지 확인
+      console.log("❌ 텍스트가 비어있어서 통신 안 하고 종료됨!");
+      return;
+    }
 
     const msgId = Date.now().toString();
     const newMessage: Message = {
       id: msgId,
       speaker: "user",
-      text: inputText,
+      text: input, // input으로 변경
       timestamp: new Date().toLocaleTimeString("ko-KR", {
         hour: "2-digit",
         minute: "2-digit",
       }),
-      feedback: generateMockFeedback(inputText),
+      feedback:
+        typeof generateMockFeedback === "function"
+          ? generateMockFeedback(input)
+          : undefined,
     };
 
-    // 2. 일단 사용자 메시지를 화면에 먼저 추가합니다.
+    // 사용자 메시지를 화면에 먼저 추가
     setMessages((prev) => [...prev, newMessage]);
-    setInputText("");
-    setExpandedFeedbacks((prev) => new Set([...prev, msgId]));
 
-    // 3. 서버 통신 로직
+    // 보낼 텍스트를 백업하고 UI 입력창을 비웁니다 (setInput 사용)
+    const textToSend = input;
+    setInput("");
+
+    // 서버 통신 로직
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      // ⭐️ 터널 주소로 바꾸었는지 꼭 확인하세요!
       const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
-      const roomId = 1;
 
+      // ⭐️ 이제 버튼을 누르면 이 로그가 터미널에 무조건 찍힙니다!
       console.log("확인: 지금 서버로 보내는 roomId값은?", roomId);
 
-      // 1. 전송 직전 데이터를 콘솔에 통째로 찍어봅니다.
-      const payload = { content: text };
+      const payload = { content: textToSend };
       console.log(
         "🔥 [디버깅] 서버로 보내는 payload:",
         JSON.stringify(payload),
@@ -153,7 +191,7 @@ export function TextChatScreen() {
 
       const response = await axios.post(
         `${API_URL}/api/rooms/${roomId}/messages/chat`,
-        payload, // 2. 위에서 만든 객체를 그대로 전달
+        payload,
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -162,11 +200,10 @@ export function TextChatScreen() {
         },
       );
 
-      // 4. 서버 응답이 성공하면 AI 메시지를 추가합니다.
+      // 서버 응답이 성공하면 AI 메시지를 추가합니다.
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         speaker: "ai",
-        // 서버에서 보내주는 데이터 구조를 확인하세요. (res.data.data.content 등)
         text: response.data?.data?.content || "응답이 없습니다.",
         timestamp: new Date().toLocaleTimeString("ko-KR", {
           hour: "2-digit",
@@ -176,11 +213,7 @@ export function TextChatScreen() {
       setMessages((prev) => [...prev, aiMessage]);
     } catch (error) {
       console.error("통신 실패 상세:", error);
-      // 에러 발생 시 사용자에게 알림을 주는 것도 좋습니다.
     }
-
-    // ⭐️ 5. 기존의 setTimeout(...) 가짜 AI 답변 코드는 삭제하거나 주석 처리하세요!
-    // 그래야 서버에서 오는 진짜 답변만 화면에 나타납니다.
   };
 
   const saveExpression = (text: string) => {
