@@ -97,7 +97,7 @@ export default function App() {
           return;
         }
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "ngrok-skip-browser-warning": "true", // 👈 혹시 빠져있었다면 이거 꼭 넣어주세요!
@@ -424,7 +424,6 @@ function LoginScreen({
   );
 }
 
-
 async function authPost(path: string, body: object) {
   const res = await fetch(`${process.env.EXPO_PUBLIC_BASE_URL}${path}`, {
     method: "POST",
@@ -437,7 +436,6 @@ async function authPost(path: string, body: object) {
   const data = await res.json().catch(() => null);
   return { ok: res.ok, data };
 }
-
 
 function SignupScreen({ go }: { go: (screen: Screen) => void }) {
   const [username, setUsername] = useState("");
@@ -475,7 +473,10 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
       if (ok && data?.success) {
         setUsernameChecked(data.data ? "available" : "taken");
       } else {
-        Alert.alert("확인 실패", data?.message ?? "아이디 중복 확인에 실패했습니다.");
+        Alert.alert(
+          "확인 실패",
+          data?.message ?? "아이디 중복 확인에 실패했습니다.",
+        );
       }
     } catch (e) {
       Alert.alert("연결 실패", "서버와 연결할 수 없습니다.");
@@ -766,7 +767,7 @@ export function RoomListScreen({
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
               const API_URL =
-                "https://rundown-irrigate-majesty.ngrok-free.dev";
+                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
               await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
@@ -1164,7 +1165,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
     const fetchHistoryOnly = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const currentRoomId = room.id;
 
         const historyRes = await axios.get(
@@ -1230,7 +1231,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const currentRoomId = room.id;
 
       // 통화 시작 상태로 변경
@@ -1343,7 +1344,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   const sendVoiceToServer = async (fileUri: string) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
       const formData = new FormData();
       formData.append("file", {
@@ -1583,7 +1584,7 @@ export function TextChatScreen({
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const payload = {
         content:
           "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
@@ -1621,7 +1622,7 @@ export function TextChatScreen({
     const fetchChatHistory = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const response = await axios.get(
           `${API_URL}/api/rooms/${room.id}/messages`,
           { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -1694,7 +1695,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const response = await axios.post(
         `${API_URL}/api/rooms/${room.id}/messages/chat`,
         { content: text },
@@ -1910,7 +1911,10 @@ function FindAccountScreen({ go }: { go: (screen: Screen) => void }) {
       if (ok && data?.success) {
         setFoundLoginId(data.data?.loginId ?? data.data ?? null);
       } else {
-        Alert.alert("조회 실패", data?.message ?? "가입된 이메일을 찾을 수 없습니다.");
+        Alert.alert(
+          "조회 실패",
+          data?.message ?? "가입된 이메일을 찾을 수 없습니다.",
+        );
       }
     } catch (e) {
       Alert.alert("연결 실패", "서버와 연결할 수 없습니다.");
@@ -1951,7 +1955,10 @@ function FindAccountScreen({ go }: { go: (screen: Screen) => void }) {
         setRpCodeSent(true);
         Alert.alert("인증번호 발송", "인증번호가 이메일로 발송되었습니다.");
       } else {
-        Alert.alert("발송 실패", data?.message ?? "인증번호 발송에 실패했습니다.");
+        Alert.alert(
+          "발송 실패",
+          data?.message ?? "인증번호 발송에 실패했습니다.",
+        );
       }
     } catch (e) {
       Alert.alert("연결 실패", "서버와 연결할 수 없습니다.");
@@ -1975,7 +1982,10 @@ function FindAccountScreen({ go }: { go: (screen: Screen) => void }) {
       if (ok && data?.success) {
         setRpVerified(true);
       } else {
-        Alert.alert("인증 실패", data?.message ?? "인증번호가 일치하지 않습니다.");
+        Alert.alert(
+          "인증 실패",
+          data?.message ?? "인증번호가 일치하지 않습니다.",
+        );
       }
     } catch (e) {
       Alert.alert("연결 실패", "서버와 연결할 수 없습니다.");
@@ -2006,10 +2016,16 @@ function FindAccountScreen({ go }: { go: (screen: Screen) => void }) {
         newPassword: rpNewPassword,
       });
       if (ok && data?.success) {
-        Alert.alert("재설정 완료", "비밀번호가 변경되었습니다. 로그인해주세요.");
+        Alert.alert(
+          "재설정 완료",
+          "비밀번호가 변경되었습니다. 로그인해주세요.",
+        );
         go("login");
       } else {
-        Alert.alert("재설정 실패", data?.message ?? "비밀번호 재설정에 실패했습니다.");
+        Alert.alert(
+          "재설정 실패",
+          data?.message ?? "비밀번호 재설정에 실패했습니다.",
+        );
       }
     } catch (e) {
       Alert.alert("연결 실패", "서버와 연결할 수 없습니다.");
@@ -2094,9 +2110,7 @@ function FindAccountScreen({ go }: { go: (screen: Screen) => void }) {
                   (!findIdEmail.trim() || findIdLoading) && { opacity: 0.6 },
               ]}
               onPress={foundLoginId ? () => go("login") : handleFindId}
-              disabled={
-                !foundLoginId && (!findIdEmail.trim() || findIdLoading)
-              }
+              disabled={!foundLoginId && (!findIdEmail.trim() || findIdLoading)}
             >
               <Text style={styles.primaryButtonText}>
                 {foundLoginId
@@ -2247,7 +2261,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
         // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
         const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/announcements";
 
         console.log("🚀 최종 요청 주소:", FULL_URL);
 
@@ -2703,17 +2717,14 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
     setWithdrawing(true);
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      await axios.delete(
-        `${process.env.EXPO_PUBLIC_BASE_URL}/api/users/me`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json; charset=UTF-8",
-            "ngrok-skip-browser-warning": "true",
-          },
-          data: { password: withdrawPassword },
+      await axios.delete(`${process.env.EXPO_PUBLIC_BASE_URL}/api/users/me`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json; charset=UTF-8",
+          "ngrok-skip-browser-warning": "true",
         },
-      );
+        data: { password: withdrawPassword },
+      });
       await AsyncStorage.removeItem("accessToken");
       await AsyncStorage.removeItem("refreshToken");
       setWithdrawModalVisible(false);
@@ -3205,7 +3216,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/faq";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -3685,7 +3696,11 @@ const stStyles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: "#F3F4F6",
   },
-  withdrawModalCancelText: { color: "#374151", fontSize: 14, fontWeight: "600" },
+  withdrawModalCancelText: {
+    color: "#374151",
+    fontSize: 14,
+    fontWeight: "600",
+  },
   withdrawModalConfirmBtn: {
     flex: 1,
     alignItems: "center",
@@ -3693,7 +3708,11 @@ const stStyles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: "#EF4444",
   },
-  withdrawModalConfirmText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
+  withdrawModalConfirmText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
   version: {
     color: "#D1D5DB",
     fontSize: 12,
@@ -3966,28 +3985,68 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
     return () => clearTimeout(t);
   }, []);
 
-  const handleLevelButtonClick = () => {
+  // 🚀 한글 레벨을 백엔드가 원하는 영어 대문자로 바꿔주는 매핑 딕셔너리
+  const levelMapping: Record<Level, string> = {
+    초급: "BEGINNER",
+    중급: "INTERMEDIATE",
+    고급: "ADVANCED",
+  };
+
+  // 🚀 학습 레벨 변경 및 백엔드 연동 함수
+  const handleLevelButtonClick = async () => {
     if (levelConfirmed) {
+      // '변경' 버튼을 눌렀을 때 -> 수정 모드로 진입
       setPendingLevel(userLevel);
       setLevelConfirmed(false);
     } else {
-      setUserLevel(pendingLevel);
-      setLevelConfirmed(true);
+      // '결정' 버튼을 눌렀을 때 -> 서버로 변경된 레벨 전송
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+        // ⭐️ 1. 저장된 토큰이 아예 없거나 null인지 확인!
+        console.log("📌 현재 저장된 토큰:", accessToken);
+
+        // 한글을 영어 대문자로 변환 (예: "중급" -> "INTERMEDIATE")
+        const mappedDifficulty = levelMapping[pendingLevel];
+
+        // ⭐️ 2. 어떤 주소와 파라미터로 요청을 날리는지 확인!
+        console.log(
+          "📌 요청 URL:",
+          `${API_URL}/api/users/me/level?difficulty=${mappedDifficulty}`,
+        );
+
+        // ⭐️ 명세에 맞춘 PUT 요청 (Query Parameter로 전달)
+        await axios.put(
+          `${API_URL}/api/users/me/level?difficulty=${mappedDifficulty}`,
+          {}, // Body가 아니므로 빈 객체 전달
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+
+        // 서버 통신 성공 시 화면 상태 업데이트
+        setUserLevel(pendingLevel);
+        setLevelConfirmed(true);
+      } catch (error: any) {
+        console.error(
+          "🚨 레벨 변경 실패:",
+          error.response?.data || error.message,
+        );
+        Alert.alert(
+          "오류",
+          "학습 레벨 변경에 실패했습니다. 다시 시도해 주세요.",
+        );
+      }
     }
   };
 
   const logout = () => {
     Alert.alert("로그아웃", "정말 로그아웃 하시겠습니까?", [
       { text: "취소", style: "cancel" },
-      {
-        text: "로그아웃",
-        style: "destructive",
-        onPress: async () => {
-          await AsyncStorage.removeItem("accessToken");
-          await AsyncStorage.removeItem("refreshToken");
-          go("login");
-        },
-      },
+      { text: "로그아웃", style: "destructive", onPress: () => go("login") },
     ]);
   };
 
