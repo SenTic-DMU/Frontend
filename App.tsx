@@ -97,7 +97,7 @@ export default function App() {
           return;
         }
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "ngrok-skip-browser-warning": "true", // 👈 혹시 빠져있었다면 이거 꼭 넣어주세요!
@@ -448,7 +448,7 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [signingUp, setSigningUp] = useState(false);
-  const [usernameChecked, setUsernameChecked] = useState
+  const [usernameChecked, setUsernameChecked] = useState<
     null | "available" | "taken"
   >(null);
   const [checkingUsername, setCheckingUsername] = useState(false);
@@ -532,6 +532,7 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
     } finally {
       setSigningUp(false);
     }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -765,7 +766,7 @@ export function RoomListScreen({
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
               const API_URL =
-                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+                "https://rundown-irrigate-majesty.ngrok-free.dev";
 
               await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
@@ -1163,7 +1164,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
     const fetchHistoryOnly = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const currentRoomId = room.id;
 
         const historyRes = await axios.get(
@@ -1229,7 +1230,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const currentRoomId = room.id;
 
       // 통화 시작 상태로 변경
@@ -1342,7 +1343,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   const sendVoiceToServer = async (fileUri: string) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
       const formData = new FormData();
       formData.append("file", {
@@ -1582,7 +1583,7 @@ export function TextChatScreen({
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const payload = {
         content:
           "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
@@ -1620,7 +1621,7 @@ export function TextChatScreen({
     const fetchChatHistory = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const response = await axios.get(
           `${API_URL}/api/rooms/${room.id}/messages`,
           { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -1693,7 +1694,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const response = await axios.post(
         `${API_URL}/api/rooms/${room.id}/messages/chat`,
         { content: text },
@@ -2246,7 +2247,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
         // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
         const FULL_URL =
-          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/announcements";
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
 
         console.log("🚀 최종 요청 주소:", FULL_URL);
 
@@ -2677,7 +2678,15 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
   const logout = () => {
     Alert.alert("로그아웃", "로그아웃 하시겠습니까?", [
       { text: "취소", style: "cancel" },
-      { text: "로그아웃", style: "destructive", onPress: () => go("login") },
+      {
+        text: "로그아웃",
+        style: "destructive",
+        onPress: async () => {
+          await AsyncStorage.removeItem("accessToken");
+          await AsyncStorage.removeItem("refreshToken");
+          go("login");
+        },
+      },
     ]);
   };
 
@@ -3196,7 +3205,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const FULL_URL =
-          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/faq";
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -3970,7 +3979,15 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
   const logout = () => {
     Alert.alert("로그아웃", "정말 로그아웃 하시겠습니까?", [
       { text: "취소", style: "cancel" },
-      { text: "로그아웃", style: "destructive", onPress: () => go("login") },
+      {
+        text: "로그아웃",
+        style: "destructive",
+        onPress: async () => {
+          await AsyncStorage.removeItem("accessToken");
+          await AsyncStorage.removeItem("refreshToken");
+          go("login");
+        },
+      },
     ]);
   };
 
