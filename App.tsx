@@ -1,8 +1,9 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import {
   Alert,
+  Animated,
   StatusBar,
   ActivityIndicator,
   Image,
@@ -17,6 +18,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Svg, { Path } from "react-native-svg";
 import * as ImagePicker from "expo-image-picker";
 import { WebView } from "react-native-webview";
 // ⭐️ 음성 재생을 위해 expo-av에서 Audio를 꼭 불러와야 합니다!
@@ -81,6 +83,107 @@ const darkPrimary = "#4338CA";
 const softBg = "#F5F5F7";
 const border = "#E5E7EB";
 
+// 🧪 "테스트로 바로 들어가기" 버튼을 눌렀을 때만 true — 서버 연결 없이 예시 방/대화로 화면을 둘러볼 수 있게 해줍니다.
+let isTestMode = false;
+
+const TEST_VOICE_ROOMS: PracticeRoom[] = [
+  {
+    id: "test-voice-1",
+    title: "카페에서 주문하기",
+    desc: "카페에서 음료를 주문하는 상황극",
+    date: "오늘",
+    level: "맞춤",
+  },
+];
+
+const TEST_CHAT_ROOMS: PracticeRoom[] = [
+  {
+    id: "test-chat-1",
+    title: "면접 연습하기",
+    desc: "영어로 면접 보는 상황극",
+    date: "오늘",
+    level: "맞춤",
+  },
+];
+
+const TEST_VOICE_MESSAGES: Message[] = [
+  {
+    id: "tv-1",
+    speaker: "ai",
+    text: "Hello! Welcome to our cafe. What can I get for you today?",
+    time: "10:30",
+  },
+  {
+    id: "tv-2",
+    speaker: "user",
+    text: "I want to order a coffee",
+    time: "10:31",
+    feedback: [
+      {
+        id: 1,
+        wordErrors: JSON.stringify([
+          {
+            original: "want",
+            suggested: "would like",
+            explanation: "더 정중한 표현이에요.",
+          },
+        ]),
+        grammarErrors: "[]",
+        expressionErrors: JSON.stringify([
+          {
+            original: "I want to order a coffee",
+            suggested: "Could I get a coffee, please?",
+            explanation: "카페에서는 이렇게 말하는 게 더 자연스러워요.",
+          },
+        ]),
+        perfectSentence: "I'd like to order a coffee, please.",
+      },
+    ],
+  },
+  {
+    id: "tv-3",
+    speaker: "ai",
+    text: "Sure! What size would you like?",
+    time: "10:31",
+  },
+  { id: "tv-4", speaker: "user", text: "Large size, please.", time: "10:32" },
+];
+
+const TEST_CHAT_MESSAGES = [
+  {
+    id: "tt-1",
+    speaker: "ai",
+    text: "Hi there! Thanks for coming in today. Can you tell me a bit about yourself?",
+    time: "10:30",
+  },
+  {
+    id: "tt-2",
+    speaker: "user",
+    text: "I am study computer science in university.",
+    time: "10:31",
+    feedback: [
+      {
+        wordErrors: JSON.stringify([
+          {
+            original: "I am study",
+            suggested: "I am studying",
+            explanation: "현재진행형은 am/is/are + 동사ing 형태를 써야 해요.",
+          },
+        ]),
+        grammarErrors: "[]",
+        expressionErrors: "[]",
+        perfectSentence: "I'm studying computer science at university.",
+      },
+    ],
+  },
+  {
+    id: "tt-3",
+    speaker: "ai",
+    text: "That's great! What made you interested in this field?",
+    time: "10:31",
+  },
+];
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
 
@@ -91,6 +194,13 @@ export default function App() {
   // ⭐️ 2. 채팅방 + 음성방 목록을 한 번에 불러오도록 업그레이드합니다.
   useEffect(() => {
     const fetchMyRooms = async () => {
+      // 🧪 테스트 모드에서는 서버 호출 없이 예시 방 목록을 채워줍니다.
+      if (isTestMode) {
+        setChatRooms(TEST_CHAT_ROOMS);
+        setVoiceRooms(TEST_VOICE_ROOMS);
+        return;
+      }
+
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
 
@@ -419,6 +529,21 @@ function LoginScreen({
               <Text style={styles.linkText}>회원가입</Text>
             </Pressable>
           </View>
+
+          {/* 🧪 개발 빌드에서만 노출되는 테스트용 로그인 우회 버튼 (프로덕션 빌드에서는 자동으로 사라짐) */}
+          {__DEV__ && (
+            <Pressable
+              style={styles.devSkipButton}
+              onPress={() => {
+                isTestMode = true;
+                go("mode");
+              }}
+            >
+              <Text style={styles.devSkipButtonText}>
+                🧪 테스트로 바로 들어가기 (로그인 생략)
+              </Text>
+            </Pressable>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -1158,9 +1283,69 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   const [recording, setRecording] = useState<any>(null);
   const [isRecording, setIsRecording] = useState(false);
 
+  // 🎙️ 마이크 펄스 링 애니메이션 (녹음 중 반복 확대/축소)
+  const micPulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!isRecording) {
+      micPulseAnim.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(micPulseAnim, {
+          toValue: 1.3,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(micPulseAnim, {
+          toValue: 1,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isRecording, micPulseAnim]);
+
+  // 🟢 통화 중 라이브 점 깜빡임 애니메이션
+  const liveDotAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!inCall) {
+      liveDotAnim.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(liveDotAnim, {
+          toValue: 0.3,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(liveDotAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [inCall, liveDotAnim]);
+
   // ⭐️ 1. 방에 처음 들어왔을 때는 '과거 대화 기록'만 불러오고 가만히 대기합니다.
   useEffect(() => {
     const fetchHistoryOnly = async () => {
+      // 🧪 테스트 모드에서는 서버 호출 없이 예시 대화를 채워줍니다.
+      if (isTestMode) {
+        setMessages(TEST_VOICE_MESSAGES);
+        const lastAiMsg = [...TEST_VOICE_MESSAGES]
+          .reverse()
+          .find((m) => m.speaker === "ai");
+        if (lastAiMsg) setLatestAiText(lastAiMsg.text);
+        return;
+      }
+
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
@@ -1437,16 +1622,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
                 .reverse()
                 .find((m) => m.speaker === "user" && m.feedback)
                 ?.feedback?.map((item: any, index: number) => (
-                  <View
-                    key={index}
-                    style={{
-                      marginTop: 6,
-                      backgroundColor: "#FFF9C4",
-                      padding: 12,
-                      borderRadius: 12,
-                      width: "100%",
-                    }}
-                  >
+                  <View key={index} style={styles.feedbackCard}>
                     {renderFeedbackSection("단어 오류", item.wordErrors, "💡")}
                     {renderFeedbackSection(
                       "문법 오류",
@@ -1461,31 +1637,11 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
 
                     {item.perfectSentence &&
                       item.perfectSentence.trim() !== "[]" && (
-                        <View
-                          style={{
-                            marginTop: 8,
-                            paddingTop: 8,
-                            borderTopWidth: 1,
-                            borderColor: "#E0E0E0",
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontWeight: "bold",
-                              color: "#333",
-                              marginBottom: 2,
-                              fontSize: 13,
-                            }}
-                          >
+                        <View style={styles.feedbackPerfectBlock}>
+                          <Text style={styles.feedbackPerfectLabel}>
                             ✨ 추천 문장
                           </Text>
-                          <Text
-                            style={{
-                              fontSize: 14,
-                              color: "#1976D2",
-                              fontWeight: "600",
-                            }}
-                          >
+                          <Text style={styles.feedbackPerfectText}>
                             {item.perfectSentence}
                           </Text>
                         </View>
@@ -1493,41 +1649,91 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
                   </View>
                 ))}
           </View>
-          <View style={[styles.avatarLarge, inCall && styles.avatarActive]}>
-            <Text style={styles.avatarEmoji}>{isPlaying ? "🎵" : "🤖"}</Text>
+          <View style={styles.avatarRingOuter}>
+            <View style={[styles.avatarLarge, inCall && styles.avatarActive]}>
+              <Text style={styles.avatarEmoji}>{isPlaying ? "🎵" : "🤖"}</Text>
+            </View>
           </View>
           <Text style={styles.h2}>AI 파트너</Text>
-          <Text style={styles.muted}>
-            {inCall ? "통화 중입니다" : "통화를 시작해 보세요"}
-          </Text>
+          <View style={styles.callStatusRow}>
+            {inCall && (
+              <Animated.View
+                style={[styles.liveDot, { opacity: liveDotAnim }]}
+              />
+            )}
+            <Text style={styles.muted}>
+              {inCall ? "통화 중입니다" : "통화를 시작해 보세요"}
+            </Text>
+          </View>
 
           {inCall && latestAiText ? (
             <View style={styles.subtitleBox}>
-              <Text style={styles.caption}>AI 파트너</Text>
+              <View style={styles.subtitleChip}>
+                <Text style={styles.subtitleChipText}>AI</Text>
+              </View>
               <Text style={styles.subtitleText}>{latestAiText}</Text>
             </View>
           ) : null}
 
           <View style={styles.controlRow}>
             {inCall && (
-              <RoundButton
-                label={isRecording ? "⏹️" : "🎙️"}
-                active={isRecording}
-                onPress={isRecording ? stopRecordingAndSend : startRecording}
-              />
+              <View style={styles.micWrap}>
+                {isRecording && (
+                  <Animated.View
+                    style={[
+                      styles.micPulseRing,
+                      { transform: [{ scale: micPulseAnim }] },
+                    ]}
+                  />
+                )}
+                <Pressable
+                  style={[
+                    styles.roundButton,
+                    isRecording && styles.roundButtonActive,
+                  ]}
+                  onPress={isRecording ? stopRecordingAndSend : startRecording}
+                >
+                  <Svg width={18} height={18} viewBox="0 0 24 24">
+                    <Path
+                      d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"
+                      stroke={isRecording ? primary : "#6B7280"}
+                      strokeWidth={2}
+                      fill="none"
+                    />
+                    <Path
+                      d="M19 11a7 7 0 0 1-14 0M12 18v3"
+                      stroke={isRecording ? primary : "#6B7280"}
+                      strokeWidth={2}
+                      fill="none"
+                    />
+                  </Svg>
+                </Pressable>
+              </View>
             )}
             {/* ⭐️ 시작 버튼을 누를 때만 handleStartCall이 실행되도록 연결! */}
             <Pressable
               style={[styles.callButton, inCall && styles.endCallButton]}
               onPress={handleStartCall}
             >
-              <Text
-                style={[styles.callButtonText, inCall && styles.endCallIcon]}
+              <Svg
+                width={22}
+                height={22}
+                viewBox="0 0 24 24"
+                style={inCall ? styles.endCallIcon : undefined}
               >
-                📞
-              </Text>
+                <Path
+                  d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"
+                  fill="#fff"
+                />
+              </Svg>
             </Pressable>
           </View>
+          {isRecording && (
+            <View style={styles.listeningRow}>
+              <View style={styles.listeningDot} />
+              <Text style={styles.listeningText}>듣고 있어요...</Text>
+            </View>
+          )}
         </View>
       )}
       {tab === "history" && <MessageList messages={messages} />}
@@ -1536,10 +1742,17 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
 }
 
 // ⭐️ 1. 괄호([]) 찌꺼기를 없애고 예쁜 디자인을 입혀주는 도우미 함수 (컴포넌트 밖에 선언)
+type ScrapContext = {
+  keyPrefix: string;
+  isScraped: (key: string) => boolean;
+  onScrap: (key: string, entry: Record<string, any>) => void;
+};
+
 const renderFeedbackSection = (
   title: string,
   jsonString: string | any[] | null | undefined,
   icon: string,
+  scrapCtx?: ScrapContext,
 ) => {
   if (
     !jsonString ||
@@ -1559,41 +1772,72 @@ const renderFeedbackSection = (
     if (!Array.isArray(parsedData) || parsedData.length === 0) return null;
 
     return (
-      <View style={{ marginTop: 12 }}>
+      <View>
         <Text style={{ fontWeight: "bold", marginBottom: 4, color: "#333" }}>
           {icon} {title}
         </Text>
-        {parsedData.map((errorItem: any, index: number) => (
-          <View
-            key={index}
-            style={{
-              backgroundColor: "rgba(255, 255, 255, 0.6)", // 살짝 투명한 흰색 박스
-              padding: 10,
-              borderRadius: 8,
-              marginBottom: 6,
-            }}
-          >
-            <Text style={{ fontSize: 15, marginBottom: 4 }}>
-              <Text
-                style={{ textDecorationLine: "line-through", color: "#ff5252" }}
-              >
-                {errorItem.original}
-              </Text>{" "}
-              ➡️{" "}
-              <Text style={{ color: "#4caf50", fontWeight: "bold" }}>
-                {errorItem.suggested || errorItem.corrected}
+        {parsedData.map((errorItem: any, index: number) => {
+          const itemKey = `${scrapCtx?.keyPrefix}-${index}`;
+          const isScraped = scrapCtx?.isScraped(itemKey) ?? false;
+          return (
+            <View
+              key={index}
+              style={{
+                backgroundColor: "rgba(255, 255, 255, 0.6)", // 살짝 투명한 흰색 박스
+                padding: 10,
+                borderRadius: 8,
+                marginBottom: 6,
+              }}
+            >
+              <Text style={{ fontSize: 15, marginBottom: 4 }}>
+                <Text
+                  style={{
+                    textDecorationLine: "line-through",
+                    color: "#ff5252",
+                  }}
+                >
+                  {errorItem.original}
+                </Text>{" "}
+                ➡️{" "}
+                <Text style={{ color: "#4caf50", fontWeight: "bold" }}>
+                  {errorItem.suggested || errorItem.corrected}
+                </Text>
               </Text>
-            </Text>
-            <Text style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
-              {errorItem.explanation}
-            </Text>
-          </View>
-        ))}
+              <Text style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
+                {errorItem.explanation}
+              </Text>
+              {scrapCtx && (
+                <Pressable
+                  style={[
+                    styles.scrapButton,
+                    { alignSelf: "flex-end", marginTop: 8 },
+                    isScraped && styles.scrapButtonActive,
+                  ]}
+                  disabled={isScraped}
+                  onPress={() =>
+                    scrapCtx.onScrap(itemKey, {
+                      source: "user",
+                      category: title,
+                      original: errorItem.original,
+                      corrected: errorItem.suggested || errorItem.corrected,
+                      explanation: errorItem.explanation,
+                    })
+                  }
+                >
+                  <BookmarkIcon color="#8A6D00" size={11} filled={isScraped} />
+                  <Text style={styles.scrapButtonText}>
+                    {isScraped ? "스크랩됨" : "스크랩"}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          );
+        })}
       </View>
     );
   } catch (error) {
     return (
-      <View style={{ marginTop: 12 }}>
+      <View>
         <Text style={{ fontWeight: "bold", marginBottom: 4, color: "#333" }}>
           {icon} {title}
         </Text>
@@ -1612,6 +1856,13 @@ export function TextChatScreen({
 }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<any[]>([]); // Message 타입 대체
+  const [scrapedKeys, setScrapedKeys] = useState<Set<string>>(new Set());
+
+  const handleScrap = async (key: string, entry: Record<string, any>) => {
+    if (scrapedKeys.has(key)) return;
+    await addScrapedExpression(entry);
+    setScrapedKeys((prev) => new Set(prev).add(key));
+  };
 
   const requestInitialGreeting = async () => {
     try {
@@ -1652,6 +1903,12 @@ export function TextChatScreen({
 
   useEffect(() => {
     const fetchChatHistory = async () => {
+      // 🧪 테스트 모드에서는 서버 호출 없이 예시 대화를 채워줍니다.
+      if (isTestMode) {
+        setMessages(TEST_CHAT_MESSAGES);
+        return;
+      }
+
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
@@ -1790,6 +2047,8 @@ export function TextChatScreen({
       >
         {messages.map((msg) => {
           const isUser = msg.speaker === "user";
+          const aiScrapKey = `${msg.id}-ai`;
+          const isAiScraped = scrapedKeys.has(aiScrapKey);
 
           return (
             <View
@@ -1817,37 +2076,78 @@ export function TextChatScreen({
                 </Text>
               </View>
 
+              {/* 🔖 AI 말풍선용 스크랩 버튼 */}
+              {!isUser &&
+                (isAiScraped ? (
+                  <View style={styles.aiScrapBadge}>
+                    <BookmarkIcon color="#fff" size={11} filled />
+                    <Text style={styles.aiScrapBadgeText}>스크랩됨</Text>
+                  </View>
+                ) : (
+                  <Pressable
+                    style={styles.aiScrapButton}
+                    onPress={() =>
+                      handleScrap(aiScrapKey, {
+                        source: "ai",
+                        text: msg.text,
+                      })
+                    }
+                  >
+                    <BookmarkIcon color="#9CA3AF" size={11} />
+                    <Text style={styles.aiScrapText}>스크랩</Text>
+                  </Pressable>
+                ))}
+
               {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에, feedback 데이터가 있을 때만 등장!) */}
               {isUser &&
                 msg.feedback &&
-                msg.feedback.map((item: any, index: number) => (
-                  <View
-                    key={index}
-                    style={{
-                      marginTop: 8,
-                      backgroundColor: "#FFF9C4", // 연한 노란색
-                      padding: 16,
-                      borderRadius: 16,
-                      width: "85%", // 피드백 박스 크기
-                    }}
-                  >
-                    {renderFeedbackSection("단어 오류", item.wordErrors, "💡")}
-                    {renderFeedbackSection(
-                      "문법 오류",
-                      item.grammarErrors,
-                      "💡",
-                    )}
-                    {renderFeedbackSection(
-                      "어색한 표현",
-                      item.expressionErrors,
-                      "💡",
-                    )}
+                msg.feedback.map((item: any, index: number) => {
+                  const hasPerfectSentence =
+                    item.perfectSentence &&
+                    item.perfectSentence.trim() !== "[]";
 
-                    {item.perfectSentence &&
-                      item.perfectSentence.trim() !== "[]" && (
+                  const makeScrapCtx = (suffix: string): ScrapContext => ({
+                    keyPrefix: `${msg.id}-${index}-${suffix}`,
+                    isScraped: (key) => scrapedKeys.has(key),
+                    onScrap: handleScrap,
+                  });
+                  const perfectKey = `${msg.id}-${index}-perfect`;
+                  const isPerfectScraped = scrapedKeys.has(perfectKey);
+
+                  return (
+                    <View
+                      key={index}
+                      style={{
+                        marginTop: 8,
+                        backgroundColor: "#FFF9C4", // 연한 노란색
+                        padding: 16,
+                        borderRadius: 16,
+                        width: "85%", // 피드백 박스 크기
+                        gap: 12,
+                      }}
+                    >
+                      {renderFeedbackSection(
+                        "단어 오류",
+                        item.wordErrors,
+                        "💡",
+                        makeScrapCtx("word"),
+                      )}
+                      {renderFeedbackSection(
+                        "문법 오류",
+                        item.grammarErrors,
+                        "💡",
+                        makeScrapCtx("grammar"),
+                      )}
+                      {renderFeedbackSection(
+                        "어색한 표현",
+                        item.expressionErrors,
+                        "💡",
+                        makeScrapCtx("expr"),
+                      )}
+
+                      {hasPerfectSentence && (
                         <View
                           style={{
-                            marginTop: 12,
                             paddingTop: 12,
                             borderTopWidth: 1,
                             borderColor: "#E0E0E0",
@@ -1867,14 +2167,40 @@ export function TextChatScreen({
                               fontSize: 15,
                               color: "#1976D2",
                               fontWeight: "600",
+                              marginBottom: 8,
                             }}
                           >
                             {item.perfectSentence}
                           </Text>
+                          <Pressable
+                            style={[
+                              styles.scrapButton,
+                              { alignSelf: "flex-end" },
+                              isPerfectScraped && styles.scrapButtonActive,
+                            ]}
+                            disabled={isPerfectScraped}
+                            onPress={() =>
+                              handleScrap(perfectKey, {
+                                source: "user",
+                                original: msg.text,
+                                perfectSentence: item.perfectSentence,
+                              })
+                            }
+                          >
+                            <BookmarkIcon
+                              color="#8A6D00"
+                              size={12}
+                              filled={isPerfectScraped}
+                            />
+                            <Text style={styles.scrapButtonText}>
+                              {isPerfectScraped ? "스크랩됨" : "스크랩"}
+                            </Text>
+                          </Pressable>
                         </View>
                       )}
-                  </View>
-                ))}
+                    </View>
+                  );
+                })}
             </View>
           );
         })}
@@ -2444,6 +2770,7 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
     roomName: string;
     roomId: string;
     savedDate: string;
+    source?: "ai" | "user";
   }
 
   const categoryConfig: Record<
@@ -2497,6 +2824,26 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
       roomId: "1",
       savedDate: "04/26",
     },
+    {
+      id: "5",
+      text: "That sounds like a great plan!",
+      translation: "정말 좋은 계획인 것 같아요!",
+      category: "문장",
+      roomName: "일상 대화",
+      roomId: "4",
+      savedDate: "04/29",
+      source: "ai",
+    },
+    {
+      id: "6",
+      text: "I really appreciate your help.",
+      translation: "도와주셔서 정말 감사해요.",
+      category: "문장",
+      roomName: "카페에서 주문하기",
+      roomId: "1",
+      savedDate: "04/25",
+      source: "ai",
+    },
   ]);
 
   const isInsideDetail = selectedCategory !== null || selectedRoom !== null;
@@ -2511,40 +2858,62 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
   };
 
   const deleteExpression = (id: string) => {
-    setExpressions(expressions.filter((e) => e.id !== id));
+    Alert.alert(
+      "표현 삭제",
+      "이 표현을 정말 삭제하시겠습니까?\n(삭제 후 복구할 수 없습니다.)",
+      [
+        { text: "취소", style: "cancel" },
+        {
+          text: "삭제",
+          style: "destructive",
+          onPress: () => {
+            setExpressions((prev) => prev.filter((e) => e.id !== id));
+          },
+        },
+      ],
+    );
   };
 
   const renderExpression = (expr: SavedExpression, showRoom = false) => {
     const config = categoryConfig[expr.category];
     return (
       <View key={expr.id} style={bkStyles.exprCard}>
-        <View style={{ flex: 1 }}>
-          <Text style={bkStyles.exprText}>{expr.text}</Text>
-          <Text style={bkStyles.exprTranslation}>{expr.translation}</Text>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-              marginTop: 8,
-              flexWrap: "wrap",
-            }}
-          >
-            <View style={[bkStyles.catBadge, { backgroundColor: config.bg }]}>
-              <Text style={[bkStyles.catBadgeText, { color: config.color }]}>
-                {expr.category}
-              </Text>
-            </View>
-            {showRoom && <Text style={bkStyles.exprMeta}>{expr.roomName}</Text>}
-            <Text style={bkStyles.exprDate}>{expr.savedDate}</Text>
-          </View>
-        </View>
-        <Pressable
-          onPress={() => deleteExpression(expr.id)}
-          style={bkStyles.deleteBtn}
+        <View
+          style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}
         >
-          <Text style={bkStyles.deleteBtnText}>🗑</Text>
-        </Pressable>
+          <View style={{ flex: 1 }}>
+            <Text style={bkStyles.exprText}>{expr.text}</Text>
+            <Text style={bkStyles.exprTranslation}>{expr.translation}</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <View style={[bkStyles.catBadge, { backgroundColor: config.bg }]}>
+                <Text style={[bkStyles.catBadgeText, { color: config.color }]}>
+                  {expr.category}
+                </Text>
+              </View>
+              {showRoom && (
+                <Text style={bkStyles.exprMeta}>{expr.roomName}</Text>
+              )}
+              <Text style={bkStyles.exprDate}>{expr.savedDate}</Text>
+            </View>
+          </View>
+          <Pressable
+            onPress={() => deleteExpression(expr.id)}
+            style={bkStyles.deleteBtn}
+          >
+            <Text style={bkStyles.deleteBtnText}>🗑</Text>
+          </Pressable>
+        </View>
+        {expr.source === "ai" && (
+          <Text style={bkStyles.exprSourceTag}>AI 답변에서 저장됨</Text>
+        )}
       </View>
     );
   };
@@ -3825,9 +4194,6 @@ const bkStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#F3F4F6",
     padding: 16,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
   },
   exprText: {
     color: "#111827",
@@ -3838,6 +4204,12 @@ const bkStyles = StyleSheet.create({
   exprTranslation: { color: "#9CA3AF", fontSize: 12 },
   exprMeta: { color: "#9CA3AF", fontSize: 10 },
   exprDate: { color: "#D1D5DB", fontSize: 10 },
+  exprSourceTag: {
+    color: "#9CA3AF",
+    fontSize: 10,
+    marginTop: 6,
+    alignSelf: "flex-end",
+  },
   catBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   catBadgeText: { fontSize: 10, fontWeight: "700" },
   deleteBtn: {
@@ -4671,12 +5043,147 @@ function ModeCard({
   );
 }
 
+// 🔖 스크랩한 표현들을 한 곳(AsyncStorage)에 배열로 쌓아두는 헬퍼
+const SCRAPED_EXPRESSIONS_KEY = "scrapedExpressions";
+
+const addScrapedExpression = async (entry: Record<string, any>) => {
+  try {
+    const raw = await AsyncStorage.getItem(SCRAPED_EXPRESSIONS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    list.push({ ...entry, savedAt: Date.now() });
+    await AsyncStorage.setItem(SCRAPED_EXPRESSIONS_KEY, JSON.stringify(list));
+  } catch (error) {
+    console.error("🚨 표현 스크랩 저장 실패:", error);
+  }
+};
+
+function BookmarkIcon({
+  color,
+  size = 13,
+  filled = false,
+}: {
+  color: string;
+  size?: number;
+  filled?: boolean;
+}) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill={filled ? color : "none"}
+      />
+    </Svg>
+  );
+}
+
+// 대화내역 피드백 카드 전용 렌더러 — 오류 항목의 원본→수정 문장을 줄바꿈으로 분리해서 보여줍니다.
+const renderMessageFeedbackSection = (
+  title: string,
+  jsonString: string | any[] | null | undefined,
+  icon: string,
+  scrapCtx?: ScrapContext,
+) => {
+  if (
+    !jsonString ||
+    jsonString === "[]" ||
+    jsonString.toString().trim() === "[]"
+  )
+    return null;
+
+  try {
+    const parsedData = Array.isArray(jsonString)
+      ? jsonString
+      : typeof jsonString === "string"
+        ? JSON.parse(jsonString)
+        : [jsonString];
+
+    if (!Array.isArray(parsedData) || parsedData.length === 0) return null;
+
+    return (
+      <View style={styles.msgFeedbackSection}>
+        <Text style={styles.msgFeedbackSectionTitle}>
+          {icon} {title}
+        </Text>
+        {parsedData.map((errorItem: any, index: number) => {
+          const itemKey = `${scrapCtx?.keyPrefix}-${index}`;
+          const isScraped = scrapCtx?.isScraped(itemKey) ?? false;
+          return (
+            <View key={index} style={styles.msgFeedbackItem}>
+              <Text style={styles.msgFeedbackOriginal}>
+                {errorItem.original}
+              </Text>
+              <Text style={styles.msgFeedbackCorrected}>
+                ➡️ {errorItem.suggested || errorItem.corrected}
+              </Text>
+              {errorItem.explanation ? (
+                <Text style={styles.msgFeedbackExplanation}>
+                  {errorItem.explanation}
+                </Text>
+              ) : null}
+              {scrapCtx && (
+                <Pressable
+                  style={[
+                    styles.scrapButton,
+                    { alignSelf: "flex-end", marginTop: 8 },
+                    isScraped && styles.scrapButtonActive,
+                  ]}
+                  disabled={isScraped}
+                  onPress={() =>
+                    scrapCtx.onScrap(itemKey, {
+                      source: "user",
+                      category: title,
+                      original: errorItem.original,
+                      corrected: errorItem.suggested || errorItem.corrected,
+                      explanation: errorItem.explanation,
+                    })
+                  }
+                >
+                  <BookmarkIcon color="#8A6D00" size={11} filled={isScraped} />
+                  <Text style={styles.scrapButtonText}>
+                    {isScraped ? "스크랩됨" : "스크랩"}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          );
+        })}
+      </View>
+    );
+  } catch (error) {
+    return (
+      <View style={styles.msgFeedbackSection}>
+        <Text style={styles.msgFeedbackSectionTitle}>
+          {icon} {title}
+        </Text>
+        <Text style={styles.msgFeedbackExplanation}>{jsonString}</Text>
+      </View>
+    );
+  }
+};
+
 // ⭐️ 2. 기존 MessageList 컴포넌트 내부의 map 돌리는 곳을 수정합니다.
 export function MessageList({ messages }: { messages: any[] }) {
+  const [scrapedKeys, setScrapedKeys] = useState<Set<string>>(new Set());
+
+  const handleScrap = async (key: string, entry: Record<string, any>) => {
+    if (scrapedKeys.has(key)) return;
+    await addScrapedExpression(entry);
+    setScrapedKeys((prev) => new Set(prev).add(key));
+  };
+
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: "#f5f5f5" }}
+      contentContainerStyle={{ padding: 16 }}
+    >
       {messages.map((msg) => {
         const isUser = msg.speaker === "user" || msg.speaker === "USER";
+        const aiScrapKey = `${msg.id}-ai`;
+        const isAiScraped = scrapedKeys.has(aiScrapKey);
 
         return (
           <View
@@ -4692,69 +5199,112 @@ export function MessageList({ messages }: { messages: any[] }) {
                 backgroundColor: isUser ? "#5C6BC0" : "#ffffff",
                 padding: 12,
                 borderRadius: 16,
+                borderBottomRightRadius: isUser ? 4 : 16,
+                borderBottomLeftRadius: isUser ? 16 : 4,
                 maxWidth: "80%",
+                elevation: 1,
               }}
             >
-              <Text style={{ color: isUser ? "#fff" : "#333", fontSize: 15 }}>
+              <Text style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}>
                 {msg.text}
               </Text>
             </View>
 
+            {/* 🔖 AI 말풍선용 스크랩 버튼 — 평소엔 눈에 안 띄는 회색 텍스트, 스크랩되면 인디고 배지로 전환 */}
+            {!isUser &&
+              (isAiScraped ? (
+                <View style={styles.aiScrapBadge}>
+                  <BookmarkIcon color="#fff" size={11} filled />
+                  <Text style={styles.aiScrapBadgeText}>스크랩됨</Text>
+                </View>
+              ) : (
+                <Pressable
+                  style={styles.aiScrapButton}
+                  onPress={() =>
+                    handleScrap(aiScrapKey, {
+                      source: "ai",
+                      text: msg.text,
+                    })
+                  }
+                >
+                  <BookmarkIcon color="#9CA3AF" size={11} />
+                  <Text style={styles.aiScrapText}>스크랩</Text>
+                </Pressable>
+              ))}
+
             {/* ⭐️ 3. 내가 보낸 메시지(user)이고 피드백이 존재할 때만 노란색 박스를 띄웁니다! */}
             {isUser &&
               msg.feedback &&
-              msg.feedback.map((item: any, index: number) => (
-                <View
-                  key={index}
-                  style={{
-                    marginTop: 6,
-                    backgroundColor: "#FFF9C4", // 연한 노란색
-                    padding: 12,
-                    borderRadius: 12,
-                    width: "85%",
-                  }}
-                >
-                  {renderFeedbackSection("단어 오류", item.wordErrors, "💡")}
-                  {renderFeedbackSection("문법 오류", item.grammarErrors, "💡")}
-                  {renderFeedbackSection(
-                    "어색한 표현",
-                    item.expressionErrors,
-                    "💡",
-                  )}
+              msg.feedback.map((item: any, index: number) => {
+                const hasPerfectSentence =
+                  item.perfectSentence && item.perfectSentence.trim() !== "[]";
 
-                  {item.perfectSentence &&
-                    item.perfectSentence.trim() !== "[]" && (
-                      <View
-                        style={{
-                          marginTop: 8,
-                          paddingTop: 8,
-                          borderTopWidth: 1,
-                          borderColor: "#E0E0E0",
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontWeight: "bold",
-                            color: "#333",
-                            marginBottom: 2,
-                            fontSize: 13,
-                          }}
-                        >
+                const makeScrapCtx = (suffix: string): ScrapContext => ({
+                  keyPrefix: `${msg.id}-${index}-${suffix}`,
+                  isScraped: (key) => scrapedKeys.has(key),
+                  onScrap: handleScrap,
+                });
+                const perfectKey = `${msg.id}-${index}-perfect`;
+                const isPerfectScraped = scrapedKeys.has(perfectKey);
+
+                return (
+                  <View key={index} style={styles.msgFeedbackCard}>
+                    {renderMessageFeedbackSection(
+                      "단어 오류",
+                      item.wordErrors,
+                      "💡",
+                      makeScrapCtx("word"),
+                    )}
+                    {renderMessageFeedbackSection(
+                      "문법 오류",
+                      item.grammarErrors,
+                      "💡",
+                      makeScrapCtx("grammar"),
+                    )}
+                    {renderMessageFeedbackSection(
+                      "어색한 표현",
+                      item.expressionErrors,
+                      "💡",
+                      makeScrapCtx("expr"),
+                    )}
+
+                    {hasPerfectSentence && (
+                      <View style={styles.msgFeedbackPerfectBlock}>
+                        <Text style={styles.msgFeedbackPerfectLabel}>
                           ✨ 추천 문장
                         </Text>
-                        <Text
-                          style={{
-                            fontSize: 14,
-                            color: "#1976D2",
-                            fontWeight: "600",
-                          }}
-                        >
+                        <Text style={styles.msgFeedbackPerfectText}>
                           {item.perfectSentence}
                         </Text>
+                        <Pressable
+                          style={[
+                            styles.scrapButton,
+                            { alignSelf: "flex-end", marginTop: 8 },
+                            isPerfectScraped && styles.scrapButtonActive,
+                          ]}
+                          disabled={isPerfectScraped}
+                          onPress={() =>
+                            handleScrap(perfectKey, {
+                              source: "user",
+                              original: msg.text,
+                              perfectSentence: item.perfectSentence,
+                            })
+                          }
+                        >
+                          <BookmarkIcon
+                            color="#8A6D00"
+                            size={12}
+                            filled={isPerfectScraped}
+                          />
+                          <Text style={styles.scrapButtonText}>
+                            {isPerfectScraped ? "스크랩됨" : "스크랩"}
+                          </Text>
+                        </Pressable>
                       </View>
                     )}
-                </View>
-              ))}
+                  </View>
+                );
+              })}
           </View>
         );
       })}
@@ -4896,25 +5446,6 @@ function Stat({ label, value }: { label: string; value: string }) {
       <Text style={styles.mutedSmall}>{label}</Text>
       <Text style={styles.statValue}>{value}</Text>
     </View>
-  );
-}
-
-function RoundButton({
-  label,
-  onPress,
-  active,
-}: {
-  label: string;
-  onPress: () => void;
-  active?: boolean;
-}) {
-  return (
-    <Pressable
-      style={[styles.roundButton, active && styles.roundButtonActive]}
-      onPress={onPress}
-    >
-      <Text style={styles.roundButtonText}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -5450,56 +5981,168 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 24,
   },
+  callFeedbackSlot: { width: "100%", alignItems: "center", marginBottom: 12 },
+  feedbackCard: {
+    marginTop: 6,
+    width: "100%",
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 14,
+    gap: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: "#FBBF24",
+    shadowColor: "#111827",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  feedbackPerfectBlock: {
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+  feedbackPerfectLabel: {
+    fontWeight: "700",
+    color: "#B45309",
+    fontSize: 11,
+    marginBottom: 2,
+  },
+  feedbackPerfectText: { fontSize: 14, color: "#1F2937", fontWeight: "600" },
+  avatarRingOuter: {
+    width: 120,
+    height: 120,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
   avatarLarge: {
-    width: 118,
-    height: 118,
-    borderRadius: 59,
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: "#F5F5F7",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 4,
+  },
+  avatarActive: {
+    backgroundColor: "#EEF2FF",
+    borderWidth: 4,
+    borderColor: "#C7D2FE",
+  },
+  avatarEmoji: { fontSize: 48 },
+  callStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#4ADE80" },
+  subtitleBox: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+    width: "100%",
+    maxWidth: 290,
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 26,
+    shadowColor: "#111827",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  subtitleChip: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: "#EEF2FF",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
   },
-  avatarActive: { borderWidth: 6, borderColor: "#C7D2FE" },
-  avatarEmoji: { fontSize: 48 },
-  callFeedbackSlot: { width: "100%", marginBottom: 12 },
-  subtitleBox: {
-    width: "100%",
-    backgroundColor: "#F9FAFB",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    padding: 16,
-    alignItems: "center",
-    marginVertical: 24,
-  },
-  subtitleText: { color: "#374151", fontSize: 15, textAlign: "center" },
+  subtitleChipText: { color: primary, fontSize: 12, fontWeight: "700" },
+  subtitleText: { color: "#1F2937", fontSize: 14, lineHeight: 20, flex: 1 },
   controlRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 16,
+    backgroundColor: "#fff",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 28,
     marginTop: 18,
+    shadowColor: "#111827",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    elevation: 3,
+  },
+  micWrap: {
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  micPulseRing: {
+    position: "absolute",
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: primary,
+    opacity: 0.4,
   },
   roundButton: {
-    width: 74,
-    height: 50,
-    borderRadius: 16,
-    backgroundColor: "#F3F4F6",
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#F5F5F7",
     alignItems: "center",
     justifyContent: "center",
   },
-  roundButtonText: { fontSize: 24 },
-  roundButtonActive: { backgroundColor: "#FEE2E2" },
+  roundButtonActive: { backgroundColor: "#EEF2FF" },
   callButton: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: "#22C55E",
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: primary,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 4,
   },
-  endCallButton: { backgroundColor: "#EF4444" },
-  callButtonText: { fontSize: 28 },
+  endCallButton: {
+    backgroundColor: "#EF4444",
+    shadowColor: "#EF4444",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 4,
+  },
   endCallIcon: { transform: [{ rotate: "135deg" }] },
+  listeningRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 12,
+  },
+  listeningDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: primary,
+  },
+  listeningText: { color: primary, fontSize: 12 },
   messageContent: { padding: 16, gap: 10 },
   dateDivider: {
     color: "#9CA3AF",
@@ -5590,6 +6233,89 @@ const styles = StyleSheet.create({
     borderColor: "#F3F4F6",
     padding: 16,
   },
+  msgFeedbackCard: {
+    marginTop: 6,
+    backgroundColor: "#FFF9C4",
+    padding: 14,
+    borderRadius: 12,
+    width: "85%",
+    gap: 16,
+  },
+  scrapButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FFFDF6",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+  },
+  scrapButtonActive: { backgroundColor: "#FDE68A", borderColor: "#FBBF24" },
+  scrapButtonText: { fontSize: 11, fontWeight: "700", color: "#8A6D00" },
+  msgFeedbackSection: {},
+  msgFeedbackSectionTitle: {
+    fontWeight: "bold",
+    marginBottom: 6,
+    color: "#333",
+    fontSize: 13,
+  },
+  msgFeedbackItem: {
+    backgroundColor: "rgba(255, 255, 255, 0.6)",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  msgFeedbackOriginal: {
+    fontSize: 14,
+    color: "#ff5252",
+    textDecorationLine: "line-through",
+    marginBottom: 4,
+  },
+  msgFeedbackCorrected: { fontSize: 15, color: "#4caf50", fontWeight: "bold" },
+  msgFeedbackExplanation: { fontSize: 13, color: "#666", marginTop: 4 },
+  msgFeedbackPerfectBlock: {
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  msgFeedbackPerfectLabel: {
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 4,
+    fontSize: 13,
+  },
+  msgFeedbackPerfectText: { fontSize: 14, color: "#1976D2", fontWeight: "600" },
+  aiScrapButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 6,
+    paddingVertical: 2,
+  },
+  aiScrapText: { fontSize: 11, color: "#9CA3AF" },
+  aiScrapBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 6,
+    backgroundColor: primary,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+  },
+  aiScrapBadgeText: { fontSize: 11, color: "#fff", fontWeight: "700" },
+  devSkipButton: {
+    marginTop: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#9CA3AF",
+    alignItems: "center",
+  },
+  devSkipButtonText: { color: "#6B7280", fontSize: 12, fontWeight: "600" },
 });
 
 console.log(process.env.EXPO_PUBLIC_BASE_URL);
