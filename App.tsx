@@ -1148,10 +1148,7 @@ function SituationScreen({
 
 export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   const [inCall, setInCall] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [speakerOff, setSpeakerOff] = useState(false);
-  const [feedbackOn, setFeedbackOn] = useState(true);
-  const [tab, setTab] = useState<"call" | "history" | "feedback">("call");
+  const [tab, setTab] = useState<"call" | "history">("call");
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [latestAiText, setLatestAiText] = useState("");
@@ -1360,7 +1357,6 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
           headers: {
             Authorization: `Bearer ${accessToken}`,
             "ngrok-skip-browser-warning": "true",
-            "Content-Type": "multipart/form-data",
           },
         },
       );
@@ -1429,10 +1425,72 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
       <TabBar
         active={tab}
         setActive={setTab}
-        labels={{ call: "통화", history: "대화내역", feedback: "피드백" }}
+        labels={{ call: "통화", history: "대화내역" }}
       />
       {tab === "call" && (
         <View style={styles.callBody}>
+          <View style={styles.callFeedbackSlot}>
+            {inCall &&
+              [...messages]
+                .reverse()
+                .find((m) => m.speaker === "user" && m.feedback)
+                ?.feedback?.map((item: any, index: number) => (
+                  <View
+                    key={index}
+                    style={{
+                      marginTop: 6,
+                      backgroundColor: "#FFF9C4",
+                      padding: 12,
+                      borderRadius: 12,
+                      width: "100%",
+                    }}
+                  >
+                    {renderFeedbackSection("단어 오류", item.wordErrors, "💡")}
+                    {renderFeedbackSection(
+                      "문법 오류",
+                      item.grammarErrors,
+                      "💡",
+                    )}
+                    {renderFeedbackSection(
+                      "어색한 표현",
+                      item.expressionErrors,
+                      "💡",
+                    )}
+
+                    {item.perfectSentence &&
+                      item.perfectSentence.trim() !== "[]" && (
+                        <View
+                          style={{
+                            marginTop: 8,
+                            paddingTop: 8,
+                            borderTopWidth: 1,
+                            borderColor: "#E0E0E0",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontWeight: "bold",
+                              color: "#333",
+                              marginBottom: 2,
+                              fontSize: 13,
+                            }}
+                          >
+                            ✨ 추천 문장
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 14,
+                              color: "#1976D2",
+                              fontWeight: "600",
+                            }}
+                          >
+                            {item.perfectSentence}
+                          </Text>
+                        </View>
+                      )}
+                  </View>
+                ))}
+          </View>
           <View style={[styles.avatarLarge, inCall && styles.avatarActive]}>
             <Text style={styles.avatarEmoji}>{isPlaying ? "🎵" : "🤖"}</Text>
           </View>
@@ -1451,19 +1509,8 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
           <View style={styles.controlRow}>
             {inCall && (
               <RoundButton
-                label={muted ? "마이크끔" : "마이크"}
-                onPress={() => setMuted((v) => !v)}
-              />
-            )}
-            {inCall && (
-              <RoundButton
-                label={speakerOff ? "스피커끔" : "스피커"}
-                onPress={() => setSpeakerOff((v) => !v)}
-              />
-            )}
-            {inCall && (
-              <RoundButton
-                label={isRecording ? "녹음 중지" : "내 답변 녹음"}
+                label={isRecording ? "⏹️" : "🎙️"}
+                active={isRecording}
                 onPress={isRecording ? stopRecordingAndSend : startRecording}
               />
             )}
@@ -1472,33 +1519,16 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
               style={[styles.callButton, inCall && styles.endCallButton]}
               onPress={handleStartCall}
             >
-              <Text style={styles.callButtonText}>
-                {inCall ? "종료" : "시작"}
+              <Text
+                style={[styles.callButtonText, inCall && styles.endCallIcon]}
+              >
+                📞
               </Text>
             </Pressable>
           </View>
-          <Pressable
-            style={[
-              styles.feedbackToggle,
-              !feedbackOn && styles.feedbackToggleOff,
-            ]}
-            onPress={() => setFeedbackOn((v) => !v)}
-          >
-            <Text
-              style={[
-                styles.feedbackToggleText,
-                !feedbackOn && styles.grayText,
-              ]}
-            >
-              피드백 {feedbackOn ? "ON" : "OFF"}
-            </Text>
-          </Pressable>
         </View>
       )}
       {tab === "history" && <MessageList messages={messages} />}
-      {tab === "feedback" && (
-        <FeedbackList messages={messages} enabled={feedbackOn} />
-      )}
     </View>
   );
 }
@@ -1506,7 +1536,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
 // ⭐️ 1. 괄호([]) 찌꺼기를 없애고 예쁜 디자인을 입혀주는 도우미 함수 (컴포넌트 밖에 선언)
 const renderFeedbackSection = (
   title: string,
-  jsonString: string | null | undefined,
+  jsonString: string | any[] | null | undefined,
   icon: string,
 ) => {
   if (
@@ -4870,12 +4900,17 @@ function Stat({ label, value }: { label: string; value: string }) {
 function RoundButton({
   label,
   onPress,
+  active,
 }: {
   label: string;
   onPress: () => void;
+  active?: boolean;
 }) {
   return (
-    <Pressable style={styles.roundButton} onPress={onPress}>
+    <Pressable
+      style={[styles.roundButton, active && styles.roundButtonActive]}
+      onPress={onPress}
+    >
       <Text style={styles.roundButtonText}>{label}</Text>
     </Pressable>
   );
@@ -5424,6 +5459,7 @@ const styles = StyleSheet.create({
   },
   avatarActive: { borderWidth: 6, borderColor: "#C7D2FE" },
   avatarEmoji: { fontSize: 48 },
+  callFeedbackSlot: { width: "100%", marginBottom: 12 },
   subtitleBox: {
     width: "100%",
     backgroundColor: "#F9FAFB",
@@ -5449,27 +5485,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  roundButtonText: { color: "#4B5563", fontSize: 12, fontWeight: "800" },
+  roundButtonText: { fontSize: 24 },
+  roundButtonActive: { backgroundColor: "#FEE2E2" },
   callButton: {
     width: 76,
-    height: 60,
-    borderRadius: 18,
-    backgroundColor: primary,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: "#22C55E",
     alignItems: "center",
     justifyContent: "center",
   },
   endCallButton: { backgroundColor: "#EF4444" },
-  callButtonText: { color: "#FFFFFF", fontWeight: "900" },
-  feedbackToggle: {
-    marginTop: 22,
-    backgroundColor: "#EEF2FF",
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  feedbackToggleOff: { backgroundColor: "#F3F4F6" },
-  feedbackToggleText: { color: primary, fontSize: 12, fontWeight: "800" },
-  grayText: { color: "#6B7280" },
+  callButtonText: { fontSize: 28 },
+  endCallIcon: { transform: [{ rotate: "135deg" }] },
   messageContent: { padding: 16, gap: 10 },
   dateDivider: {
     color: "#9CA3AF",
