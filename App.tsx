@@ -1739,10 +1739,17 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
 }
 
 // ⭐️ 1. 괄호([]) 찌꺼기를 없애고 예쁜 디자인을 입혀주는 도우미 함수 (컴포넌트 밖에 선언)
+type ScrapContext = {
+  keyPrefix: string;
+  isScraped: (key: string) => boolean;
+  onScrap: (key: string, entry: Record<string, any>) => void;
+};
+
 const renderFeedbackSection = (
   title: string,
   jsonString: string | any[] | null | undefined,
   icon: string,
+  scrapCtx?: ScrapContext,
 ) => {
   if (
     !jsonString ||
@@ -1762,41 +1769,72 @@ const renderFeedbackSection = (
     if (!Array.isArray(parsedData) || parsedData.length === 0) return null;
 
     return (
-      <View style={{ marginTop: 12 }}>
+      <View>
         <Text style={{ fontWeight: "bold", marginBottom: 4, color: "#333" }}>
           {icon} {title}
         </Text>
-        {parsedData.map((errorItem: any, index: number) => (
-          <View
-            key={index}
-            style={{
-              backgroundColor: "rgba(255, 255, 255, 0.6)", // 살짝 투명한 흰색 박스
-              padding: 10,
-              borderRadius: 8,
-              marginBottom: 6,
-            }}
-          >
-            <Text style={{ fontSize: 15, marginBottom: 4 }}>
-              <Text
-                style={{ textDecorationLine: "line-through", color: "#ff5252" }}
-              >
-                {errorItem.original}
-              </Text>{" "}
-              ➡️{" "}
-              <Text style={{ color: "#4caf50", fontWeight: "bold" }}>
-                {errorItem.suggested || errorItem.corrected}
+        {parsedData.map((errorItem: any, index: number) => {
+          const itemKey = `${scrapCtx?.keyPrefix}-${index}`;
+          const isScraped = scrapCtx?.isScraped(itemKey) ?? false;
+          return (
+            <View
+              key={index}
+              style={{
+                backgroundColor: "rgba(255, 255, 255, 0.6)", // 살짝 투명한 흰색 박스
+                padding: 10,
+                borderRadius: 8,
+                marginBottom: 6,
+              }}
+            >
+              <Text style={{ fontSize: 15, marginBottom: 4 }}>
+                <Text
+                  style={{
+                    textDecorationLine: "line-through",
+                    color: "#ff5252",
+                  }}
+                >
+                  {errorItem.original}
+                </Text>{" "}
+                ➡️{" "}
+                <Text style={{ color: "#4caf50", fontWeight: "bold" }}>
+                  {errorItem.suggested || errorItem.corrected}
+                </Text>
               </Text>
-            </Text>
-            <Text style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
-              {errorItem.explanation}
-            </Text>
-          </View>
-        ))}
+              <Text style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
+                {errorItem.explanation}
+              </Text>
+              {scrapCtx && (
+                <Pressable
+                  style={[
+                    styles.scrapButton,
+                    { alignSelf: "flex-end", marginTop: 8 },
+                    isScraped && styles.scrapButtonActive,
+                  ]}
+                  disabled={isScraped}
+                  onPress={() =>
+                    scrapCtx.onScrap(itemKey, {
+                      source: "user",
+                      category: title,
+                      original: errorItem.original,
+                      corrected: errorItem.suggested || errorItem.corrected,
+                      explanation: errorItem.explanation,
+                    })
+                  }
+                >
+                  <BookmarkIcon color="#8A6D00" size={11} filled={isScraped} />
+                  <Text style={styles.scrapButtonText}>
+                    {isScraped ? "스크랩됨" : "스크랩"}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          );
+        })}
       </View>
     );
   } catch (error) {
     return (
-      <View style={{ marginTop: 12 }}>
+      <View>
         <Text style={{ fontWeight: "bold", marginBottom: 4, color: "#333" }}>
           {icon} {title}
         </Text>
@@ -1815,6 +1853,13 @@ export function TextChatScreen({
 }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<any[]>([]); // Message 타입 대체
+  const [scrapedKeys, setScrapedKeys] = useState<Set<string>>(new Set());
+
+  const handleScrap = async (key: string, entry: Record<string, any>) => {
+    if (scrapedKeys.has(key)) return;
+    await addScrapedExpression(entry);
+    setScrapedKeys((prev) => new Set(prev).add(key));
+  };
 
   const requestInitialGreeting = async () => {
     try {
@@ -1999,6 +2044,8 @@ export function TextChatScreen({
       >
         {messages.map((msg) => {
           const isUser = msg.speaker === "user";
+          const aiScrapKey = `${msg.id}-ai`;
+          const isAiScraped = scrapedKeys.has(aiScrapKey);
 
           return (
             <View
@@ -2026,37 +2073,78 @@ export function TextChatScreen({
                 </Text>
               </View>
 
+              {/* 🔖 AI 말풍선용 스크랩 버튼 */}
+              {!isUser &&
+                (isAiScraped ? (
+                  <View style={styles.aiScrapBadge}>
+                    <BookmarkIcon color="#fff" size={11} filled />
+                    <Text style={styles.aiScrapBadgeText}>스크랩됨</Text>
+                  </View>
+                ) : (
+                  <Pressable
+                    style={styles.aiScrapButton}
+                    onPress={() =>
+                      handleScrap(aiScrapKey, {
+                        source: "ai",
+                        text: msg.text,
+                      })
+                    }
+                  >
+                    <BookmarkIcon color="#9CA3AF" size={11} />
+                    <Text style={styles.aiScrapText}>스크랩</Text>
+                  </Pressable>
+                ))}
+
               {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에, feedback 데이터가 있을 때만 등장!) */}
               {isUser &&
                 msg.feedback &&
-                msg.feedback.map((item: any, index: number) => (
-                  <View
-                    key={index}
-                    style={{
-                      marginTop: 8,
-                      backgroundColor: "#FFF9C4", // 연한 노란색
-                      padding: 16,
-                      borderRadius: 16,
-                      width: "85%", // 피드백 박스 크기
-                    }}
-                  >
-                    {renderFeedbackSection("단어 오류", item.wordErrors, "💡")}
-                    {renderFeedbackSection(
-                      "문법 오류",
-                      item.grammarErrors,
-                      "💡",
-                    )}
-                    {renderFeedbackSection(
-                      "어색한 표현",
-                      item.expressionErrors,
-                      "💡",
-                    )}
+                msg.feedback.map((item: any, index: number) => {
+                  const hasPerfectSentence =
+                    item.perfectSentence &&
+                    item.perfectSentence.trim() !== "[]";
 
-                    {item.perfectSentence &&
-                      item.perfectSentence.trim() !== "[]" && (
+                  const makeScrapCtx = (suffix: string): ScrapContext => ({
+                    keyPrefix: `${msg.id}-${index}-${suffix}`,
+                    isScraped: (key) => scrapedKeys.has(key),
+                    onScrap: handleScrap,
+                  });
+                  const perfectKey = `${msg.id}-${index}-perfect`;
+                  const isPerfectScraped = scrapedKeys.has(perfectKey);
+
+                  return (
+                    <View
+                      key={index}
+                      style={{
+                        marginTop: 8,
+                        backgroundColor: "#FFF9C4", // 연한 노란색
+                        padding: 16,
+                        borderRadius: 16,
+                        width: "85%", // 피드백 박스 크기
+                        gap: 12,
+                      }}
+                    >
+                      {renderFeedbackSection(
+                        "단어 오류",
+                        item.wordErrors,
+                        "💡",
+                        makeScrapCtx("word"),
+                      )}
+                      {renderFeedbackSection(
+                        "문법 오류",
+                        item.grammarErrors,
+                        "💡",
+                        makeScrapCtx("grammar"),
+                      )}
+                      {renderFeedbackSection(
+                        "어색한 표현",
+                        item.expressionErrors,
+                        "💡",
+                        makeScrapCtx("expr"),
+                      )}
+
+                      {hasPerfectSentence && (
                         <View
                           style={{
-                            marginTop: 12,
                             paddingTop: 12,
                             borderTopWidth: 1,
                             borderColor: "#E0E0E0",
@@ -2076,14 +2164,40 @@ export function TextChatScreen({
                               fontSize: 15,
                               color: "#1976D2",
                               fontWeight: "600",
+                              marginBottom: 8,
                             }}
                           >
                             {item.perfectSentence}
                           </Text>
+                          <Pressable
+                            style={[
+                              styles.scrapButton,
+                              { alignSelf: "flex-end" },
+                              isPerfectScraped && styles.scrapButtonActive,
+                            ]}
+                            disabled={isPerfectScraped}
+                            onPress={() =>
+                              handleScrap(perfectKey, {
+                                source: "user",
+                                original: msg.text,
+                                perfectSentence: item.perfectSentence,
+                              })
+                            }
+                          >
+                            <BookmarkIcon
+                              color="#8A6D00"
+                              size={12}
+                              filled={isPerfectScraped}
+                            />
+                            <Text style={styles.scrapButtonText}>
+                              {isPerfectScraped ? "스크랩됨" : "스크랩"}
+                            </Text>
+                          </Pressable>
                         </View>
                       )}
-                  </View>
-                ))}
+                    </View>
+                  );
+                })}
             </View>
           );
         })}
@@ -2640,6 +2754,7 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
     roomName: string;
     roomId: string;
     savedDate: string;
+    source?: "ai" | "user";
   }
 
   const categoryConfig: Record<
@@ -2693,6 +2808,26 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
       roomId: "1",
       savedDate: "04/26",
     },
+    {
+      id: "5",
+      text: "That sounds like a great plan!",
+      translation: "정말 좋은 계획인 것 같아요!",
+      category: "문장",
+      roomName: "일상 대화",
+      roomId: "4",
+      savedDate: "04/29",
+      source: "ai",
+    },
+    {
+      id: "6",
+      text: "I really appreciate your help.",
+      translation: "도와주셔서 정말 감사해요.",
+      category: "문장",
+      roomName: "카페에서 주문하기",
+      roomId: "1",
+      savedDate: "04/25",
+      source: "ai",
+    },
   ]);
 
   const isInsideDetail = selectedCategory !== null || selectedRoom !== null;
@@ -2707,40 +2842,64 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
   };
 
   const deleteExpression = (id: string) => {
-    setExpressions(expressions.filter((e) => e.id !== id));
+    Alert.alert(
+      "표현 삭제",
+      "이 표현을 정말 삭제하시겠습니까?\n(삭제 후 복구할 수 없습니다.)",
+      [
+        { text: "취소", style: "cancel" },
+        {
+          text: "삭제",
+          style: "destructive",
+          onPress: () => {
+            setExpressions((prev) => prev.filter((e) => e.id !== id));
+          },
+        },
+      ],
+    );
   };
 
   const renderExpression = (expr: SavedExpression, showRoom = false) => {
     const config = categoryConfig[expr.category];
     return (
       <View key={expr.id} style={bkStyles.exprCard}>
-        <View style={{ flex: 1 }}>
-          <Text style={bkStyles.exprText}>{expr.text}</Text>
-          <Text style={bkStyles.exprTranslation}>{expr.translation}</Text>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-              marginTop: 8,
-              flexWrap: "wrap",
-            }}
-          >
-            <View style={[bkStyles.catBadge, { backgroundColor: config.bg }]}>
-              <Text style={[bkStyles.catBadgeText, { color: config.color }]}>
-                {expr.category}
-              </Text>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={bkStyles.exprText}>{expr.text}</Text>
+            <Text style={bkStyles.exprTranslation}>{expr.translation}</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <View
+                style={[bkStyles.catBadge, { backgroundColor: config.bg }]}
+              >
+                <Text
+                  style={[bkStyles.catBadgeText, { color: config.color }]}
+                >
+                  {expr.category}
+                </Text>
+              </View>
+              {showRoom && (
+                <Text style={bkStyles.exprMeta}>{expr.roomName}</Text>
+              )}
+              <Text style={bkStyles.exprDate}>{expr.savedDate}</Text>
             </View>
-            {showRoom && <Text style={bkStyles.exprMeta}>{expr.roomName}</Text>}
-            <Text style={bkStyles.exprDate}>{expr.savedDate}</Text>
           </View>
+          <Pressable
+            onPress={() => deleteExpression(expr.id)}
+            style={bkStyles.deleteBtn}
+          >
+            <Text style={bkStyles.deleteBtnText}>🗑</Text>
+          </Pressable>
         </View>
-        <Pressable
-          onPress={() => deleteExpression(expr.id)}
-          style={bkStyles.deleteBtn}
-        >
-          <Text style={bkStyles.deleteBtnText}>🗑</Text>
-        </Pressable>
+        {expr.source === "ai" && (
+          <Text style={bkStyles.exprSourceTag}>AI 답변에서 저장됨</Text>
+        )}
       </View>
     );
   };
@@ -4016,9 +4175,6 @@ const bkStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#F3F4F6",
     padding: 16,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
   },
   exprText: {
     color: "#111827",
@@ -4029,6 +4185,12 @@ const bkStyles = StyleSheet.create({
   exprTranslation: { color: "#9CA3AF", fontSize: 12 },
   exprMeta: { color: "#9CA3AF", fontSize: 10 },
   exprDate: { color: "#D1D5DB", fontSize: 10 },
+  exprSourceTag: {
+    color: "#9CA3AF",
+    fontSize: 10,
+    marginTop: 6,
+    alignSelf: "flex-end",
+  },
   catBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   catBadgeText: { fontSize: 10, fontWeight: "700" },
   deleteBtn: {
@@ -4864,6 +5026,7 @@ const renderMessageFeedbackSection = (
   title: string,
   jsonString: string | any[] | null | undefined,
   icon: string,
+  scrapCtx?: ScrapContext,
 ) => {
   if (
     !jsonString ||
@@ -4886,21 +5049,49 @@ const renderMessageFeedbackSection = (
         <Text style={styles.msgFeedbackSectionTitle}>
           {icon} {title}
         </Text>
-        {parsedData.map((errorItem: any, index: number) => (
-          <View key={index} style={styles.msgFeedbackItem}>
-            <Text style={styles.msgFeedbackOriginal}>
-              {errorItem.original}
-            </Text>
-            <Text style={styles.msgFeedbackCorrected}>
-              ➡️ {errorItem.suggested || errorItem.corrected}
-            </Text>
-            {errorItem.explanation ? (
-              <Text style={styles.msgFeedbackExplanation}>
-                {errorItem.explanation}
+        {parsedData.map((errorItem: any, index: number) => {
+          const itemKey = `${scrapCtx?.keyPrefix}-${index}`;
+          const isScraped = scrapCtx?.isScraped(itemKey) ?? false;
+          return (
+            <View key={index} style={styles.msgFeedbackItem}>
+              <Text style={styles.msgFeedbackOriginal}>
+                {errorItem.original}
               </Text>
-            ) : null}
-          </View>
-        ))}
+              <Text style={styles.msgFeedbackCorrected}>
+                ➡️ {errorItem.suggested || errorItem.corrected}
+              </Text>
+              {errorItem.explanation ? (
+                <Text style={styles.msgFeedbackExplanation}>
+                  {errorItem.explanation}
+                </Text>
+              ) : null}
+              {scrapCtx && (
+                <Pressable
+                  style={[
+                    styles.scrapButton,
+                    { alignSelf: "flex-end", marginTop: 8 },
+                    isScraped && styles.scrapButtonActive,
+                  ]}
+                  disabled={isScraped}
+                  onPress={() =>
+                    scrapCtx.onScrap(itemKey, {
+                      source: "user",
+                      category: title,
+                      original: errorItem.original,
+                      corrected: errorItem.suggested || errorItem.corrected,
+                      explanation: errorItem.explanation,
+                    })
+                  }
+                >
+                  <BookmarkIcon color="#8A6D00" size={11} filled={isScraped} />
+                  <Text style={styles.scrapButtonText}>
+                    {isScraped ? "스크랩됨" : "스크랩"}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          );
+        })}
       </View>
     );
   } catch (error) {
@@ -4926,7 +5117,10 @@ export function MessageList({ messages }: { messages: any[] }) {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: "#f5f5f5" }}
+      contentContainerStyle={{ padding: 16 }}
+    >
       {messages.map((msg) => {
         const isUser = msg.speaker === "user" || msg.speaker === "USER";
         const aiScrapKey = `${msg.id}-ai`;
@@ -4946,10 +5140,13 @@ export function MessageList({ messages }: { messages: any[] }) {
                 backgroundColor: isUser ? "#5C6BC0" : "#ffffff",
                 padding: 12,
                 borderRadius: 16,
+                borderBottomRightRadius: isUser ? 4 : 16,
+                borderBottomLeftRadius: isUser ? 16 : 4,
                 maxWidth: "80%",
+                elevation: 1,
               }}
             >
-              <Text style={{ color: isUser ? "#fff" : "#333", fontSize: 15 }}>
+              <Text style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}>
                 {msg.text}
               </Text>
             </View>
@@ -4980,54 +5177,37 @@ export function MessageList({ messages }: { messages: any[] }) {
             {isUser &&
               msg.feedback &&
               msg.feedback.map((item: any, index: number) => {
-                const scrapKey = `${msg.id}-${index}`;
-                const isScraped = scrapedKeys.has(scrapKey);
                 const hasPerfectSentence =
                   item.perfectSentence &&
                   item.perfectSentence.trim() !== "[]";
 
+                const makeScrapCtx = (suffix: string): ScrapContext => ({
+                  keyPrefix: `${msg.id}-${index}-${suffix}`,
+                  isScraped: (key) => scrapedKeys.has(key),
+                  onScrap: handleScrap,
+                });
+                const perfectKey = `${msg.id}-${index}-perfect`;
+                const isPerfectScraped = scrapedKeys.has(perfectKey);
+
                 return (
                   <View key={index} style={styles.msgFeedbackCard}>
-                    <View style={styles.msgFeedbackHeader}>
-                      <Pressable
-                        style={[
-                          styles.scrapButton,
-                          isScraped && styles.scrapButtonActive,
-                        ]}
-                        disabled={!hasPerfectSentence || isScraped}
-                        onPress={() =>
-                          handleScrap(scrapKey, {
-                            source: "user",
-                            original: msg.text,
-                            perfectSentence: item.perfectSentence,
-                          })
-                        }
-                      >
-                        <BookmarkIcon
-                          color="#8A6D00"
-                          size={12}
-                          filled={isScraped}
-                        />
-                        <Text style={styles.scrapButtonText}>
-                          {isScraped ? "스크랩됨" : "스크랩"}
-                        </Text>
-                      </Pressable>
-                    </View>
-
                     {renderMessageFeedbackSection(
                       "단어 오류",
                       item.wordErrors,
                       "💡",
+                      makeScrapCtx("word"),
                     )}
                     {renderMessageFeedbackSection(
                       "문법 오류",
                       item.grammarErrors,
                       "💡",
+                      makeScrapCtx("grammar"),
                     )}
                     {renderMessageFeedbackSection(
                       "어색한 표현",
                       item.expressionErrors,
                       "💡",
+                      makeScrapCtx("expr"),
                     )}
 
                     {hasPerfectSentence && (
@@ -5038,6 +5218,30 @@ export function MessageList({ messages }: { messages: any[] }) {
                         <Text style={styles.msgFeedbackPerfectText}>
                           {item.perfectSentence}
                         </Text>
+                        <Pressable
+                          style={[
+                            styles.scrapButton,
+                            { alignSelf: "flex-end", marginTop: 8 },
+                            isPerfectScraped && styles.scrapButtonActive,
+                          ]}
+                          disabled={isPerfectScraped}
+                          onPress={() =>
+                            handleScrap(perfectKey, {
+                              source: "user",
+                              original: msg.text,
+                              perfectSentence: item.perfectSentence,
+                            })
+                          }
+                        >
+                          <BookmarkIcon
+                            color="#8A6D00"
+                            size={12}
+                            filled={isPerfectScraped}
+                          />
+                          <Text style={styles.scrapButtonText}>
+                            {isPerfectScraped ? "스크랩됨" : "스크랩"}
+                          </Text>
+                        </Pressable>
                       </View>
                     )}
                   </View>
@@ -5726,6 +5930,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 16,
     padding: 14,
+    gap: 12,
     borderLeftWidth: 3,
     borderLeftColor: "#FBBF24",
     shadowColor: "#111827",
@@ -5735,7 +5940,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   feedbackPerfectBlock: {
-    marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
     borderColor: "#F3F4F6",
@@ -5972,11 +6176,7 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 12,
     width: "85%",
-  },
-  msgFeedbackHeader: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginBottom: 10,
+    gap: 16,
   },
   scrapButton: {
     flexDirection: "row",
@@ -5991,7 +6191,7 @@ const styles = StyleSheet.create({
   },
   scrapButtonActive: { backgroundColor: "#FDE68A", borderColor: "#FBBF24" },
   scrapButtonText: { fontSize: 11, fontWeight: "700", color: "#8A6D00" },
-  msgFeedbackSection: { marginTop: 16 },
+  msgFeedbackSection: {},
   msgFeedbackSectionTitle: {
     fontWeight: "bold",
     marginBottom: 6,
@@ -6013,7 +6213,6 @@ const styles = StyleSheet.create({
   msgFeedbackCorrected: { fontSize: 15, color: "#4caf50", fontWeight: "bold" },
   msgFeedbackExplanation: { fontSize: 13, color: "#666", marginTop: 4 },
   msgFeedbackPerfectBlock: {
-    marginTop: 14,
     paddingTop: 10,
     borderTopWidth: 1,
     borderColor: "#E0E0E0",
