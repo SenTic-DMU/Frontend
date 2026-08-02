@@ -1859,9 +1859,42 @@ export function TextChatScreen({
   const [scrapedKeys, setScrapedKeys] = useState<Set<string>>(new Set());
 
   const handleScrap = async (key: string, entry: Record<string, any>) => {
+    // 이미 스크랩된 상태면 무시
     if (scrapedKeys.has(key)) return;
-    await addScrapedExpression(entry);
-    setScrapedKeys((prev) => new Set(prev).add(key));
+
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+      // ⭐️ 백엔드 명세에 맞춘 새로운 데이터 페이로드
+      const payload = {
+        feedbackId: entry.feedbackId || null, // 피드백이 아니면 null
+        roomId: entry.roomId || null, // AI 메시지면 방 ID, 아니면 null
+        expression: entry.expression,
+        context: entry.context || "",
+        category: entry.category,
+      };
+
+      // ⭐️ 1. 서버로 출발하기 직전의 데이터 확인!
+      console.log("👉 [요청 데이터]:", JSON.stringify(payload, null, 2));
+
+      await axios.post(`${API_URL}/api/scraps`, payload, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+      });
+
+      // 서버 저장이 성공하면 화면 상태 업데이트 (노란 불 켜기)
+      setScrapedKeys((prev) => new Set(prev).add(key));
+      console.log("✅ 스크랩 저장 성공:", payload);
+    } catch (error: any) {
+      console.error(
+        "🚨 스크랩 저장 실패:",
+        error.response?.data || error.message,
+      );
+    }
   };
 
   const requestInitialGreeting = async () => {
@@ -1903,7 +1936,7 @@ export function TextChatScreen({
 
   useEffect(() => {
     const fetchChatHistory = async () => {
-      // 🧪 테스트 모드에서는 서버 호출 없이 예시 대화를 채워줍니다.
+      // 🧪 테스트 모드 (기존 동일)
       if (isTestMode) {
         setMessages(TEST_CHAT_MESSAGES);
         return;
@@ -1912,22 +1945,50 @@ export function TextChatScreen({
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
-        const response = await axios.get(
-          `${API_URL}/api/rooms/${room.id}/messages`,
-          { headers: { Authorization: `Bearer ${accessToken}` } },
-        );
 
+        // ⭐️ 1. Promise.all을 사용하여 두 API를 동시에(병렬로) 호출합니다! (속도 2배 향상)
+        const [messagesRes, scrapsRes] = await Promise.all([
+          axios.get(`${API_URL}/api/rooms/${room.id}/messages`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+          axios.get(`${API_URL}/api/scraps?roomId=${room.id}`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+        ]);
+
+        const history = messagesRes.data?.data || messagesRes.data || [];
+        const scraps = scrapsRes.data?.data || scrapsRes.data || [];
+
+        // ⭐️ 바로 여기! 매칭 작업을 시작하기 전에 두 데이터가 어떻게 생겼는지 까봅시다!
+        console.log("=========================================");
         console.log(
-          "👉 백엔드 데이터 확인:",
-          JSON.stringify(response.data, null, 2),
+          "👀 1. 서버가 준 메시지(history) 데이터:",
+          JSON.stringify(history, null, 2),
         );
+        console.log(
+          "👀 2. 서버가 준 스크랩(scraps) 데이터:",
+          JSON.stringify(scraps, null, 2),
+        );
+        console.log("=========================================");
 
-        const history = response.data?.data || response.data || [];
         if (history.length > 0) {
+          // ⭐️ 2. 검색을 빠르게 하기 위해 스크랩된 feedbackId들을 Set으로 만들어 둡니다.
+          // (예: 백엔드가 [{ feedbackId: 1 }, { feedbackId: 5 }] 형태로 준다고 가정)
+          const scrapedFeedbackIds = new Set(
+            scraps.map((scrap: any) => scrap.feedbackId).filter(Boolean),
+          );
+
+          // (선택) AI 메시지는 feedbackId가 아니라 messageId로 관리될 수 있으니 미리 빼둡니다.
+          const scrapedMessageIds = new Set(
+            scraps.map((scrap: any) => scrap.messageId).filter(Boolean),
+          );
+
+          const loadedScrapedKeys = new Set<string>();
+
           const formattedHistory = history
             .filter((msg: any) => !msg.contentText.includes("(시스템:"))
             .map((msg: any) => {
-              // ⭐️ 여기에 피드백 변환 로직이 들어갑니다!
+              // --- 피드백 파싱 (기존과 동일) ---
               let parsedFeedback = undefined;
               if (msg.feedback) {
                 const rawFeedback =
@@ -1940,7 +2001,83 @@ export function TextChatScreen({
                   : [rawFeedback];
               }
 
-              // ⭐️ 괄호가 ({ }) 에서 { return { ... } } 형태로 바뀌었습니다.
+              // ⭐️ 3. 백엔드에서 받은 스크랩 목록과 현재 메시지를 "매칭" 합니다!
+
+              // [AI 메시지 매칭]
+              // 스크랩 목록 중에서, 피드백 ID가 없고(null) 문장이 똑같은 게 있다면 그게 바로 AI 스크랩!
+              if (msg.senderType === "AI") {
+                const isAiScraped = scraps.some(
+                  (s: any) => !s.feedbackId && s.expression === msg.contentText,
+                );
+
+                if (isAiScraped) {
+                  loadedScrapedKeys.add(`${msg.id.toString()}-ai`);
+                }
+              }
+
+              // [사용자 피드백 매칭]
+              if (msg.senderType === "USER" && parsedFeedback) {
+                parsedFeedback.forEach((item: any, index: number) => {
+                  const currentFeedbackId = item.id;
+
+                  if (!currentFeedbackId) return;
+
+                  // ⭐️ 1. 이 피드백(ID)에 대해 백엔드에 저장된 스크랩 내역을 싹 다 가져옵니다.
+                  const myScraps = scraps.filter(
+                    (s: any) => s.feedbackId === currentFeedbackId,
+                  );
+
+                  if (myScraps.length > 0) {
+                    // 2. [추천 문장] 매칭: 백엔드 스크랩 목록 중 추천 문장과 일치하는 게 있다면?
+                    if (
+                      myScraps.some(
+                        (s: any) => s.expression === item.perfectSentence,
+                      )
+                    ) {
+                      loadedScrapedKeys.add(
+                        `${msg.id.toString()}-${index}-perfect`,
+                      );
+                    }
+
+                    // 3. [단어/문법/표현 오류] 매칭 헬퍼 함수
+                    const matchErrorList = (errorData: any, suffix: string) => {
+                      if (!errorData || errorData === "[]") return;
+                      try {
+                        // 문자열로 온 JSON 파싱
+                        const errors =
+                          typeof errorData === "string"
+                            ? JSON.parse(errorData)
+                            : errorData;
+
+                        errors.forEach((err: any, errIndex: number) => {
+                          const targetExpression =
+                            err.corrected || err.original || err.text || "";
+
+                          // 스크랩된 표현이랑 이 오류의 표현이 똑같다면 불을 켭니다!
+                          if (
+                            myScraps.some(
+                              (s: any) => s.expression === targetExpression,
+                            )
+                          ) {
+                            // 컴포넌트에서 생성되는 Key 조합: 메시지ID-피드백인덱스-종류-에러인덱스
+                            loadedScrapedKeys.add(
+                              `${msg.id.toString()}-${index}-${suffix}-${errIndex}`,
+                            );
+                          }
+                        });
+                      } catch (e) {
+                        console.error("오류 목록 파싱 에러:", e);
+                      }
+                    };
+
+                    // 4. 각각의 오류 리스트를 돌면서 스크랩된 게 있는지 검사합니다.
+                    matchErrorList(item.wordErrors, "word");
+                    matchErrorList(item.grammarErrors, "grammar");
+                    matchErrorList(item.expressionErrors, "expr");
+                  }
+                });
+              }
+
               return {
                 id: msg.id.toString(),
                 speaker: msg.senderType === "AI" ? "ai" : "user",
@@ -1949,15 +2086,17 @@ export function TextChatScreen({
                   hour: "2-digit",
                   minute: "2-digit",
                 }),
-                feedback: parsedFeedback, // 👈 추출한 피드백 데이터를 추가!
+                feedback: parsedFeedback,
               };
             });
+
           setMessages(formattedHistory);
+          setScrapedKeys(loadedScrapedKeys); // 화면에 스크랩 상태 일괄 적용!
         } else {
           requestInitialGreeting();
         }
       } catch (error) {
-        console.error("🚨 대화 내역 불러오기 실패:", error);
+        console.error("🚨 대화 내역 및 스크랩 불러오기 실패:", error);
       }
     };
 
@@ -2084,12 +2223,15 @@ export function TextChatScreen({
                     <Text style={styles.aiScrapBadgeText}>스크랩됨</Text>
                   </View>
                 ) : (
+                  // ⭐️ 바로 여기! 기존의 <Pressable> 덩어리를 이걸로 통째로 덮어쓰기! ⭐️
                   <Pressable
                     style={styles.aiScrapButton}
                     onPress={() =>
                       handleScrap(aiScrapKey, {
-                        source: "ai",
-                        text: msg.text,
+                        roomId: room.id, // 👈 새롭게 추가된 필수 값! (방 ID)
+                        expression: msg.text, // 👈 필수: 스크랩할 문장
+                        context: "", // 👈 선택
+                        category: "EXPRESSION", // 👈 필수
                       })
                     }
                   >
@@ -2106,10 +2248,40 @@ export function TextChatScreen({
                     item.perfectSentence &&
                     item.perfectSentence.trim() !== "[]";
 
+                  // ⭐️ 도우미 함수: 단어/문법/표현 오류 스크랩 버튼을 누를 때 데이터를 백엔드 양식으로 싹 바꿔줍니다!
                   const makeScrapCtx = (suffix: string): ScrapContext => ({
                     keyPrefix: `${msg.id}-${index}-${suffix}`,
                     isScraped: (key) => scrapedKeys.has(key),
-                    onScrap: handleScrap,
+                    onScrap: (key, entry) => {
+                      // 1. 한국어 카테고리를 백엔드가 원하는 영어로 변환
+                      let mappedCategory = "EXPRESSION";
+                      if (entry.category === "단어 오류" || suffix === "word")
+                        mappedCategory = "WORD";
+                      if (
+                        entry.category === "문법 오류" ||
+                        suffix === "grammar"
+                      )
+                        mappedCategory = "GRAMMAR";
+                      if (entry.category === "어색한 표현" || suffix === "expr")
+                        mappedCategory = "EXPRESSION";
+
+                      // 2. 스크랩할 표현(문장) 찾기
+                      // (기존 컴포넌트가 text, original, corrected 등 어떤 이름으로 주든 다 잡아냅니다)
+                      const targetExpression =
+                        entry.expression ||
+                        entry.corrected ||
+                        entry.text ||
+                        entry.original ||
+                        "";
+
+                      // 3. 완벽하게 조립해서 handleScrap으로 전달!
+                      handleScrap(key, {
+                        feedbackId: item.id, // 👈 우리가 찾아낸 피드백 ID!
+                        expression: targetExpression, // 👈 스크랩할 교정된 문장
+                        context: msg.text, // 👈 원래 내가 했던 말
+                        category: mappedCategory, // 👈 WORD, GRAMMAR, EXPRESSION 중 하나
+                      });
+                    },
                   });
                   const perfectKey = `${msg.id}-${index}-perfect`;
                   const isPerfectScraped = scrapedKeys.has(perfectKey);
@@ -2181,9 +2353,10 @@ export function TextChatScreen({
                             disabled={isPerfectScraped}
                             onPress={() =>
                               handleScrap(perfectKey, {
-                                source: "user",
-                                original: msg.text,
-                                perfectSentence: item.perfectSentence,
+                                feedbackId: item.id, // 👈 1. 해당 피드백의 고유 ID
+                                expression: item.perfectSentence, // 👈 2. 스크랩할 문장
+                                context: msg.text, // 👈 3. 원래 내가 했던 말 (선택)
+                                category: "EXPRESSION", // 👈 4. 카테고리 (필수)
                               })
                             }
                           >
