@@ -61,6 +61,7 @@ type Message = {
   text: string;
   time: string;
   feedback?: FeedbackData[];
+  isBookmarked?: boolean; // 👈 추가!
 };
 
 type PracticeRoom = {
@@ -1196,6 +1197,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
             text: msg.contentText || "",
             time: msg.createdAt ? msg.createdAt.substring(11, 16) : "이전",
             feedback: parsedFeedback,
+            isBookmarked: msg.isBookmarked || false, // 👈 북마크 여부 추가
           };
         });
 
