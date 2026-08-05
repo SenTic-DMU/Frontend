@@ -2397,6 +2397,8 @@ export function TextChatScreen({
   >(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const bubbleYRef = useRef<Record<string, number>>({});
+  const [layoutTick, setLayoutTick] = useState(0);
+  const hasScrolledToHighlightRef = useRef(false);
 
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
@@ -2680,16 +2682,21 @@ export function TextChatScreen({
   }, [room?.id]);
 
   useEffect(() => {
-    if (!highlightedMessageId) return;
+    hasScrolledToHighlightRef.current = false;
+  }, [highlightedMessageId]);
+
+  useEffect(() => {
+    if (!highlightedMessageId || hasScrolledToHighlightRef.current) return;
     const y = bubbleYRef.current[highlightedMessageId];
     if (y == null) return;
+    hasScrolledToHighlightRef.current = true;
     requestAnimationFrame(() => {
       scrollViewRef.current?.scrollTo({
         y: Math.max(y - 40, 0),
         animated: true,
       });
     });
-  }, [highlightedMessageId, messages]);
+  }, [highlightedMessageId, messages, layoutTick]);
 
   const send = async () => {
     const text = input.trim();
@@ -2788,6 +2795,7 @@ export function TextChatScreen({
               key={msg.id}
               onLayout={(e) => {
                 bubbleYRef.current[msg.id] = e.nativeEvent.layout.y;
+                setLayoutTick((t) => t + 1);
               }}
               style={{
                 marginBottom: 20,
