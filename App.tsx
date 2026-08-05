@@ -208,7 +208,7 @@ export default function App() {
           return;
         }
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "ngrok-skip-browser-warning": "true", // 👈 혹시 빠져있었다면 이거 꼭 넣어주세요!
@@ -789,9 +789,23 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
 function ModeScreen({ go }: { go: (screen: Screen) => void }) {
   const weekly = [33, 42, 27, 36, 48, 24, 60];
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       <Header title="SenTic" go={go} actions />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={styles.content}
+      >
         <View style={styles.rowBetween}>
           <View>
             <Text style={styles.caption}>안녕하세요, 민지님</Text>
@@ -892,8 +906,7 @@ export function RoomListScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL =
-                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
               await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
@@ -943,7 +956,10 @@ export function RoomListScreen({
           <Text style={styles.newRoomButtonText}>+ 새 대화</Text>
         </Pressable>
       </View>
-      <ScrollView contentContainerStyle={styles.roomListContent}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={styles.roomListContent}
+      >
         {visibleRooms.map((room) => (
           <Pressable
             key={room.id}
@@ -1159,7 +1175,18 @@ function SituationScreen({
   };
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       <View style={styles.roomListHeader}>
         <Pressable
           style={styles.headerButton}
@@ -1176,7 +1203,10 @@ function SituationScreen({
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.setupContent}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={styles.setupContent}
+      >
         <Label text="대화방 제목" />
         <TextInput
           value={title}
@@ -1283,6 +1313,42 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   const [recording, setRecording] = useState<any>(null);
   const [isRecording, setIsRecording] = useState(false);
 
+  // ⭐️ 1-1. 스크랩 상태 관리용 Set 추가
+  const [scrapedKeys, setScrapedKeys] = useState<Set<string>>(new Set());
+
+  // ⭐️ 1-2. 스크랩 API 통신 함수 추가 (TextChatScreen과 완벽히 동일)
+  const handleScrap = async (key: string, entry: Record<string, any>) => {
+    if (scrapedKeys.has(key)) return;
+
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev"; // Voice 쪽 ngrok 주소
+
+      const payload = {
+        feedbackId: entry.feedbackId || null,
+        roomId: entry.roomId || null,
+        expression: entry.expression,
+        context: entry.context || "",
+        category: entry.category,
+      };
+
+      await axios.post(`${API_URL}/api/scraps`, payload, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+      });
+
+      setScrapedKeys((prev) => new Set(prev).add(key));
+    } catch (error: any) {
+      console.error(
+        "🚨 스크랩 저장 실패:",
+        error.response?.data || error.message,
+      );
+    }
+  };
+
   // 🎙️ 마이크 펄스 링 애니메이션 (녹음 중 반복 확대/축소)
   const micPulseAnim = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -1336,62 +1402,125 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   // ⭐️ 1. 방에 처음 들어왔을 때는 '과거 대화 기록'만 불러오고 가만히 대기합니다.
   useEffect(() => {
     const fetchHistoryOnly = async () => {
-      // 🧪 테스트 모드에서는 서버 호출 없이 예시 대화를 채워줍니다.
       if (isTestMode) {
-        setMessages(TEST_VOICE_MESSAGES);
-        const lastAiMsg = [...TEST_VOICE_MESSAGES]
-          .reverse()
-          .find((m) => m.speaker === "ai");
-        if (lastAiMsg) setLatestAiText(lastAiMsg.text);
+        // ... (테스트 모드 유지) ...
         return;
       }
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const currentRoomId = room.id;
 
-        const historyRes = await axios.get(
-          `${API_URL}/api/rooms/${currentRoomId}/messages`,
-          {
+        // ⭐️ 스크랩 내역과 메시지 내역 동시 호출!
+        const [historyRes, scrapsRes] = await Promise.all([
+          axios.get(`${API_URL}/api/rooms/${currentRoomId}/messages`, {
             headers: {
               Authorization: `Bearer ${accessToken}`,
               "ngrok-skip-browser-warning": "true",
             },
-          },
-        );
+          }),
+          axios.get(`${API_URL}/api/scraps?roomId=${currentRoomId}`, {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "ngrok-skip-browser-warning": "true",
+            },
+          }),
+        ]);
 
         const pastMessages = historyRes.data?.data || historyRes.data || [];
+        const scraps = scrapsRes.data?.data || scrapsRes.data || [];
 
-        const formattedHistory = pastMessages.map((msg: any, idx: number) => {
-          let parsedFeedback = undefined;
-          if (msg.feedback) {
-            const rawFeedback =
-              typeof msg.feedback === "string"
-                ? JSON.parse(msg.feedback)
-                : msg.feedback;
+        if (pastMessages.length > 0) {
+          const loadedScrapedKeys = new Set<string>();
 
-            parsedFeedback = Array.isArray(rawFeedback)
-              ? rawFeedback
-              : [rawFeedback];
-          }
+          const formattedHistory = pastMessages.map((msg: any, idx: number) => {
+            // --- 피드백 파싱 ---
+            let parsedFeedback = undefined;
+            if (msg.feedback) {
+              const rawFeedback =
+                typeof msg.feedback === "string"
+                  ? JSON.parse(msg.feedback)
+                  : msg.feedback;
+              parsedFeedback = Array.isArray(rawFeedback)
+                ? rawFeedback
+                : [rawFeedback];
+            }
 
-          return {
-            id: msg.id?.toString() || `history-${idx}`,
-            speaker: msg.senderType === "USER" ? "user" : "ai",
-            text: msg.contentText || "",
-            time: msg.createdAt ? msg.createdAt.substring(11, 16) : "이전",
-            feedback: parsedFeedback,
-            isBookmarked: msg.isBookmarked || false, // 👈 북마크 여부 추가
-          };
-        });
+            // --- AI 메시지 매칭 ---
+            if (msg.senderType === "AI") {
+              const isAiScraped = scraps.some(
+                (s: any) => !s.feedbackId && s.expression === msg.contentText,
+              );
+              if (isAiScraped)
+                loadedScrapedKeys.add(`${msg.id?.toString() || idx}-ai`);
+            }
 
-        setMessages(formattedHistory);
+            // --- 사용자 피드백 매칭 ---
+            if (msg.senderType === "USER" && parsedFeedback) {
+              parsedFeedback.forEach((item: any, index: number) => {
+                const currentFeedbackId = item.id;
+                if (!currentFeedbackId) return;
 
-        const lastAiMsg = [...formattedHistory]
-          .reverse()
-          .find((m: any) => m.speaker === "ai");
-        if (lastAiMsg) setLatestAiText(lastAiMsg.text);
+                const myScraps = scraps.filter(
+                  (s: any) => s.feedbackId === currentFeedbackId,
+                );
+                if (myScraps.length > 0) {
+                  if (
+                    myScraps.some(
+                      (s: any) => s.expression === item.perfectSentence,
+                    )
+                  ) {
+                    loadedScrapedKeys.add(
+                      `${msg.id?.toString() || idx}-${index}-perfect`,
+                    );
+                  }
+
+                  const matchErrorList = (errorData: any, suffix: string) => {
+                    if (!errorData || errorData === "[]") return;
+                    try {
+                      const errors =
+                        typeof errorData === "string"
+                          ? JSON.parse(errorData)
+                          : errorData;
+                      errors.forEach((err: any, errIndex: number) => {
+                        const targetExpr =
+                          err.corrected || err.original || err.text || "";
+                        if (
+                          myScraps.some((s: any) => s.expression === targetExpr)
+                        ) {
+                          loadedScrapedKeys.add(
+                            `${msg.id?.toString() || idx}-${index}-${suffix}-${errIndex}`,
+                          );
+                        }
+                      });
+                    } catch (e) {}
+                  };
+
+                  matchErrorList(item.wordErrors, "word");
+                  matchErrorList(item.grammarErrors, "grammar");
+                  matchErrorList(item.expressionErrors, "expr");
+                }
+              });
+            }
+
+            return {
+              id: msg.id?.toString() || `history-${idx}`,
+              speaker: msg.senderType === "USER" ? "user" : "ai",
+              text: msg.contentText || "",
+              time: msg.createdAt ? msg.createdAt.substring(11, 16) : "이전",
+              feedback: parsedFeedback,
+            };
+          });
+
+          setMessages(formattedHistory);
+          setScrapedKeys(loadedScrapedKeys); // ⭐️ 스크랩 세팅
+
+          const lastAiMsg = [...formattedHistory]
+            .reverse()
+            .find((m: any) => m.speaker === "ai");
+          if (lastAiMsg) setLatestAiText(lastAiMsg.text);
+        }
       } catch (error: any) {
         console.error(
           "🚨 음성방 기록 불러오기 실패:",
@@ -1400,9 +1529,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
       }
     };
 
-    if (room?.id) {
-      fetchHistoryOnly();
-    }
+    if (room?.id) fetchHistoryOnly();
   }, [room?.id]);
 
   // ⭐️ 2. 사용자가 '시작' 버튼을 눌렀을 때만 실행되는 AI 인사말 호출 함수
@@ -1415,7 +1542,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const currentRoomId = room.id;
 
       // 통화 시작 상태로 변경
@@ -1528,7 +1655,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   const sendVoiceToServer = async (fileUri: string) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
       const formData = new FormData();
       formData.append("file", {
@@ -1607,7 +1734,13 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   };
 
   return (
-    <View style={styles.screen}>
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: "#fff", // 👈 헤더 색상과 맞춤
+        paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 24,
+      }}
+    >
       <Header title={room.title} go={go} backTo="voiceRooms" />
       <TabBar
         active={tab}
@@ -1736,7 +1869,204 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
           )}
         </View>
       )}
-      {tab === "history" && <MessageList messages={messages} />}
+      {tab === "history" && (
+        <ScrollView
+          style={{ flex: 1, paddingHorizontal: 16 }}
+          contentContainerStyle={{ paddingVertical: 20 }}
+        >
+          {messages.map((msg, idx) => {
+            const isUser = msg.speaker === "user";
+
+            // ⭐️ 고유 키 생성 (백엔드 매칭과 동일하게)
+            const msgId = msg.id || idx.toString();
+            const aiScrapKey = `${msgId}-ai`;
+            const isAiScraped = scrapedKeys.has(aiScrapKey);
+
+            return (
+              <View
+                key={msgId}
+                style={{
+                  marginBottom: 20,
+                  alignItems: isUser ? "flex-end" : "flex-start",
+                  width: "100%",
+                }}
+              >
+                {/* 대화 말풍선 */}
+                <View
+                  style={{
+                    backgroundColor: isUser ? "#5C6BC0" : "#ffffff",
+                    padding: 12,
+                    borderRadius: 16,
+                    borderBottomRightRadius: isUser ? 4 : 16,
+                    borderBottomLeftRadius: isUser ? 16 : 4,
+                    maxWidth: "80%",
+                    elevation: 1,
+                  }}
+                >
+                  <Text
+                    style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}
+                  >
+                    {msg.text}
+                  </Text>
+                </View>
+
+                {/* 🔖 AI 말풍선용 스크랩 버튼 */}
+                {!isUser &&
+                  (isAiScraped ? (
+                    <View style={styles.aiScrapBadge}>
+                      <BookmarkIcon color="#fff" size={11} filled />
+                      <Text style={styles.aiScrapBadgeText}>스크랩됨</Text>
+                    </View>
+                  ) : (
+                    <Pressable
+                      style={styles.aiScrapButton}
+                      onPress={() =>
+                        handleScrap(aiScrapKey, {
+                          roomId: room.id,
+                          expression: msg.text,
+                          context: "",
+                          category: "EXPRESSION",
+                        })
+                      }
+                    >
+                      <BookmarkIcon color="#9CA3AF" size={11} />
+                      <Text style={styles.aiScrapText}>스크랩</Text>
+                    </Pressable>
+                  ))}
+
+                {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에만) */}
+                {isUser &&
+                  msg.feedback &&
+                  msg.feedback.map((item: any, index: number) => {
+                    const perfectKey = `${msgId}-${index}-perfect`;
+                    const isPerfectScraped = scrapedKeys.has(perfectKey);
+
+                    const makeScrapCtx = (suffix: string) => ({
+                      keyPrefix: `${msgId}-${index}-${suffix}`,
+                      isScraped: (key: string) => scrapedKeys.has(key),
+                      onScrap: (key: string, entry: Record<string, any>) => {
+                        let mappedCategory = "EXPRESSION";
+                        if (entry.category === "단어 오류" || suffix === "word")
+                          mappedCategory = "WORD";
+                        if (
+                          entry.category === "문법 오류" ||
+                          suffix === "grammar"
+                        )
+                          mappedCategory = "GRAMMAR";
+                        if (
+                          entry.category === "어색한 표현" ||
+                          suffix === "expr"
+                        )
+                          mappedCategory = "EXPRESSION";
+
+                        handleScrap(key, {
+                          feedbackId: item.id,
+                          expression:
+                            entry.expression ||
+                            entry.corrected ||
+                            entry.text ||
+                            entry.original ||
+                            "",
+                          context: msg.text,
+                          category: mappedCategory,
+                        });
+                      },
+                    });
+
+                    return (
+                      <View
+                        key={index}
+                        style={{
+                          marginTop: 8,
+                          backgroundColor: "#FFF9C4",
+                          padding: 16,
+                          borderRadius: 16,
+                          width: "85%",
+                          gap: 12,
+                        }}
+                      >
+                        {renderFeedbackSection(
+                          "단어 오류",
+                          item.wordErrors,
+                          "💡",
+                          makeScrapCtx("word"),
+                        )}
+                        {renderFeedbackSection(
+                          "문법 오류",
+                          item.grammarErrors,
+                          "💡",
+                          makeScrapCtx("grammar"),
+                        )}
+                        {renderFeedbackSection(
+                          "어색한 표현",
+                          item.expressionErrors,
+                          "💡",
+                          makeScrapCtx("expr"),
+                        )}
+
+                        {item.perfectSentence &&
+                          item.perfectSentence.trim() !== "[]" && (
+                            <View
+                              style={{
+                                paddingTop: 12,
+                                borderTopWidth: 1,
+                                borderColor: "#E0E0E0",
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontWeight: "bold",
+                                  color: "#333",
+                                  marginBottom: 4,
+                                }}
+                              >
+                                ✨ 추천 문장
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: 15,
+                                  color: "#1976D2",
+                                  fontWeight: "600",
+                                  marginBottom: 8,
+                                }}
+                              >
+                                {item.perfectSentence}
+                              </Text>
+                              <Pressable
+                                style={[
+                                  styles.scrapButton,
+                                  { alignSelf: "flex-end" },
+                                  isPerfectScraped && styles.scrapButtonActive,
+                                ]}
+                                disabled={isPerfectScraped}
+                                onPress={() =>
+                                  handleScrap(perfectKey, {
+                                    feedbackId: item.id,
+                                    expression: item.perfectSentence,
+                                    context: msg.text,
+                                    category: "EXPRESSION",
+                                  })
+                                }
+                              >
+                                <BookmarkIcon
+                                  color="#8A6D00"
+                                  size={12}
+                                  filled={isPerfectScraped}
+                                />
+                                <Text style={styles.scrapButtonText}>
+                                  {isPerfectScraped ? "스크랩됨" : "스크랩"}
+                                </Text>
+                              </Pressable>
+                            </View>
+                          )}
+                      </View>
+                    );
+                  })}
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -1864,7 +2194,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
       // ⭐️ 백엔드 명세에 맞춘 새로운 데이터 페이로드
       const payload = {
@@ -1900,7 +2230,7 @@ export function TextChatScreen({
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const payload = {
         content:
           "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
@@ -1944,7 +2274,7 @@ export function TextChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         // ⭐️ 1. Promise.all을 사용하여 두 API를 동시에(병렬로) 호출합니다! (속도 2배 향상)
         const [messagesRes, scrapsRes] = await Promise.all([
@@ -2123,7 +2453,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const response = await axios.post(
         `${API_URL}/api/rooms/${room.id}/messages/chat`,
         { content: text },
@@ -2175,13 +2505,17 @@ export function TextChatScreen({
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-      style={{ flex: 1, backgroundColor: "#f5f5f5" }} // styles.screen 대체
+      style={{
+        flex: 1,
+        backgroundColor: "#fff", // 👈 상단바/하단바 영역을 흰색(헤더 색)으로 통일
+        paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 24,
+      }} // styles.screen 대체
     >
       {<Header title={room.title} go={go} backTo="chatRooms" />}
 
       {/* ⭐️ 3. MessageList를 빼버리고 여기서 직접 채팅과 피드백을 그립니다! */}
       <ScrollView
-        style={{ flex: 1, paddingHorizontal: 16 }}
+        style={{ flex: 1, backgroundColor: "#f5f5f5", paddingHorizontal: 16 }}
         contentContainerStyle={{ paddingVertical: 20 }}
       >
         {messages.map((msg) => {
@@ -2792,7 +3126,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
         // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
         const FULL_URL =
-          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/announcements";
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
 
         console.log("🚀 최종 요청 주소:", FULL_URL);
 
@@ -2828,7 +3162,18 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
   if (selectedNotice) {
     return (
-      <View style={styles.screenSoft}>
+      <View
+        style={[
+          styles.screenSoft,
+          {
+            flex: 1,
+            backgroundColor: "#fff",
+            paddingTop: StatusBar.currentHeight
+              ? StatusBar.currentHeight + 10
+              : 24,
+          },
+        ]}
+      >
         <View style={ntStyles.header}>
           <Pressable
             style={ntStyles.backBtn}
@@ -2838,7 +3183,10 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
           </Pressable>
           <Text style={ntStyles.headerTitle}>공지사항</Text>
         </View>
-        <ScrollView contentContainerStyle={ntStyles.detailContent}>
+        <ScrollView
+          style={{ backgroundColor: "#F9FAFB" }}
+          contentContainerStyle={ntStyles.detailContent}
+        >
           {selectedNotice.pinned && (
             <View style={ntStyles.importantBadge}>
               <Text style={ntStyles.importantBadgeText}>📌 중요 공지</Text>
@@ -2857,14 +3205,28 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
   }
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       <View style={ntStyles.header}>
         <Pressable style={ntStyles.backBtn} onPress={() => go("mode")}>
           <Text style={ntStyles.backIcon}>‹</Text>
         </Pressable>
         <Text style={ntStyles.headerTitle}>공지사항</Text>
       </View>
-      <ScrollView contentContainerStyle={ntStyles.listContent}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={ntStyles.listContent}
+      >
         {/* 중요 공지 */}
         {importantNotices.length > 0 && (
           <View style={{ marginBottom: 8 }}>
@@ -3092,7 +3454,18 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
   };
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       {/* 헤더 */}
       {isInsideDetail ? (
         <View style={bkStyles.header}>
@@ -3180,7 +3553,10 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
         </View>
       )}
 
-      <ScrollView contentContainerStyle={bkStyles.content}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={bkStyles.content}
+      >
         {/* 카테고리 목록 */}
         {!isInsideDetail && viewMode === "by-category" && (
           <View style={{ gap: 10 }}>
@@ -3336,7 +3712,18 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
   );
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       {/* 헤더 */}
       <View style={stStyles.header}>
         <Pressable style={stStyles.backBtn} onPress={() => go("mode")}>
@@ -3345,7 +3732,10 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
         <Text style={stStyles.headerTitle}>설정</Text>
       </View>
 
-      <ScrollView contentContainerStyle={stStyles.content}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={stStyles.content}
+      >
         {/* 계정 */}
         <Text style={stStyles.sectionLabel}>계정</Text>
         <View style={stStyles.card}>
@@ -3539,7 +3929,18 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
   };
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       {/* 헤더 */}
       <View style={pyStyles.header}>
         <Pressable style={pyStyles.backBtn} onPress={() => go("mypage")}>
@@ -3548,7 +3949,10 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
         <Text style={pyStyles.headerTitle}>결제 및 구독</Text>
       </View>
 
-      <ScrollView contentContainerStyle={pyStyles.content}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={pyStyles.content}
+      >
         {/* 현재 구독 배너 */}
         {CURRENT_SUBSCRIPTION ? (
           <View style={pyStyles.banner}>
@@ -3790,7 +4194,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const FULL_URL =
-          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/faq";
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -3821,7 +4225,18 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
   }, []);
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       {/* 헤더 */}
       <View style={fqStyles.header}>
         <Pressable style={fqStyles.backBtn} onPress={() => go("settings")}>
@@ -3837,7 +4252,10 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
           style={{ marginTop: 50 }}
         />
       ) : (
-        <ScrollView contentContainerStyle={fqStyles.content}>
+        <ScrollView
+          style={{ backgroundColor: "#F9FAFB" }}
+          contentContainerStyle={fqStyles.content}
+        >
           <View style={fqStyles.card}>
             {/* ⭐️ 백엔드에서 받은 1단 배열(faqs)을 바로 map으로 돌립니다! */}
             {faqs.map((faq, index) => {
@@ -4579,7 +4997,7 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
       // '결정' 버튼을 눌렀을 때 -> 서버로 변경된 레벨 전송
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         // ⭐️ 1. 저장된 토큰이 아예 없거나 null인지 확인!
         console.log("📌 현재 저장된 토큰:", accessToken);
@@ -4630,7 +5048,18 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
   const CHART_HEIGHT = 128;
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       {/* 헤더 */}
       <View style={mpStyles.header}>
         <Pressable style={mpStyles.backBtn} onPress={() => go("mode")}>
@@ -4639,7 +5068,10 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
         <Text style={mpStyles.headerTitle}>마이 페이지</Text>
       </View>
 
-      <ScrollView contentContainerStyle={mpStyles.content}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={mpStyles.content}
+      >
         {/* 프로필 카드 */}
         <View style={mpStyles.card}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
