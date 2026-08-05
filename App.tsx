@@ -264,8 +264,32 @@ export default function App() {
   const [selectedMode, setSelectedMode] = useState<"voice" | "text">("voice");
   const [kakaoWebViewVisible, setKakaoWebViewVisible] = useState(false);
   const [kakaoLoggingIn, setKakaoLoggingIn] = useState(false);
+  const [scrapNavTarget, setScrapNavTarget] = useState<{
+    feedbackId: number | null;
+    expression: string;
+  } | null>(null);
 
   const go = (next: Screen) => setScreen(next);
+
+  const onOpenScrap = (expr: {
+    roomId: string;
+    roomType: "chat" | "voice";
+    roomName: string;
+    feedbackId: number | null;
+    text: string;
+  }) => {
+    const rooms = expr.roomType === "voice" ? voiceRooms : chatRooms;
+    const room = rooms.find((r) => String(r.id) === expr.roomId) ?? {
+      id: expr.roomId,
+      title: expr.roomName,
+      desc: "",
+      level: "맞춤",
+    };
+    setSelectedRoom(room);
+    setSelectedMode(expr.roomType === "voice" ? "voice" : "text");
+    setScrapNavTarget({ feedbackId: expr.feedbackId, expression: expr.text });
+    go(expr.roomType === "voice" ? "voiceChat" : "textChat");
+  };
   const startNewConversation = (mode: "voice" | "text") => {
     setSelectedMode(mode);
     setSelectedRoom({ id: `${mode}-new`, title: "", desc: "", level: "맞춤" });
@@ -375,14 +399,31 @@ export default function App() {
         />
       )}
       {screen === "voiceChat" && (
-        <VoiceChatScreen room={selectedRoom} go={go} />
+        <VoiceChatScreen
+          room={selectedRoom}
+          go={go}
+          scrapNavTarget={scrapNavTarget}
+          onConsumeScrapNavTarget={() => setScrapNavTarget(null)}
+        />
       )}
-      {screen === "textChat" && <TextChatScreen room={selectedRoom} go={go} />}
+      {screen === "textChat" && (
+        <TextChatScreen
+          room={selectedRoom}
+          go={go}
+          scrapNavTarget={scrapNavTarget}
+          onConsumeScrapNavTarget={() => setScrapNavTarget(null)}
+        />
+      )}
       {screen === "mypage" && <MyPageScreen go={go} />}
       {screen === "settings" && <SettingsScreen go={go} />}
       {screen === "payment" && <PaymentScreen go={go} />}
       {screen === "bookmarks" && (
-        <BookmarksScreen go={go} chatRooms={chatRooms} voiceRooms={voiceRooms} />
+        <BookmarksScreen
+          go={go}
+          chatRooms={chatRooms}
+          voiceRooms={voiceRooms}
+          onOpenScrap={onOpenScrap}
+        />
       )}
       {screen === "notice" && <NoticeScreen go={go} />}
       {screen === "faq" && <FaqScreen go={go} />}
@@ -1366,7 +1407,17 @@ function SituationScreen({
   );
 }
 
-export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
+export function VoiceChatScreen({
+  room,
+  go,
+  scrapNavTarget,
+  onConsumeScrapNavTarget,
+}: {
+  room: any;
+  go: any;
+  scrapNavTarget?: { feedbackId: number | null; expression: string } | null;
+  onConsumeScrapNavTarget?: () => void;
+}) {
   const [inCall, setInCall] = useState(false);
   const [tab, setTab] = useState<"call" | "history">("call");
 
@@ -2330,9 +2381,13 @@ const renderFeedbackSection = (
 export function TextChatScreen({
   room,
   go,
+  scrapNavTarget,
+  onConsumeScrapNavTarget,
 }: {
   room: { id: string | number; title: string };
   go: (screen: any) => void;
+  scrapNavTarget?: { feedbackId: number | null; expression: string } | null;
+  onConsumeScrapNavTarget?: () => void;
 }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<any[]>([]); // Message 타입 대체
@@ -3468,10 +3523,18 @@ function BookmarksScreen({
   go,
   chatRooms,
   voiceRooms,
+  onOpenScrap,
 }: {
   go: (screen: Screen) => void;
   chatRooms: any[];
   voiceRooms: any[];
+  onOpenScrap: (expr: {
+    roomId: string;
+    roomType: "chat" | "voice";
+    roomName: string;
+    feedbackId: number | null;
+    text: string;
+  }) => void;
 }) {
   type ViewMode = "by-category" | "by-room";
   type Category = "단어" | "문법" | "문장";
@@ -3640,7 +3703,19 @@ function BookmarksScreen({
   const renderExpression = (expr: SavedExpression, showRoom = false) => {
     const config = categoryConfig[expr.category];
     return (
-      <View key={expr.id} style={bkStyles.exprCard}>
+      <Pressable
+        key={expr.id}
+        style={bkStyles.exprCard}
+        onPress={() =>
+          onOpenScrap({
+            roomId: expr.roomId,
+            roomType: expr.roomType,
+            roomName: expr.roomName,
+            feedbackId: expr.feedbackId,
+            text: expr.text,
+          })
+        }
+      >
         <View
           style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}
         >
@@ -3682,7 +3757,7 @@ function BookmarksScreen({
         <Text style={bkStyles.exprSourceLabel}>
           {expr.roomType === "voice" ? "음성대화에서 저장" : "채팅대화에서 저장"}
         </Text>
-      </View>
+      </Pressable>
     );
   };
 
