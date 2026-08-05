@@ -787,7 +787,66 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
 }
 
 function ModeScreen({ go }: { go: (screen: Screen) => void }) {
+  // ⭐️ 1. 닉네임을 저장할 State 만들기 (데이터가 오기 전 기본값은 '회원')
+  const [nickname, setNickname] = useState("회원");
+
+  // ⭐️ 1. 보여주고 싶은 문구들을 배열로 쭈욱 작성합니다.
+  const greetings = [
+    "오늘도 영어 공부해요! 📖",
+    "매일 조금씩 성장하는 중! 🌱",
+    "영어 마스터가 되는 그날까지! 🚀",
+    "꾸준함이 실력을 만듭니다 💪",
+    "오늘의 10분이 내일을 바꿉니다 ✨",
+    "새로운 표현을 배워볼까요? 💡",
+    "Hello! 오늘도 힘차게 시작해 봐요! 😊",
+  ];
+
+  // ⭐️ 2. 화면이 처음 켜질 때 랜덤으로 하나를 뽑아서 State에 저장합니다.
+  // (useState 안에 콜백 함수를 넣으면 딱 처음 한 번만 랜덤값을 뽑아냅니다!)
+  const [randomGreeting] = useState(() => {
+    const randomIndex = Math.floor(Math.random() * greetings.length);
+    return greetings[randomIndex];
+  });
+
   const weekly = [33, 42, 27, 36, 48, 24, 60];
+  useEffect(() => {
+    const fetchMyProfile = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        if (!accessToken) return;
+
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+
+        // ⭐️ 백엔드에서 알려준 정확한 주소(/api/users/me)로 수정!
+        const res = await axios.get(`${API_URL}/api/users/me`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true",
+          },
+        });
+
+        // 백엔드 응답에서 닉네임 데이터 뽑아오기
+        // (응답 형태에 따라 nickname일 수도, name일 수도 있어서 둘 다 커버하도록 작성했습니다)
+        const myName =
+          res.data?.data?.nickname ||
+          res.data?.nickname ||
+          res.data?.data?.name ||
+          res.data?.name;
+
+        if (myName) {
+          setNickname(myName);
+        }
+      } catch (error: any) {
+        console.error(
+          "🚨 유저 정보 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+
+    fetchMyProfile();
+  }, []);
+
   return (
     <View
       style={[
@@ -807,10 +866,12 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
         contentContainerStyle={styles.content}
       >
         <View style={styles.rowBetween}>
-          <View>
-            <Text style={styles.caption}>안녕하세요, 민지님</Text>
-            <Text style={styles.h2}>오늘도 영어 공부해요!</Text>
+          {/* ⭐️ 바로 여기! flex: 1을 주면 남은 공간 안에서만 크기를 차지하고, 글자가 길면 알아서 줄바꿈됩니다. */}
+          <View style={{ flex: 1, marginRight: 12 }}>
+            <Text style={styles.caption}>안녕하세요, {nickname}님</Text>
+            <Text style={styles.h2}>{randomGreeting}</Text>
           </View>
+
           <View style={styles.streak}>
             <Text style={styles.streakText}>불꽃 5일 연속</Text>
           </View>
@@ -1316,14 +1377,50 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   // ⭐️ 1-1. 스크랩 상태 관리용 Set 추가
   const [scrapedKeys, setScrapedKeys] = useState<Set<string>>(new Set());
 
-  // ⭐️ 1-2. 스크랩 API 통신 함수 추가 (TextChatScreen과 완벽히 동일)
-  const handleScrap = async (key: string, entry: Record<string, any>) => {
-    if (scrapedKeys.has(key)) return;
+  const [scrapIdMap, setScrapIdMap] = useState<Record<string, number>>({});
 
+  // ⭐️ 1-2. 스크랩 API 통신 함수 수정 (토글 기능 적용)
+  const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev"; // Voice 쪽 ngrok 주소
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
+      // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
+      if (scrapedKeys.has(key)) {
+        const targetScrapId = scrapIdMap[key]; // 저장해둔 scrapId 꺼내기
+
+        if (!targetScrapId) {
+          console.warn(
+            "🚨 삭제할 scrapId를 찾을 수 없습니다! (화면 새로고침 후 다시 시도)",
+          );
+          return;
+        }
+
+        // 백엔드로 DELETE API 요청 (scrapId 포함)
+        await axios.delete(`${API_URL}/api/scraps/${targetScrapId}`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true",
+          },
+        });
+
+        // 삭제 성공 시, 화면(UI) 업데이트 및 ID 목록에서 제거
+        setScrapedKeys((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(key);
+          return newSet;
+        });
+        setScrapIdMap((prev) => {
+          const newMap = { ...prev };
+          delete newMap[key];
+          return newMap;
+        });
+
+        console.log("❎ 스크랩 취소 완료! 삭제된 scrapId:", targetScrapId);
+        return; // 취소 로직 끝!
+      }
+
+      // ⭐️ 2. 아직 스크랩 안 된 상태라면? -> 스크랩 추가 (POST)
       const payload = {
         feedbackId: entry.feedbackId || null,
         roomId: entry.roomId || null,
@@ -1332,7 +1429,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
         category: entry.category,
       };
 
-      await axios.post(`${API_URL}/api/scraps`, payload, {
+      const res = await axios.post(`${API_URL}/api/scraps`, payload, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
@@ -1340,10 +1437,19 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
         },
       });
 
-      setScrapedKeys((prev) => new Set(prev).add(key));
+      // 백엔드 응답에서 scrapId 쏙 뽑아오기
+      const newScrapId = res.data?.data?.scrapId;
+
+      if (newScrapId) {
+        // 성공 시 화면에 노란불 켜고, 새로 발급받은 scrapId 짝지어 저장하기!
+        setScrapedKeys((prev) => new Set(prev).add(key));
+        setScrapIdMap((prev) => ({ ...prev, [key]: newScrapId }));
+
+        console.log("✅ 스크랩 저장 성공! 발급된 scrapId:", newScrapId);
+      }
     } catch (error: any) {
       console.error(
-        "🚨 스크랩 저장 실패:",
+        "🚨 스크랩 처리 실패:",
         error.response?.data || error.message,
       );
     }
@@ -1449,11 +1555,24 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
 
             // --- AI 메시지 매칭 ---
             if (msg.senderType === "AI") {
-              const isAiScraped = scraps.some(
+              // ⭐️ some 대신 find를 써서 스크랩 데이터를 통째로 가져옵니다!
+              const matchedAiScrap = scraps.find(
                 (s: any) => !s.feedbackId && s.expression === msg.contentText,
               );
-              if (isAiScraped)
-                loadedScrapedKeys.add(`${msg.id?.toString() || idx}-ai`);
+
+              // 매칭된 스크랩 내역이 있다면?
+              if (matchedAiScrap) {
+                const aiScrapKey = `${msg.id?.toString() || idx}-ai`;
+
+                // 1. 화면에 노란불 켜기
+                loadedScrapedKeys.add(aiScrapKey);
+
+                // 2. 나중에 취소(DELETE)할 때를 대비해 scrapId 저장하기!
+                setScrapIdMap((prev) => ({
+                  ...prev,
+                  [aiScrapKey]: matchedAiScrap.scrapId,
+                }));
+              }
             }
 
             // --- 사용자 피드백 매칭 ---
@@ -1465,15 +1584,22 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
                 const myScraps = scraps.filter(
                   (s: any) => s.feedbackId === currentFeedbackId,
                 );
+
                 if (myScraps.length > 0) {
-                  if (
-                    myScraps.some(
-                      (s: any) => s.expression === item.perfectSentence,
-                    )
-                  ) {
-                    loadedScrapedKeys.add(
-                      `${msg.id?.toString() || idx}-${index}-perfect`,
-                    );
+                  // ⭐️ 2. [추천 문장] 매칭 (여기가 수정된 부분입니다!)
+                  const matchedScrap = myScraps.find(
+                    (s: any) => s.expression === item.perfectSentence,
+                  );
+
+                  if (matchedScrap) {
+                    const perfectKey = `${msg.id?.toString() || idx}-${index}-perfect`;
+                    loadedScrapedKeys.add(perfectKey);
+
+                    // 추가: 나중에 취소(DELETE)할 때를 대비해 scrapId 저장
+                    setScrapIdMap((prev) => ({
+                      ...prev,
+                      [perfectKey]: matchedScrap.scrapId,
+                    }));
                   }
 
                   const matchErrorList = (errorData: any, suffix: string) => {
@@ -1483,18 +1609,30 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
                         typeof errorData === "string"
                           ? JSON.parse(errorData)
                           : errorData;
+
                       errors.forEach((err: any, errIndex: number) => {
-                        const targetExpr =
+                        const targetExpression =
                           err.corrected || err.original || err.text || "";
-                        if (
-                          myScraps.some((s: any) => s.expression === targetExpr)
-                        ) {
-                          loadedScrapedKeys.add(
-                            `${msg.id?.toString() || idx}-${index}-${suffix}-${errIndex}`,
-                          );
+
+                        // ⭐️ 여기도 some 대신 find로 매칭된 데이터를 가져옵니다.
+                        const matchedErrScrap = myScraps.find(
+                          (s: any) => s.expression === targetExpression,
+                        );
+
+                        if (matchedErrScrap) {
+                          const errKey = `${msg.id?.toString() || idx}-${index}-${suffix}-${errIndex}`;
+                          loadedScrapedKeys.add(errKey); // 노란불 켜기
+
+                          // ⭐️ scrapId 저장하기
+                          setScrapIdMap((prev) => ({
+                            ...prev,
+                            [errKey]: matchedErrScrap.scrapId,
+                          }));
                         }
                       });
-                    } catch (e) {}
+                    } catch (e) {
+                      console.error("오류 목록 파싱 에러:", e);
+                    }
                   };
 
                   matchErrorList(item.wordErrors, "word");
@@ -1911,28 +2049,38 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
                 </View>
 
                 {/* 🔖 AI 말풍선용 스크랩 버튼 */}
-                {!isUser &&
-                  (isAiScraped ? (
-                    <View style={styles.aiScrapBadge}>
-                      <BookmarkIcon color="#fff" size={11} filled />
-                      <Text style={styles.aiScrapBadgeText}>스크랩됨</Text>
-                    </View>
-                  ) : (
-                    <Pressable
-                      style={styles.aiScrapButton}
-                      onPress={() =>
-                        handleScrap(aiScrapKey, {
-                          roomId: room.id,
-                          expression: msg.text,
-                          context: "",
-                          category: "EXPRESSION",
-                        })
+                {!isUser && (
+                  <Pressable
+                    // ⭐️ 스크랩 여부에 따라 스타일만 바꿔줍니다.
+                    style={
+                      isAiScraped ? styles.aiScrapBadge : styles.aiScrapButton
+                    }
+                    onPress={() =>
+                      handleScrap(aiScrapKey, {
+                        roomId: room.id,
+                        expression: msg.text,
+                        context: "",
+                        category: "EXPRESSION",
+                      })
+                    }
+                  >
+                    <BookmarkIcon
+                      color={isAiScraped ? "#fff" : "#9CA3AF"}
+                      size={11}
+                      // ⭐️ 아이콘이 칠해지는 속성(filled)이 있다면 여기에 연결해줍니다.
+                      filled={isAiScraped ? true : undefined}
+                    />
+                    <Text
+                      style={
+                        isAiScraped
+                          ? styles.aiScrapBadgeText
+                          : styles.aiScrapText
                       }
                     >
-                      <BookmarkIcon color="#9CA3AF" size={11} />
-                      <Text style={styles.aiScrapText}>스크랩</Text>
-                    </Pressable>
-                  ))}
+                      {isAiScraped ? "스크랩됨" : "스크랩"}
+                    </Text>
+                  </Pressable>
+                )}
 
                 {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에만) */}
                 {isUser &&
@@ -2143,7 +2291,6 @@ const renderFeedbackSection = (
                     { alignSelf: "flex-end", marginTop: 8 },
                     isScraped && styles.scrapButtonActive,
                   ]}
-                  disabled={isScraped}
                   onPress={() =>
                     scrapCtx.onScrap(itemKey, {
                       source: "user",
@@ -2189,23 +2336,36 @@ export function TextChatScreen({
   const [scrapedKeys, setScrapedKeys] = useState<Set<string>>(new Set());
 
   const handleScrap = async (key: string, entry: Record<string, any>) => {
-    // 이미 스크랩된 상태면 무시
-    if (scrapedKeys.has(key)) return;
-
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
       const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
-      // ⭐️ 백엔드 명세에 맞춘 새로운 데이터 페이로드
+      // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
+      if (scrapedKeys.has(key)) {
+        // [백엔드 연동 주의사항]
+        // 나중에 백엔드 팀원분이 '스크랩 취소 API(보통 DELETE 메서드)'를 만들어주시면 여기에 연결해야 합니다!
+        // 예: await axios.delete(`${API_URL}/api/scraps/${삭제할아이디}`, { headers: ... });
+
+        // 일단 화면(UI)에서 스크랩 상태를 해제합니다.
+        setScrapedKeys((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(key);
+          return newSet;
+        });
+
+        console.log("❎ 스크랩 취소 성공:", key);
+        return; // 취소 로직이 끝났으니 함수 종료
+      }
+
+      // ⭐️ 2. 아직 스크랩되지 않은 상태라면? -> 기존처럼 스크랩 추가 (POST)
       const payload = {
-        feedbackId: entry.feedbackId || null, // 피드백이 아니면 null
-        roomId: entry.roomId || null, // AI 메시지면 방 ID, 아니면 null
+        feedbackId: entry.feedbackId || null,
+        roomId: entry.roomId || null,
         expression: entry.expression,
         context: entry.context || "",
         category: entry.category,
       };
 
-      // ⭐️ 1. 서버로 출발하기 직전의 데이터 확인!
       console.log("👉 [요청 데이터]:", JSON.stringify(payload, null, 2));
 
       await axios.post(`${API_URL}/api/scraps`, payload, {
@@ -2221,7 +2381,7 @@ export function TextChatScreen({
       console.log("✅ 스크랩 저장 성공:", payload);
     } catch (error: any) {
       console.error(
-        "🚨 스크랩 저장 실패:",
+        "🚨 스크랩 처리 실패:",
         error.response?.data || error.message,
       );
     }
@@ -2550,29 +2710,36 @@ export function TextChatScreen({
               </View>
 
               {/* 🔖 AI 말풍선용 스크랩 버튼 */}
-              {!isUser &&
-                (isAiScraped ? (
-                  <View style={styles.aiScrapBadge}>
-                    <BookmarkIcon color="#fff" size={11} filled />
-                    <Text style={styles.aiScrapBadgeText}>스크랩됨</Text>
-                  </View>
-                ) : (
-                  // ⭐️ 바로 여기! 기존의 <Pressable> 덩어리를 이걸로 통째로 덮어쓰기! ⭐️
-                  <Pressable
-                    style={styles.aiScrapButton}
-                    onPress={() =>
-                      handleScrap(aiScrapKey, {
-                        roomId: room.id, // 👈 새롭게 추가된 필수 값! (방 ID)
-                        expression: msg.text, // 👈 필수: 스크랩할 문장
-                        context: "", // 👈 선택
-                        category: "EXPRESSION", // 👈 필수
-                      })
+              {!isUser && (
+                <Pressable
+                  // ⭐️ 스크랩 여부에 따라 배경 스타일만 바꿔줍니다!
+                  style={
+                    isAiScraped ? styles.aiScrapBadge : styles.aiScrapButton
+                  }
+                  onPress={() =>
+                    handleScrap(aiScrapKey, {
+                      roomId: room.id,
+                      expression: msg.text,
+                      context: "",
+                      category: "EXPRESSION",
+                    })
+                  }
+                >
+                  <BookmarkIcon
+                    color={isAiScraped ? "#fff" : "#9CA3AF"}
+                    size={11}
+                    // ⭐️ 스크랩 상태일 때만 아이콘 안을 채워줍니다!
+                    filled={isAiScraped ? true : undefined}
+                  />
+                  <Text
+                    style={
+                      isAiScraped ? styles.aiScrapBadgeText : styles.aiScrapText
                     }
                   >
-                    <BookmarkIcon color="#9CA3AF" size={11} />
-                    <Text style={styles.aiScrapText}>스크랩</Text>
-                  </Pressable>
-                ))}
+                    {isAiScraped ? "스크랩됨" : "스크랩"}
+                  </Text>
+                </Pressable>
+              )}
 
               {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에, feedback 데이터가 있을 때만 등장!) */}
               {isUser &&
@@ -2617,7 +2784,8 @@ export function TextChatScreen({
                       });
                     },
                   });
-                  const perfectKey = `${msg.id}-${index}-perfect`;
+                  const msgId = msg.id || Math.random().toString(); // 혹시 id가 없을 때를 대비한 안전 장치
+                  const perfectKey = `${msgId}-${index}-perfect`;
                   const isPerfectScraped = scrapedKeys.has(perfectKey);
 
                   return (
@@ -4958,7 +5126,8 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
   const [levelConfirmed, setLevelConfirmed] = useState(true);
   const [isAnimated, setIsAnimated] = useState(false);
 
-  const userInfo = { nickname: "영어마스터", email: "user@example.com" };
+  // ⭐️ 1. 서버에서 받아올 사용자 정보를 담을 상태(State) 생성
+  const [userInfo, setUserInfo] = useState({ nickname: "회원", email: "" });
   const weekly = [
     { day: "Mon", minute: 45, date: "04/07" },
     { day: "Tue", minute: 60, date: "04/08" },
@@ -4975,6 +5144,45 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
 
   const currentLevel = levels.find((l) => l.id === userLevel)!;
 
+  useEffect(() => {
+    const fetchMyProfile = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        if (!accessToken) return;
+
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+
+        // 홈 화면에서 성공하셨던 그 주소 그대로 호출합니다!
+        const res = await axios.get(`${API_URL}/api/users/me`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true",
+          },
+        });
+
+        // 이름과 이메일 추출 (백엔드 응답 형태에 맞춰 유연하게)
+        const fetchedName =
+          res.data?.data?.nickname ||
+          res.data?.nickname ||
+          res.data?.data?.name ||
+          res.data?.name ||
+          "회원";
+        const fetchedEmail = res.data?.data?.email || res.data?.email || "";
+
+        // 가져온 정보를 상태에 업데이트
+        setUserInfo({ nickname: fetchedName, email: fetchedEmail });
+      } catch (error: any) {
+        console.error(
+          "🚨 마이페이지 유저 정보 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+
+    fetchMyProfile();
+  }, []); // 빈 배열을 넣어 화면이 처음 렌더링될 때 딱 한 번만 실행되게 합니다.
+
+  // ⭐️ 2. 그래프를 0.15초 뒤에 슉! 올라오게 만드는 useEffect (이게 있어야 그래프가 보입니다!)
   useEffect(() => {
     const t = setTimeout(() => setIsAnimated(true), 150);
     return () => clearTimeout(t);
