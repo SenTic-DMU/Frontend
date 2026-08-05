@@ -249,11 +249,12 @@ export default function App() {
       }
     };
 
-    // ⭐️ 3. 조건에 "voiceRooms" 화면일 때도 실행되도록 추가합니다!
+    // ⭐️ 3. 조건에 "voiceRooms"·"bookmarks" 화면일 때도 실행되도록 추가합니다!
     if (
       screen === "chatRooms" ||
       screen === "voiceRooms" ||
-      screen === "mode"
+      screen === "mode" ||
+      screen === "bookmarks"
     ) {
       fetchMyRooms();
     }
@@ -380,7 +381,9 @@ export default function App() {
       {screen === "mypage" && <MyPageScreen go={go} />}
       {screen === "settings" && <SettingsScreen go={go} />}
       {screen === "payment" && <PaymentScreen go={go} />}
-      {screen === "bookmarks" && <BookmarksScreen go={go} />}
+      {screen === "bookmarks" && (
+        <BookmarksScreen go={go} chatRooms={chatRooms} voiceRooms={voiceRooms} />
+      )}
       {screen === "notice" && <NoticeScreen go={go} />}
       {screen === "faq" && <FaqScreen go={go} />}
     </SafeAreaView>
@@ -2328,7 +2331,7 @@ export function TextChatScreen({
   room,
   go,
 }: {
-  room: { id: number; title: string };
+  room: { id: string | number; title: string };
   go: (screen: any) => void;
 }) {
   const [input, setInput] = useState("");
@@ -3461,19 +3464,30 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
   );
 }
 
-function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
+function BookmarksScreen({
+  go,
+  chatRooms,
+  voiceRooms,
+}: {
+  go: (screen: Screen) => void;
+  chatRooms: any[];
+  voiceRooms: any[];
+}) {
   type ViewMode = "by-category" | "by-room";
   type Category = "단어" | "문법" | "문장";
 
   interface SavedExpression {
-    id: string;
+    id: string; // scrapId를 문자열로 (React key + 삭제 API 호출용)
+    scrapId: number;
     text: string;
-    translation: string;
+    context: string;
     category: Category;
     roomName: string;
     roomId: string;
+    roomType: "chat" | "voice";
     savedDate: string;
-    source?: "ai" | "user";
+    source: "ai" | "user";
+    feedbackId: number | null;
   }
 
   const categoryConfig: Record<
@@ -3485,69 +3499,98 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
     문장: { color: "#16A34A", bg: "#F0FDF4", dot: "#4ADE80" },
   };
 
+  const backendCategoryToKorean = (category: string): Category => {
+    if (category === "WORD") return "단어";
+    if (category === "GRAMMAR") return "문법";
+    return "문장";
+  };
+
   const [viewMode, setViewMode] = useState<ViewMode>("by-category");
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(
     null,
   );
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
-  const [expressions, setExpressions] = useState<SavedExpression[]>([
-    {
-      id: "1",
-      text: "I'd like to order a coffee, please.",
-      translation: "커피를 주문하고 싶습니다.",
-      category: "문장",
-      roomName: "카페에서 주문하기",
-      roomId: "1",
-      savedDate: "04/28",
-    },
-    {
-      id: "2",
-      text: "What's up?",
-      translation: "안녕? / 어떻게 지내?",
-      category: "단어",
-      roomName: "영화 이야기",
-      roomId: "2",
-      savedDate: "04/28",
-    },
-    {
-      id: "3",
-      text: "Subject-verb agreement",
-      translation: "주어-동사 일치",
-      category: "문법",
-      roomName: "비즈니스 미팅",
-      roomId: "3",
-      savedDate: "04/27",
-    },
-    {
-      id: "4",
-      text: "Could you please help me?",
-      translation: "도와주실 수 있으신가요?",
-      category: "문장",
-      roomName: "카페에서 주문하기",
-      roomId: "1",
-      savedDate: "04/26",
-    },
-    {
-      id: "5",
-      text: "That sounds like a great plan!",
-      translation: "정말 좋은 계획인 것 같아요!",
-      category: "문장",
-      roomName: "일상 대화",
-      roomId: "4",
-      savedDate: "04/29",
-      source: "ai",
-    },
-    {
-      id: "6",
-      text: "I really appreciate your help.",
-      translation: "도와주셔서 정말 감사해요.",
-      category: "문장",
-      roomName: "카페에서 주문하기",
-      roomId: "1",
-      savedDate: "04/25",
-      source: "ai",
-    },
-  ]);
+  const [expressions, setExpressions] = useState<SavedExpression[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAllScraps = async () => {
+      setLoading(true);
+
+      if (isTestMode) {
+        setExpressions([]);
+        setLoading(false);
+        return;
+      }
+
+      const rooms = [
+        ...chatRooms.map((r) => ({ ...r, roomType: "chat" as const })),
+        ...voiceRooms.map((r) => ({ ...r, roomType: "voice" as const })),
+      ];
+
+      if (rooms.length === 0) {
+        setExpressions([]);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const headers = {
+          Authorization: `Bearer ${accessToken}`,
+          "ngrok-skip-browser-warning": "true",
+        };
+
+        const results = await Promise.all(
+          rooms.map((room) =>
+            axios
+              .get(`${API_URL}/api/scraps?roomId=${room.id}`, { headers })
+              .then((res) => {
+                const scraps = res.data?.data || res.data || [];
+                return scraps.map((scrap: any) => ({ scrap, room }));
+              })
+              .catch((error: any) => {
+                console.error(
+                  `🚨 방(${room.id}) 스크랩 조회 실패:`,
+                  error.response?.data || error.message,
+                );
+                return [];
+              }),
+          ),
+        );
+
+        const mapped: SavedExpression[] = results
+          .flat()
+          .map(({ scrap, room }: any) => ({
+            id: String(scrap.scrapId ?? scrap.id),
+            scrapId: scrap.scrapId ?? scrap.id,
+            text: scrap.expression,
+            context: scrap.context || "",
+            category: backendCategoryToKorean(scrap.category),
+            roomName: room.title,
+            roomId: String(room.id),
+            roomType: room.roomType,
+            savedDate: scrap.createdAt
+              ? scrap.createdAt.slice(5, 10).replace("-", "/")
+              : "-",
+            source: scrap.feedbackId ? "user" : "ai",
+            feedbackId: scrap.feedbackId ?? null,
+          }));
+
+        setExpressions(mapped);
+      } catch (error: any) {
+        console.error(
+          "🚨 저장된 표현 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAllScraps();
+  }, [chatRooms, voiceRooms]);
 
   const isInsideDetail = selectedCategory !== null || selectedRoom !== null;
 
@@ -3586,7 +3629,9 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
         >
           <View style={{ flex: 1 }}>
             <Text style={bkStyles.exprText}>{expr.text}</Text>
-            <Text style={bkStyles.exprTranslation}>{expr.translation}</Text>
+            {expr.context ? (
+              <Text style={bkStyles.exprTranslation}>{expr.context}</Text>
+            ) : null}
             <View
               style={{
                 flexDirection: "row",
@@ -3721,10 +3766,35 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
         </View>
       )}
 
-      <ScrollView
-        style={{ backgroundColor: "#F9FAFB" }}
-        contentContainerStyle={bkStyles.content}
-      >
+      {loading ? (
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            paddingTop: 60,
+          }}
+        >
+          <ActivityIndicator size="large" color={primary} />
+        </View>
+      ) : expressions.length === 0 ? (
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            paddingTop: 60,
+          }}
+        >
+          <Text style={{ color: "#9CA3AF", fontSize: 13 }}>
+            아직 저장된 표현이 없어요
+          </Text>
+        </View>
+      ) : (
+        <ScrollView
+          style={{ backgroundColor: "#F9FAFB" }}
+          contentContainerStyle={bkStyles.content}
+        >
         {/* 카테고리 목록 */}
         {!isInsideDetail && viewMode === "by-category" && (
           <View style={{ gap: 10 }}>
@@ -3796,7 +3866,8 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
             {groupByRoom()[selectedRoom]?.map((e) => renderExpression(e))}
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
+      )}
     </View>
   );
 }
