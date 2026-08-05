@@ -1419,7 +1419,16 @@ export function VoiceChatScreen({
   onConsumeScrapNavTarget?: () => void;
 }) {
   const [inCall, setInCall] = useState(false);
-  const [tab, setTab] = useState<"call" | "history">("call");
+  const [tab, setTab] = useState<"call" | "history">(
+    scrapNavTarget ? "history" : "call",
+  );
+  const [highlightedMessageId, setHighlightedMessageId] = useState<
+    string | null
+  >(null);
+  const [layoutTick, setLayoutTick] = useState(0);
+  const hasScrolledToHighlightRef = useRef(false);
+  const historyScrollRef = useRef<ScrollView>(null);
+  const bubbleYRef = useRef<Record<string, number>>({});
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [latestAiText, setLatestAiText] = useState("");
@@ -1708,6 +1717,29 @@ export function VoiceChatScreen({
           setMessages(formattedHistory);
           setScrapedKeys(loadedScrapedKeys); // ⭐️ 스크랩 세팅
 
+          if (scrapNavTarget) {
+            let targetId: string | null = null;
+            if (scrapNavTarget.feedbackId) {
+              targetId =
+                formattedHistory.find(
+                  (m: any) =>
+                    m.speaker === "user" &&
+                    m.feedback?.some(
+                      (f: any) => f.id === scrapNavTarget.feedbackId,
+                    ),
+                )?.id ?? null;
+            } else if (scrapNavTarget.expression) {
+              targetId =
+                formattedHistory.find(
+                  (m: any) =>
+                    m.speaker === "ai" &&
+                    m.text === scrapNavTarget.expression,
+                )?.id ?? null;
+            }
+            setHighlightedMessageId(targetId);
+            onConsumeScrapNavTarget?.();
+          }
+
           const lastAiMsg = [...formattedHistory]
             .reverse()
             .find((m: any) => m.speaker === "ai");
@@ -1723,6 +1755,23 @@ export function VoiceChatScreen({
 
     if (room?.id) fetchHistoryOnly();
   }, [room?.id]);
+
+  useEffect(() => {
+    hasScrolledToHighlightRef.current = false;
+  }, [highlightedMessageId]);
+
+  useEffect(() => {
+    if (!highlightedMessageId || hasScrolledToHighlightRef.current) return;
+    const y = bubbleYRef.current[highlightedMessageId];
+    if (y == null) return;
+    hasScrolledToHighlightRef.current = true;
+    requestAnimationFrame(() => {
+      historyScrollRef.current?.scrollTo({
+        y: Math.max(y - 40, 0),
+        animated: true,
+      });
+    });
+  }, [highlightedMessageId, messages, layoutTick]);
 
   // ⭐️ 2. 사용자가 '시작' 버튼을 눌렀을 때만 실행되는 AI 인사말 호출 함수
   const handleStartCall = async () => {
@@ -2063,6 +2112,7 @@ export function VoiceChatScreen({
       )}
       {tab === "history" && (
         <ScrollView
+          ref={historyScrollRef}
           style={{ flex: 1, paddingHorizontal: 16 }}
           contentContainerStyle={{ paddingVertical: 20 }}
         >
@@ -2073,10 +2123,15 @@ export function VoiceChatScreen({
             const msgId = msg.id || idx.toString();
             const aiScrapKey = `${msgId}-ai`;
             const isAiScraped = scrapedKeys.has(aiScrapKey);
+            const isHighlighted = msgId === highlightedMessageId;
 
             return (
               <View
                 key={msgId}
+                onLayout={(e) => {
+                  bubbleYRef.current[msgId] = e.nativeEvent.layout.y;
+                  setLayoutTick((t) => t + 1);
+                }}
                 style={{
                   marginBottom: 20,
                   alignItems: isUser ? "flex-end" : "flex-start",
@@ -2093,6 +2148,8 @@ export function VoiceChatScreen({
                     borderBottomLeftRadius: isUser ? 16 : 4,
                     maxWidth: "80%",
                     elevation: 1,
+                    borderWidth: isHighlighted ? 2 : 0,
+                    borderColor: "#FBBF24",
                   }}
                 >
                   <Text
