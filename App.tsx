@@ -2392,6 +2392,11 @@ export function TextChatScreen({
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<any[]>([]); // Message 타입 대체
   const [scrapedKeys, setScrapedKeys] = useState<Set<string>>(new Set());
+  const [highlightedMessageId, setHighlightedMessageId] = useState<
+    string | null
+  >(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const bubbleYRef = useRef<Record<string, number>>({});
 
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
@@ -2640,6 +2645,29 @@ export function TextChatScreen({
 
           setMessages(formattedHistory);
           setScrapedKeys(loadedScrapedKeys); // 화면에 스크랩 상태 일괄 적용!
+
+          if (scrapNavTarget) {
+            let targetId: string | null = null;
+            if (scrapNavTarget.feedbackId) {
+              targetId =
+                formattedHistory.find(
+                  (m: any) =>
+                    m.speaker === "user" &&
+                    m.feedback?.some(
+                      (f: any) => f.id === scrapNavTarget.feedbackId,
+                    ),
+                )?.id ?? null;
+            } else if (scrapNavTarget.expression) {
+              targetId =
+                formattedHistory.find(
+                  (m: any) =>
+                    m.speaker === "ai" &&
+                    m.text === scrapNavTarget.expression,
+                )?.id ?? null;
+            }
+            setHighlightedMessageId(targetId);
+            onConsumeScrapNavTarget?.();
+          }
         } else {
           requestInitialGreeting();
         }
@@ -2650,6 +2678,18 @@ export function TextChatScreen({
 
     if (room?.id) fetchChatHistory();
   }, [room?.id]);
+
+  useEffect(() => {
+    if (!highlightedMessageId) return;
+    const y = bubbleYRef.current[highlightedMessageId];
+    if (y == null) return;
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollTo({
+        y: Math.max(y - 40, 0),
+        animated: true,
+      });
+    });
+  }, [highlightedMessageId, messages]);
 
   const send = async () => {
     const text = input.trim();
@@ -2733,6 +2773,7 @@ export function TextChatScreen({
 
       {/* ⭐️ 3. MessageList를 빼버리고 여기서 직접 채팅과 피드백을 그립니다! */}
       <ScrollView
+        ref={scrollViewRef}
         style={{ flex: 1, backgroundColor: "#f5f5f5", paddingHorizontal: 16 }}
         contentContainerStyle={{ paddingVertical: 20 }}
       >
@@ -2740,10 +2781,14 @@ export function TextChatScreen({
           const isUser = msg.speaker === "user";
           const aiScrapKey = `${msg.id}-ai`;
           const isAiScraped = scrapedKeys.has(aiScrapKey);
+          const isHighlighted = msg.id === highlightedMessageId;
 
           return (
             <View
               key={msg.id}
+              onLayout={(e) => {
+                bubbleYRef.current[msg.id] = e.nativeEvent.layout.y;
+              }}
               style={{
                 marginBottom: 20,
                 alignItems: isUser ? "flex-end" : "flex-start",
@@ -2760,6 +2805,8 @@ export function TextChatScreen({
                   borderBottomLeftRadius: isUser ? 16 : 4,
                   maxWidth: "80%",
                   elevation: 1, // 안드로이드 그림자
+                  borderWidth: isHighlighted ? 2 : 0,
+                  borderColor: "#FBBF24",
                 }}
               >
                 <Text style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}>
