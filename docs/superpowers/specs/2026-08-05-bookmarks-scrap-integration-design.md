@@ -13,12 +13,22 @@
 
 두 요구사항 모두 실데이터 연동 없이는 의미가 없으므로, 이번 작업 범위에 실데이터 연동을 포함한다(사용자 승인 완료).
 
-## 알려진 백엔드 계약 (기존 코드에서 확인된 것만 신뢰)
+## 알려진 백엔드 계약 (백엔드 팀원 제공 스펙, 2026-08-05)
 
-- `POST /api/scraps` — body: `{ feedbackId, roomId, expression, context, category }`. 응답: `data.scrapId`.
-- `GET /api/scraps?roomId={id}` — 해당 방의 스크랩 목록 반환. 각 항목은 최소 `feedbackId`(nullable), `expression`, `category`를 포함 (`VoiceChatScreen`/`TextChatScreen`의 매칭 로직이 이 필드들에 의존).
-- `DELETE /api/scraps/{scrapId}` — `VoiceChatScreen`에 이미 연결되어 있음(취소 토글).
-- `roomId` 없이 호출하는 "전체 스크랩 조회" 엔드포인트는 코드 어디에도 없어 존재 여부가 검증되지 않음 → **사용하지 않는다.**
+- `POST /api/scraps` — body: `{ feedbackId, roomId, expression, context, category }`.
+  - 피드백에서 스크랩: `feedbackId` 채움, `roomId: null`.
+  - AI 메시지에서 스크랩: `roomId` 채움, `feedbackId: null`.
+  - `category`는 `WORD` / `GRAMMAR` / `EXPRESSION` 중 하나.
+  - 응답: `data = { scrapId, feedbackId, roomId, expression, context, category, createdAt }`.
+- `DELETE /api/scraps/{scrapId}` — 본인 스크랩만 삭제 가능. `VoiceChatScreen`에 이미 연결됨(취소 토글).
+- `GET /api/scraps` — 전체 조회.
+- `GET /api/scraps?category=WORD|GRAMMAR|EXPRESSION` — 카테고리별 조회.
+- `GET /api/scraps?roomId={id}` — 대화방별 조회. **피드백 스크랩 + AI 메시지 스크랩 둘 다 포함**(백엔드가 feedbackId→room을 내부적으로 조인해줌).
+- 모든 요청에 `Authorization: Bearer {accessToken}` 필수.
+
+**중요한 함정:** `POST` 시 저장되는 원본 `roomId`는 피드백 스크랩의 경우 `null`이다. 즉 `GET /api/scraps`(전체) 또는 `GET /api/scraps?category=`로 받은 항목의 `roomId` 필드는 피드백 스크랩에 한해 `null`로 남아있을 가능성이 높다(문서에 GET 응답 스키마가 별도로 명시되지 않았고, POST 응답이 저장된 원본 값을 그대로 echo하는 것으로 보아 동일하게 취급). 반면 `GET /api/scraps?roomId=X`는 결과 자체가 이미 해당 방으로 필터링되어 나오므로, 응답의 `roomId` 값과 무관하게 **어느 방인지는 요청에 사용한 `X`로 알 수 있다.**
+
+→ 그래서 "어느 방(채팅/음성)에서 저장했는지" 라벨과 "탭하면 그 방으로 이동"을 구현하려면, 전체 조회(`GET /api/scraps`)가 아니라 **방마다 `GET /api/scraps?roomId=X`를 호출해서 합치는 방식**을 써야 한다 (아래 1번). 전체 조회·카테고리별 조회 엔드포인트는 이번 기능에는 쓰지 않지만 향후 다른 용도(예: 전체 개수 뱃지)에 쓸 수 있어 존재는 기록해둔다.
 
 ## 설계
 
@@ -131,7 +141,7 @@ onConsumeScrapNavTarget?.();
 
 ## 범위 밖 (Out of scope)
 
-- 백엔드에 "전체 스크랩 한번에 조회" 엔드포인트 신설 — 프론트만 수정 가능하므로 제외.
+- `GET /api/scraps`(전체 조회) / `?category=`(카테고리별 조회) 활용 — 피드백 스크랩의 `roomId`가 null로 나올 가능성이 높아 방 정보 해석에 못 쓴다고 판단, 방별 조회(`?roomId=`) 방식으로 통일.
 - AI 스크랩의 정밀한 `messageId` 매칭(텍스트 동일 문장이 여러 개인 경우 구분) — 백엔드가 스크랩 저장 시 `messageId`를 받지 않으므로 불가능. 텍스트 일치로 근사.
 - `TextChatScreen`의 스크랩 취소(DELETE) 완성 — 별도 진행 중인 작업(`스크랩 취소 미완성` 커밋)이라 이번 스펙에서 손대지 않음. 단, `BookmarksScreen`의 삭제 버튼은 이번에 DELETE API로 연결한다(4번 항목, `BookmarksScreen`에 한정).
 
