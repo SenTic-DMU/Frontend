@@ -3662,6 +3662,9 @@ function BookmarksScreen({
         {expr.source === "ai" && (
           <Text style={bkStyles.exprSourceTag}>AI 답변에서 저장됨</Text>
         )}
+        <Text style={bkStyles.exprSourceLabel}>
+          {expr.roomType === "voice" ? "음성대화에서 저장" : "채팅대화에서 저장"}
+        </Text>
       </View>
     );
   };
@@ -5039,6 +5042,11 @@ const bkStyles = StyleSheet.create({
     fontSize: 10,
     marginTop: 6,
     alignSelf: "flex-end",
+  },
+  exprSourceLabel: {
+    color: "#9CA3AF",
+    fontSize: 10,
+    marginTop: 4,
   },
   catBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   catBadgeText: { fontSize: 10, fontWeight: "700" },
