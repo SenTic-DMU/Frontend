@@ -1737,7 +1737,6 @@ export function VoiceChatScreen({
                 )?.id ?? null;
             }
             setHighlightedMessageId(targetId);
-            onConsumeScrapNavTarget?.();
           }
 
           const lastAiMsg = [...formattedHistory]
@@ -1750,6 +1749,8 @@ export function VoiceChatScreen({
           "🚨 음성방 기록 불러오기 실패:",
           error.response?.data || error.message,
         );
+      } finally {
+        if (scrapNavTarget) onConsumeScrapNavTarget?.();
       }
     };
 
@@ -2130,7 +2131,9 @@ export function VoiceChatScreen({
                 key={msgId}
                 onLayout={(e) => {
                   bubbleYRef.current[msgId] = e.nativeEvent.layout.y;
-                  setLayoutTick((t) => t + 1);
+                  if (highlightedMessageId && !hasScrolledToHighlightRef.current) {
+                    setLayoutTick((t) => t + 1);
+                  }
                 }}
                 style={{
                   marginBottom: 20,
@@ -2725,13 +2728,14 @@ export function TextChatScreen({
                 )?.id ?? null;
             }
             setHighlightedMessageId(targetId);
-            onConsumeScrapNavTarget?.();
           }
         } else {
           requestInitialGreeting();
         }
       } catch (error) {
         console.error("🚨 대화 내역 및 스크랩 불러오기 실패:", error);
+      } finally {
+        if (scrapNavTarget) onConsumeScrapNavTarget?.();
       }
     };
 
@@ -2852,7 +2856,9 @@ export function TextChatScreen({
               key={msg.id}
               onLayout={(e) => {
                 bubbleYRef.current[msg.id] = e.nativeEvent.layout.y;
-                setLayoutTick((t) => t + 1);
+                if (highlightedMessageId && !hasScrolledToHighlightRef.current) {
+                  setLayoutTick((t) => t + 1);
+                }
               }}
               style={{
                 marginBottom: 20,
@@ -3684,17 +3690,27 @@ function BookmarksScreen({
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(
     null,
   );
+  // selectedRoom은 `${roomType}:${roomId}` 형태의 합성 키를 저장합니다.
+  // (roomName만으로는 서로 다른 방이 같은 이름을 가질 수 있어 키 충돌이 발생하므로)
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [expressions, setExpressions] = useState<SavedExpression[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchAllScraps = async () => {
+      if (cancelled) return;
       setLoading(true);
+      setFetchError(false);
 
       if (isTestMode) {
-        setExpressions([]);
-        setLoading(false);
+        if (!cancelled) {
+          setExpressions([]);
+          setLoading(false);
+        }
         return;
       }
 
@@ -3704,10 +3720,14 @@ function BookmarksScreen({
       ];
 
       if (rooms.length === 0) {
-        setExpressions([]);
-        setLoading(false);
+        if (!cancelled) {
+          setExpressions([]);
+          setLoading(false);
+        }
         return;
       }
+
+      let hadError = false;
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
@@ -3730,6 +3750,7 @@ function BookmarksScreen({
                   `🚨 방(${room.id}) 스크랩 조회 실패:`,
                   error.response?.data || error.message,
                 );
+                hadError = true;
                 return [];
               }),
           ),
@@ -3753,27 +3774,38 @@ function BookmarksScreen({
             feedbackId: scrap.feedbackId ?? null,
           }));
 
-        setExpressions(mapped);
+        if (!cancelled) {
+          setExpressions(mapped);
+          if (hadError) setFetchError(true);
+        }
       } catch (error: any) {
         console.error(
           "🚨 저장된 표현 불러오기 실패:",
           error.response?.data || error.message,
         );
+        if (!cancelled) setFetchError(true);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchAllScraps();
-  }, [chatRooms, voiceRooms]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatRooms, voiceRooms, retryTick]);
 
   const isInsideDetail = selectedCategory !== null || selectedRoom !== null;
 
+  // 대화방을 `roomType:roomId` 합성 키로 그룹핑합니다. roomName만 쓰면
+  // 이름이 같은 서로 다른 방(예: "새로운 대화")이 하나로 합쳐지는 문제가 있습니다.
   const groupByRoom = () => {
     const grouped: { [key: string]: SavedExpression[] } = {};
     expressions.forEach((expr) => {
-      if (!grouped[expr.roomName]) grouped[expr.roomName] = [];
-      grouped[expr.roomName].push(expr);
+      const key = `${expr.roomType}:${expr.roomId}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(expr);
     });
     return grouped;
   };
@@ -3900,7 +3932,10 @@ function BookmarksScreen({
           </Pressable>
           <View>
             <Text style={bkStyles.headerTitle}>
-              {selectedCategory ?? selectedRoom}
+              {selectedCategory ??
+                (selectedRoom
+                  ? (groupByRoom()[selectedRoom]?.[0]?.roomName ?? "")
+                  : "")}
             </Text>
             <Text style={bkStyles.headerSub}>
               {selectedCategory
@@ -3991,17 +4026,50 @@ function BookmarksScreen({
             alignItems: "center",
             justifyContent: "center",
             paddingTop: 60,
+            gap: 12,
           }}
         >
           <Text style={{ color: "#9CA3AF", fontSize: 13 }}>
-            아직 저장된 표현이 없어요
+            {fetchError
+              ? "표현을 불러오지 못했어요. 다시 시도해주세요."
+              : "아직 저장된 표현이 없어요"}
           </Text>
+          {fetchError && (
+            <Pressable
+              onPress={() => setRetryTick((t) => t + 1)}
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: 8,
+                backgroundColor: "#F3F4F6",
+              }}
+            >
+              <Text style={{ color: "#374151", fontSize: 13, fontWeight: "600" }}>
+                다시 시도
+              </Text>
+            </Pressable>
+          )}
         </View>
       ) : (
         <ScrollView
           style={{ backgroundColor: "#F9FAFB" }}
           contentContainerStyle={bkStyles.content}
         >
+        {fetchError && (
+          <Text
+            style={{
+              color: "#B45309",
+              fontSize: 12,
+              backgroundColor: "#FFFBEB",
+              padding: 8,
+              borderRadius: 8,
+              marginBottom: 10,
+            }}
+          >
+            일부 표현을 불러오지 못했어요. 표시된 목록이 최신이 아닐 수
+            있습니다.
+          </Text>
+        )}
         {/* 카테고리 목록 */}
         {!isInsideDetail && viewMode === "by-category" && (
           <View style={{ gap: 10 }}>
@@ -4037,17 +4105,19 @@ function BookmarksScreen({
         {/* 대화방 목록 */}
         {!isInsideDetail && viewMode === "by-room" && (
           <View style={{ gap: 10 }}>
-            {Object.entries(groupByRoom()).map(([roomName, roomExprs]) => (
+            {Object.entries(groupByRoom()).map(([roomKey, roomExprs]) => (
               <Pressable
-                key={roomName}
+                key={roomKey}
                 style={bkStyles.listCard}
-                onPress={() => setSelectedRoom(roomName)}
+                onPress={() => setSelectedRoom(roomKey)}
               >
                 <View style={bkStyles.roomIcon}>
                   <Text style={{ fontSize: 18 }}>📁</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={bkStyles.listCardTitle}>{roomName}</Text>
+                  <Text style={bkStyles.listCardTitle}>
+                    {roomExprs[0]?.roomName ?? ""}
+                  </Text>
                   <Text style={bkStyles.listCardSub}>
                     {roomExprs.length}개 저장됨
                   </Text>
