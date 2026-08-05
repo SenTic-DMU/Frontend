@@ -3603,7 +3603,7 @@ function BookmarksScreen({
     return grouped;
   };
 
-  const deleteExpression = (id: string) => {
+  const deleteExpression = (expr: SavedExpression) => {
     Alert.alert(
       "표현 삭제",
       "이 표현을 정말 삭제하시겠습니까?\n(삭제 후 복구할 수 없습니다.)",
@@ -3612,8 +3612,25 @@ function BookmarksScreen({
         {
           text: "삭제",
           style: "destructive",
-          onPress: () => {
-            setExpressions((prev) => prev.filter((e) => e.id !== id));
+          onPress: async () => {
+            try {
+              const accessToken = await AsyncStorage.getItem("accessToken");
+              const API_URL =
+                "https://rundown-irrigate-majesty.ngrok-free.dev";
+              await axios.delete(`${API_URL}/api/scraps/${expr.scrapId}`, {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  "ngrok-skip-browser-warning": "true",
+                },
+              });
+              setExpressions((prev) => prev.filter((e) => e.id !== expr.id));
+            } catch (error: any) {
+              console.error(
+                "🚨 스크랩 삭제 실패:",
+                error.response?.data || error.message,
+              );
+              Alert.alert("삭제 실패", "잠시 후 다시 시도해주세요.");
+            }
           },
         },
       ],
@@ -3653,7 +3670,7 @@ function BookmarksScreen({
             </View>
           </View>
           <Pressable
-            onPress={() => deleteExpression(expr.id)}
+            onPress={() => deleteExpression(expr)}
             style={bkStyles.deleteBtn}
           >
             <Text style={bkStyles.deleteBtnText}>🗑</Text>
