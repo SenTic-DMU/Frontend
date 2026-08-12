@@ -362,7 +362,14 @@ export default function App() {
       {screen === "signup" && <SignupScreen go={go} />}
       {screen === "findAccount" && <FindAccountScreen go={go} />}
 
-      {screen === "mode" && <ModeScreen go={go} />}
+      {screen === "mode" && (
+        <ModeScreen
+          go={go}
+          chatRooms={chatRooms}
+          voiceRooms={voiceRooms}
+          onOpenScrap={onOpenScrap}
+        />
+      )}
       {screen === "voiceRooms" && (
         <RoomListScreen
           title="음성 대화"
@@ -833,7 +840,23 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
   );
 }
 
-function ModeScreen({ go }: { go: (screen: Screen) => void }) {
+function ModeScreen({
+  go,
+  chatRooms,
+  voiceRooms,
+  onOpenScrap,
+}: {
+  go: (screen: Screen) => void;
+  chatRooms: any[];
+  voiceRooms: any[];
+  onOpenScrap: (expr: {
+    roomId: string;
+    roomType: "chat" | "voice";
+    roomName: string;
+    feedbackId: number | null;
+    text: string;
+  }) => void;
+}) {
   // ⭐️ 1. 닉네임을 저장할 State 만들기 (데이터가 오기 전 기본값은 '회원')
   const [nickname, setNickname] = useState("회원");
 
@@ -855,7 +878,6 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
     return greetings[randomIndex];
   });
 
-  const weekly = [33, 42, 27, 36, 48, 24, 60];
   useEffect(() => {
     const fetchMyProfile = async () => {
       try {
@@ -910,7 +932,7 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
       <Header title="SenTic" go={go} actions />
       <ScrollView
         style={{ backgroundColor: "#F9FAFB" }}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: 36 }]}
       >
         <View style={styles.rowBetween}>
           {/* ⭐️ 바로 여기! flex: 1을 주면 남은 공간 안에서만 크기를 차지하고, 글자가 길면 알아서 줄바꿈됩니다. */}
@@ -938,47 +960,20 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
           color="#16A34A"
           onPress={() => go("chatRooms")}
         />
-        <View style={styles.card}>
+        <View style={styles.savedExprCard}>
           <View style={styles.rowBetween}>
-            <Text style={styles.cardTitle}>이번 주 학습</Text>
-            <Pressable onPress={() => go("mypage")}>
-              <Text style={styles.linkText}>상세보기</Text>
+            <Text style={styles.cardTitle}>저장된 표현</Text>
+            <Pressable onPress={() => go("bookmarks")}>
+              <Text style={styles.linkText}>전체보기</Text>
             </Pressable>
           </View>
-          <View style={styles.chart}>
-            {weekly.map((minute, index) => (
-              <View key={index} style={styles.barWrap}>
-                <Text
-                  style={[
-                    styles.barMinute,
-                    index === weekly.length - 1 && styles.primaryText,
-                  ]}
-                >
-                  {minute}분
-                </Text>
-                <View
-                  style={[
-                    styles.bar,
-                    { height: minute * 1.4 },
-                    index === weekly.length - 1 && styles.activeBar,
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.barDay,
-                    index === weekly.length - 1 && styles.primaryText,
-                  ]}
-                >
-                  {["월", "화", "수", "목", "금", "토", "일"][index]}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-        <View style={styles.statsGrid}>
-          <Stat label="총 대화" value="24회" />
-          <Stat label="총 학습시간" value="8.5h" />
-          <Stat label="저장 표현" value="42개" />
+          <BookmarksScreen
+            embedded
+            go={go}
+            chatRooms={chatRooms}
+            voiceRooms={voiceRooms}
+            onOpenScrap={onOpenScrap}
+          />
         </View>
       </ScrollView>
     </View>
@@ -3645,6 +3640,7 @@ function BookmarksScreen({
   chatRooms,
   voiceRooms,
   onOpenScrap,
+  embedded = false,
 }: {
   go: (screen: Screen) => void;
   chatRooms: any[];
@@ -3656,6 +3652,8 @@ function BookmarksScreen({
     feedbackId: number | null;
     text: string;
   }) => void;
+  // 🧩 true면 홈 화면 카드 안에 들어가는 미리보기 모드 — 자체 헤더/탭 없이 상위 몇 개만 보여줍니다.
+  embedded?: boolean;
 }) {
   type ViewMode = "by-category" | "by-room";
   type Category = "단어" | "문법" | "문장";
@@ -3907,6 +3905,26 @@ function BookmarksScreen({
       </Pressable>
     );
   };
+
+  // 🧩 홈 화면 카드용 미리보기 — 자체 헤더/탭 없이 최근 저장한 표현 몇 개만 보여줍니다.
+  if (embedded) {
+    const preview = expressions.slice(0, 3);
+    return (
+      <View>
+        {loading ? (
+          <ActivityIndicator size="small" color={primary} />
+        ) : expressions.length === 0 ? (
+          <Text style={{ color: "#9CA3AF", fontSize: 13 }}>
+            아직 저장된 표현이 없어요
+          </Text>
+        ) : (
+          <View style={{ gap: 10 }}>
+            {preview.map((expr) => renderExpression(expr, true))}
+          </View>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View
@@ -6609,15 +6627,6 @@ function Label({ text }: { text: string }) {
   return <Text style={styles.label}>{text}</Text>;
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.stat}>
-      <Text style={styles.mutedSmall}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#FFFFFF" },
   webViewClose: {
@@ -6863,6 +6872,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 14,
   },
+  savedExprCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: 16,
+    gap: 12,
+    marginBottom: 8,
+  },
   modeIcon: {
     width: 52,
     height: 52,
@@ -6871,13 +6889,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   modeIconText: { fontSize: 25 },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    padding: 16,
-  },
   profileCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -6946,45 +6957,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   cardTitle: { color: "#111827", fontSize: 15, fontWeight: "800" },
-  chart: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    height: 120,
-    marginTop: 16,
-  },
-  barWrap: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 4,
-  },
-  bar: {
-    width: "62%",
-    backgroundColor: "#C7D2FE",
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-  },
-  activeBar: { backgroundColor: primary },
-  barMinute: { color: "#9CA3AF", fontSize: 10 },
-  barDay: { color: "#9CA3AF", fontSize: 11 },
-  primaryText: { color: primary },
-  statsGrid: { flexDirection: "row", gap: 10 },
-  stat: {
-    flex: 1,
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-  },
-  statValue: {
-    color: "#111827",
-    fontSize: 16,
-    fontWeight: "900",
-    marginTop: 4,
-  },
   roomCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
