@@ -316,6 +316,7 @@ export default function App() {
         if (data.data.refreshToken) {
           await AsyncStorage.setItem("refreshToken", data.data.refreshToken);
         }
+        isTestMode = false; // ⭐️ 이전에 테스트 모드로 들어갔던 상태가 남아있지 않도록 초기화
         go("mode");
       } else {
         Alert.alert(
@@ -474,6 +475,8 @@ function LoginScreen({
         if (data.data.refreshToken) {
           await AsyncStorage.setItem("refreshToken", data.data.refreshToken);
         }
+
+        isTestMode = false; // ⭐️ 이전에 테스트 모드로 들어갔던 상태가 남아있지 않도록 초기화
 
         // 저장이 완료된 후에야 다음 화면으로 넘어갑니다.
         go("mode");
