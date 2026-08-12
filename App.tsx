@@ -208,7 +208,7 @@ export default function App() {
           return;
         }
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "ngrok-skip-browser-warning": "true", // 👈 혹시 빠져있었다면 이거 꼭 넣어주세요!
@@ -884,7 +884,7 @@ function ModeScreen({
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // ⭐️ 백엔드에서 알려준 정확한 주소(/api/users/me)로 수정!
         const res = await axios.get(`${API_URL}/api/users/me`, {
@@ -1009,7 +1009,8 @@ export function RoomListScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+              const API_URL =
+                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
               await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
@@ -1444,7 +1445,7 @@ export function VoiceChatScreen({
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
       // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
       if (scrapedKeys.has(key)) {
@@ -1576,7 +1577,7 @@ export function VoiceChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const currentRoomId = room.id;
 
         // ⭐️ 스크랩 내역과 메시지 내역 동시 호출!
@@ -1673,7 +1674,11 @@ export function VoiceChatScreen({
 
                       errors.forEach((err: any, errIndex: number) => {
                         const targetExpression =
-                          err.corrected || err.original || err.text || "";
+                          err.suggested ||
+                          err.corrected ||
+                          err.original ||
+                          err.text ||
+                          "";
 
                         // ⭐️ 여기도 some 대신 find로 매칭된 데이터를 가져옵니다.
                         const matchedErrScrap = myScraps.find(
@@ -1715,6 +1720,11 @@ export function VoiceChatScreen({
           setMessages(formattedHistory);
           setScrapedKeys(loadedScrapedKeys); // ⭐️ 스크랩 세팅
 
+          // ⭐️ [추가] 대화 내역을 불러온 직후, 맨 아래(최신 메시지)로 스크롤 이동!
+          setTimeout(() => {
+            historyScrollRef.current?.scrollToEnd({ animated: false });
+          }, 100); // 렌더링이 완료될 시간을 살짝 주기 위해 setTimeout 사용
+
           if (scrapNavTarget) {
             let targetId: string | null = null;
             if (scrapNavTarget.feedbackId) {
@@ -1730,8 +1740,7 @@ export function VoiceChatScreen({
               targetId =
                 formattedHistory.find(
                   (m: any) =>
-                    m.speaker === "ai" &&
-                    m.text === scrapNavTarget.expression,
+                    m.speaker === "ai" && m.text === scrapNavTarget.expression,
                 )?.id ?? null;
             }
             setHighlightedMessageId(targetId);
@@ -1754,6 +1763,15 @@ export function VoiceChatScreen({
 
     if (room?.id) fetchHistoryOnly();
   }, [room?.id]);
+
+  // ⭐️ 사용자가 'history'(기록) 탭을 누르거나 메시지가 바뀔 때 맨 아래로 자동 포커싱!
+  useEffect(() => {
+    if (tab === "history" && messages.length > 0) {
+      setTimeout(() => {
+        historyScrollRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+    }
+  }, [tab, messages]);
 
   useEffect(() => {
     hasScrolledToHighlightRef.current = false;
@@ -1782,7 +1800,7 @@ export function VoiceChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const currentRoomId = room.id;
 
       // 통화 시작 상태로 변경
@@ -1895,7 +1913,7 @@ export function VoiceChatScreen({
   const sendVoiceToServer = async (fileUri: string) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
       const formData = new FormData();
       formData.append("file", {
@@ -2129,7 +2147,10 @@ export function VoiceChatScreen({
                 key={msgId}
                 onLayout={(e) => {
                   bubbleYRef.current[msgId] = e.nativeEvent.layout.y;
-                  if (highlightedMessageId && !hasScrolledToHighlightRef.current) {
+                  if (
+                    highlightedMessageId &&
+                    !hasScrolledToHighlightRef.current
+                  ) {
                     setLayoutTick((t) => t + 1);
                   }
                 }}
@@ -2298,7 +2319,8 @@ export function VoiceChatScreen({
                                   { alignSelf: "flex-end" },
                                   isPerfectScraped && styles.scrapButtonActive,
                                 ]}
-                                disabled={isPerfectScraped}
+                                // 🚨 1. 여기에 있던 disabled={isPerfectScraped} 를 싹 지웠습니다! 🚨
+
                                 onPress={() =>
                                   handleScrap(perfectKey, {
                                     feedbackId: item.id,
@@ -2366,12 +2388,12 @@ const renderFeedbackSection = (
         <Text style={{ fontWeight: "bold", marginBottom: 4, color: "#333" }}>
           {icon} {title}
         </Text>
-        {parsedData.map((errorItem: any, index: number) => {
-          const itemKey = `${scrapCtx?.keyPrefix}-${index}`;
+        {parsedData.map((errorItem: any, errIndex: number) => {
+          const itemKey = `${scrapCtx?.keyPrefix}-${errIndex}`;
           const isScraped = scrapCtx?.isScraped(itemKey) ?? false;
           return (
             <View
-              key={index}
+              key={errIndex}
               style={{
                 backgroundColor: "rgba(255, 255, 255, 0.6)", // 살짝 투명한 흰색 박스
                 padding: 10,
@@ -2458,29 +2480,50 @@ export function TextChatScreen({
   const [layoutTick, setLayoutTick] = useState(0);
   const hasScrolledToHighlightRef = useRef(false);
 
+  // ⭐️ 1. scrapId를 매핑해서 관리할 state 추가 (컴포넌트 상단 state 선언부 쪽에 같이 넣어주세요!)
+  const [scrapIdMap, setScrapIdMap] = useState<Record<string, number>>({});
+
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
       // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
       if (scrapedKeys.has(key)) {
-        // [백엔드 연동 주의사항]
-        // 나중에 백엔드 팀원분이 '스크랩 취소 API(보통 DELETE 메서드)'를 만들어주시면 여기에 연결해야 합니다!
-        // 예: await axios.delete(`${API_URL}/api/scraps/${삭제할아이디}`, { headers: ... });
+        const targetScrapId = scrapIdMap[key]; // 저장해둔 scrapId 꺼내기
 
-        // 일단 화면(UI)에서 스크랩 상태를 해제합니다.
+        if (!targetScrapId) {
+          console.warn(
+            "🚨 삭제할 scrapId를 찾을 수 없습니다! (화면 새로고침 후 다시 시도)",
+          );
+          return;
+        }
+
+        // 백엔드로 DELETE API 요청 (scrapId 포함)
+        await axios.delete(`${API_URL}/api/scraps/${targetScrapId}`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true",
+          },
+        });
+
+        // 삭제 성공 시, 화면(UI) 업데이트 및 ID 목록에서 제거
         setScrapedKeys((prev) => {
           const newSet = new Set(prev);
           newSet.delete(key);
           return newSet;
         });
+        setScrapIdMap((prev) => {
+          const newMap = { ...prev };
+          delete newMap[key];
+          return newMap;
+        });
 
-        console.log("❎ 스크랩 취소 성공:", key);
-        return; // 취소 로직이 끝났으니 함수 종료
+        console.log("❎ 스크랩 취소 완료! 삭제된 scrapId:", targetScrapId);
+        return; // 취소 로직 끝!
       }
 
-      // ⭐️ 2. 아직 스크랩되지 않은 상태라면? -> 기존처럼 스크랩 추가 (POST)
+      // ⭐️ 2. 아직 스크랩되지 않은 상태라면? -> 스크랩 추가 (POST)
       const payload = {
         feedbackId: entry.feedbackId || null,
         roomId: entry.roomId || null,
@@ -2491,7 +2534,7 @@ export function TextChatScreen({
 
       console.log("👉 [요청 데이터]:", JSON.stringify(payload, null, 2));
 
-      await axios.post(`${API_URL}/api/scraps`, payload, {
+      const res = await axios.post(`${API_URL}/api/scraps`, payload, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
@@ -2499,9 +2542,16 @@ export function TextChatScreen({
         },
       });
 
-      // 서버 저장이 성공하면 화면 상태 업데이트 (노란 불 켜기)
-      setScrapedKeys((prev) => new Set(prev).add(key));
-      console.log("✅ 스크랩 저장 성공:", payload);
+      // 백엔드 응답에서 scrapId 쏙 뽑아오기
+      const newScrapId = res.data?.data?.scrapId;
+
+      if (newScrapId) {
+        // 성공 시 화면에 노란불 켜고, 새로 발급받은 scrapId 짝지어 저장하기!
+        setScrapedKeys((prev) => new Set(prev).add(key));
+        setScrapIdMap((prev) => ({ ...prev, [key]: newScrapId }));
+
+        console.log("✅ 스크랩 저장 성공! 발급된 scrapId:", newScrapId);
+      }
     } catch (error: any) {
       console.error(
         "🚨 스크랩 처리 실패:",
@@ -2513,7 +2563,7 @@ export function TextChatScreen({
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const payload = {
         content:
           "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
@@ -2557,7 +2607,7 @@ export function TextChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // ⭐️ 1. Promise.all을 사용하여 두 API를 동시에(병렬로) 호출합니다! (속도 2배 향상)
         const [messagesRes, scrapsRes] = await Promise.all([
@@ -2616,47 +2666,55 @@ export function TextChatScreen({
 
               // ⭐️ 3. 백엔드에서 받은 스크랩 목록과 현재 메시지를 "매칭" 합니다!
 
-              // [AI 메시지 매칭]
-              // 스크랩 목록 중에서, 피드백 ID가 없고(null) 문장이 똑같은 게 있다면 그게 바로 AI 스크랩!
+              // --- [AI 메시지 매칭] ---
               if (msg.senderType === "AI") {
-                const isAiScraped = scraps.some(
+                const matchedAiScrap = scraps.find(
                   (s: any) => !s.feedbackId && s.expression === msg.contentText,
                 );
 
-                if (isAiScraped) {
-                  loadedScrapedKeys.add(`${msg.id.toString()}-ai`);
+                if (matchedAiScrap) {
+                  const aiScrapKey = `${msg.id.toString()}-ai`;
+                  loadedScrapedKeys.add(aiScrapKey);
+
+                  // ⭐️ 삭제를 위해 scrapId 저장!
+                  setScrapIdMap((prev) => ({
+                    ...prev,
+                    [aiScrapKey]: matchedAiScrap.scrapId,
+                  }));
                 }
               }
 
-              // [사용자 피드백 매칭]
+              // --- [사용자 피드백 매칭] ---
               if (msg.senderType === "USER" && parsedFeedback) {
                 parsedFeedback.forEach((item: any, index: number) => {
                   const currentFeedbackId = item.id;
-
                   if (!currentFeedbackId) return;
 
-                  // ⭐️ 1. 이 피드백(ID)에 대해 백엔드에 저장된 스크랩 내역을 싹 다 가져옵니다.
                   const myScraps = scraps.filter(
                     (s: any) => s.feedbackId === currentFeedbackId,
                   );
 
                   if (myScraps.length > 0) {
-                    // 2. [추천 문장] 매칭: 백엔드 스크랩 목록 중 추천 문장과 일치하는 게 있다면?
-                    if (
-                      myScraps.some(
-                        (s: any) => s.expression === item.perfectSentence,
-                      )
-                    ) {
-                      loadedScrapedKeys.add(
-                        `${msg.id.toString()}-${index}-perfect`,
-                      );
+                    // 1. [추천 문장] 매칭 (some 대신 find 사용)
+                    const matchedPerfect = myScraps.find(
+                      (s: any) => s.expression === item.perfectSentence,
+                    );
+
+                    if (matchedPerfect) {
+                      const perfectKey = `${msg.id.toString()}-${index}-perfect`;
+                      loadedScrapedKeys.add(perfectKey);
+
+                      // ⭐️ 삭제를 위해 scrapId 저장!
+                      setScrapIdMap((prev) => ({
+                        ...prev,
+                        [perfectKey]: matchedPerfect.scrapId,
+                      }));
                     }
 
-                    // 3. [단어/문법/표현 오류] 매칭 헬퍼 함수
+                    // 2. [단어/문법/표현 오류] 매칭 헬퍼 함수
                     const matchErrorList = (errorData: any, suffix: string) => {
                       if (!errorData || errorData === "[]") return;
                       try {
-                        // 문자열로 온 JSON 파싱
                         const errors =
                           typeof errorData === "string"
                             ? JSON.parse(errorData)
@@ -2664,18 +2722,26 @@ export function TextChatScreen({
 
                         errors.forEach((err: any, errIndex: number) => {
                           const targetExpression =
-                            err.corrected || err.original || err.text || "";
+                            err.suggested ||
+                            err.corrected ||
+                            err.original ||
+                            err.text ||
+                            "";
 
-                          // 스크랩된 표현이랑 이 오류의 표현이 똑같다면 불을 켭니다!
-                          if (
-                            myScraps.some(
-                              (s: any) => s.expression === targetExpression,
-                            )
-                          ) {
-                            // 컴포넌트에서 생성되는 Key 조합: 메시지ID-피드백인덱스-종류-에러인덱스
-                            loadedScrapedKeys.add(
-                              `${msg.id.toString()}-${index}-${suffix}-${errIndex}`,
-                            );
+                          // some 대신 find로 매칭된 스크랩 객체를 통째로 가져옴
+                          const matchedErrScrap = myScraps.find(
+                            (s: any) => s.expression === targetExpression,
+                          );
+
+                          if (matchedErrScrap) {
+                            const errKey = `${msg.id.toString()}-${index}-${suffix}-${errIndex}`;
+                            loadedScrapedKeys.add(errKey);
+
+                            // ⭐️ 삭제를 위해 scrapId 저장!
+                            setScrapIdMap((prev) => ({
+                              ...prev,
+                              [errKey]: matchedErrScrap.scrapId,
+                            }));
                           }
                         });
                       } catch (e) {
@@ -2683,7 +2749,6 @@ export function TextChatScreen({
                       }
                     };
 
-                    // 4. 각각의 오류 리스트를 돌면서 스크랩된 게 있는지 검사합니다.
                     matchErrorList(item.wordErrors, "word");
                     matchErrorList(item.grammarErrors, "grammar");
                     matchErrorList(item.expressionErrors, "expr");
@@ -2706,6 +2771,11 @@ export function TextChatScreen({
           setMessages(formattedHistory);
           setScrapedKeys(loadedScrapedKeys); // 화면에 스크랩 상태 일괄 적용!
 
+          // ⭐️ [추가] 대화 내역을 불러온 직후, 맨 아래(최신 메시지)로 스크롤 이동!
+          setTimeout(() => {
+            scrollViewRef.current?.scrollToEnd({ animated: false });
+          }, 100); // 렌더링이 완료될 시간을 살짝 주기 위해 setTimeout 사용
+
           if (scrapNavTarget) {
             let targetId: string | null = null;
             if (scrapNavTarget.feedbackId) {
@@ -2721,8 +2791,7 @@ export function TextChatScreen({
               targetId =
                 formattedHistory.find(
                   (m: any) =>
-                    m.speaker === "ai" &&
-                    m.text === scrapNavTarget.expression,
+                    m.speaker === "ai" && m.text === scrapNavTarget.expression,
                 )?.id ?? null;
             }
             setHighlightedMessageId(targetId);
@@ -2777,7 +2846,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const response = await axios.post(
         `${API_URL}/api/rooms/${room.id}/messages/chat`,
         { content: text },
@@ -2854,7 +2923,10 @@ export function TextChatScreen({
               key={msg.id}
               onLayout={(e) => {
                 bubbleYRef.current[msg.id] = e.nativeEvent.layout.y;
-                if (highlightedMessageId && !hasScrolledToHighlightRef.current) {
+                if (
+                  highlightedMessageId &&
+                  !hasScrolledToHighlightRef.current
+                ) {
                   setLayoutTick((t) => t + 1);
                 }
               }}
@@ -2921,14 +2993,41 @@ export function TextChatScreen({
                 msg.feedback.map((item: any, index: number) => {
                   const hasPerfectSentence =
                     item.perfectSentence &&
-                    item.perfectSentence.trim() !== "[]";
+                    item.perfectSentence.trim() !== "[]" &&
+                    item.perfectSentence.trim() !== "";
+
+                  // 1. 단어, 문법, 어색한 표현이 실제로 내용이 있는지 검사하는 헬퍼 함수
+                  const hasContent = (data: any) => {
+                    if (
+                      !data ||
+                      data === "[]" ||
+                      data.toString().trim() === "[]"
+                    )
+                      return false;
+                    try {
+                      const parsed = Array.isArray(data)
+                        ? data
+                        : JSON.parse(data);
+                      return Array.isArray(parsed) && parsed.length > 0;
+                    } catch {
+                      return false;
+                    }
+                  };
+
+                  const hasWord = hasContent(item.wordErrors);
+                  const hasGrammar = hasContent(item.grammarErrors);
+                  const hasExpr = hasContent(item.expressionErrors);
+
+                  // 2. 오류나 추천 문장 중 단 하나라도 존재하지 않는다면 아예 렌더링하지 않음!
+                  const hasAnyFeedback =
+                    hasWord || hasGrammar || hasExpr || hasPerfectSentence;
+                  if (!hasAnyFeedback) return null;
 
                   // ⭐️ 도우미 함수: 단어/문법/표현 오류 스크랩 버튼을 누를 때 데이터를 백엔드 양식으로 싹 바꿔줍니다!
                   const makeScrapCtx = (suffix: string): ScrapContext => ({
                     keyPrefix: `${msg.id}-${index}-${suffix}`,
                     isScraped: (key) => scrapedKeys.has(key),
                     onScrap: (key, entry) => {
-                      // 1. 한국어 카테고리를 백엔드가 원하는 영어로 변환
                       let mappedCategory = "EXPRESSION";
                       if (entry.category === "단어 오류" || suffix === "word")
                         mappedCategory = "WORD";
@@ -2940,8 +3039,6 @@ export function TextChatScreen({
                       if (entry.category === "어색한 표현" || suffix === "expr")
                         mappedCategory = "EXPRESSION";
 
-                      // 2. 스크랩할 표현(문장) 찾기
-                      // (기존 컴포넌트가 text, original, corrected 등 어떤 이름으로 주든 다 잡아냅니다)
                       const targetExpression =
                         entry.expression ||
                         entry.corrected ||
@@ -2949,16 +3046,16 @@ export function TextChatScreen({
                         entry.original ||
                         "";
 
-                      // 3. 완벽하게 조립해서 handleScrap으로 전달!
                       handleScrap(key, {
-                        feedbackId: item.id, // 👈 우리가 찾아낸 피드백 ID!
-                        expression: targetExpression, // 👈 스크랩할 교정된 문장
-                        context: msg.text, // 👈 원래 내가 했던 말
-                        category: mappedCategory, // 👈 WORD, GRAMMAR, EXPRESSION 중 하나
+                        feedbackId: item.id,
+                        expression: targetExpression,
+                        context: msg.text,
+                        category: mappedCategory,
                       });
                     },
                   });
-                  const msgId = msg.id || Math.random().toString(); // 혹시 id가 없을 때를 대비한 안전 장치
+
+                  const msgId = msg.id || Math.random().toString();
                   const perfectKey = `${msgId}-${index}-perfect`;
                   const isPerfectScraped = scrapedKeys.has(perfectKey);
 
@@ -3026,13 +3123,12 @@ export function TextChatScreen({
                               { alignSelf: "flex-end" },
                               isPerfectScraped && styles.scrapButtonActive,
                             ]}
-                            disabled={isPerfectScraped}
                             onPress={() =>
                               handleScrap(perfectKey, {
-                                feedbackId: item.id, // 👈 1. 해당 피드백의 고유 ID
-                                expression: item.perfectSentence, // 👈 2. 스크랩할 문장
-                                context: msg.text, // 👈 3. 원래 내가 했던 말 (선택)
-                                category: "EXPRESSION", // 👈 4. 카테고리 (필수)
+                                feedbackId: item.id,
+                                expression: item.perfectSentence,
+                                context: msg.text,
+                                category: "EXPRESSION",
                               })
                             }
                           >
@@ -3468,7 +3564,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
         // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
         const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/announcements";
 
         console.log("🚀 최종 요청 주소:", FULL_URL);
 
@@ -3732,7 +3828,7 @@ function BookmarksScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "ngrok-skip-browser-warning": "true",
@@ -3824,7 +3920,7 @@ function BookmarksScreen({
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
               const API_URL =
-                "https://rundown-irrigate-majesty.ngrok-free.dev";
+                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
               await axios.delete(`${API_URL}/api/scraps/${expr.scrapId}`, {
                 headers: {
                   Authorization: `Bearer ${accessToken}`,
@@ -3900,7 +3996,9 @@ function BookmarksScreen({
           <Text style={bkStyles.exprSourceTag}>AI 답변에서 저장됨</Text>
         )}
         <Text style={bkStyles.exprSourceLabel}>
-          {expr.roomType === "voice" ? "음성대화에서 저장" : "채팅대화에서 저장"}
+          {expr.roomType === "voice"
+            ? "음성대화에서 저장"
+            : "채팅대화에서 저장"}
         </Text>
       </Pressable>
     );
@@ -4065,7 +4163,9 @@ function BookmarksScreen({
                 backgroundColor: "#F3F4F6",
               }}
             >
-              <Text style={{ color: "#374151", fontSize: 13, fontWeight: "600" }}>
+              <Text
+                style={{ color: "#374151", fontSize: 13, fontWeight: "600" }}
+              >
                 다시 시도
               </Text>
             </Pressable>
@@ -4076,94 +4176,97 @@ function BookmarksScreen({
           style={{ backgroundColor: "#F9FAFB" }}
           contentContainerStyle={bkStyles.content}
         >
-        {fetchError && (
-          <Text
-            style={{
-              color: "#B45309",
-              fontSize: 12,
-              backgroundColor: "#FFFBEB",
-              padding: 8,
-              borderRadius: 8,
-              marginBottom: 10,
-            }}
-          >
-            일부 표현을 불러오지 못했어요. 표시된 목록이 최신이 아닐 수
-            있습니다.
-          </Text>
-        )}
-        {/* 카테고리 목록 */}
-        {!isInsideDetail && viewMode === "by-category" && (
-          <View style={{ gap: 10 }}>
-            {(["단어", "문법", "문장"] as Category[]).map((cat) => {
-              const count = expressions.filter(
-                (e) => e.category === cat,
-              ).length;
-              const config = categoryConfig[cat];
-              return (
-                <Pressable
-                  key={cat}
-                  style={bkStyles.listCard}
-                  onPress={() => setSelectedCategory(cat)}
-                >
-                  <View
-                    style={[bkStyles.catIcon, { backgroundColor: config.bg }]}
+          {fetchError && (
+            <Text
+              style={{
+                color: "#B45309",
+                fontSize: 12,
+                backgroundColor: "#FFFBEB",
+                padding: 8,
+                borderRadius: 8,
+                marginBottom: 10,
+              }}
+            >
+              일부 표현을 불러오지 못했어요. 표시된 목록이 최신이 아닐 수
+              있습니다.
+            </Text>
+          )}
+          {/* 카테고리 목록 */}
+          {!isInsideDetail && viewMode === "by-category" && (
+            <View style={{ gap: 10 }}>
+              {(["단어", "문법", "문장"] as Category[]).map((cat) => {
+                const count = expressions.filter(
+                  (e) => e.category === cat,
+                ).length;
+                const config = categoryConfig[cat];
+                return (
+                  <Pressable
+                    key={cat}
+                    style={bkStyles.listCard}
+                    onPress={() => setSelectedCategory(cat)}
                   >
                     <View
-                      style={[bkStyles.catDot, { backgroundColor: config.dot }]}
-                    />
+                      style={[bkStyles.catIcon, { backgroundColor: config.bg }]}
+                    >
+                      <View
+                        style={[
+                          bkStyles.catDot,
+                          { backgroundColor: config.dot },
+                        ]}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={bkStyles.listCardTitle}>{cat}</Text>
+                      <Text style={bkStyles.listCardSub}>{count}개 저장됨</Text>
+                    </View>
+                    <Text style={styles.chevron}>›</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+
+          {/* 대화방 목록 */}
+          {!isInsideDetail && viewMode === "by-room" && (
+            <View style={{ gap: 10 }}>
+              {Object.entries(groupByRoom()).map(([roomKey, roomExprs]) => (
+                <Pressable
+                  key={roomKey}
+                  style={bkStyles.listCard}
+                  onPress={() => setSelectedRoom(roomKey)}
+                >
+                  <View style={bkStyles.roomIcon}>
+                    <Text style={{ fontSize: 18 }}>📁</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={bkStyles.listCardTitle}>{cat}</Text>
-                    <Text style={bkStyles.listCardSub}>{count}개 저장됨</Text>
+                    <Text style={bkStyles.listCardTitle}>
+                      {roomExprs[0]?.roomName ?? ""}
+                    </Text>
+                    <Text style={bkStyles.listCardSub}>
+                      {roomExprs.length}개 저장됨
+                    </Text>
                   </View>
                   <Text style={styles.chevron}>›</Text>
                 </Pressable>
-              );
-            })}
-          </View>
-        )}
+              ))}
+            </View>
+          )}
 
-        {/* 대화방 목록 */}
-        {!isInsideDetail && viewMode === "by-room" && (
-          <View style={{ gap: 10 }}>
-            {Object.entries(groupByRoom()).map(([roomKey, roomExprs]) => (
-              <Pressable
-                key={roomKey}
-                style={bkStyles.listCard}
-                onPress={() => setSelectedRoom(roomKey)}
-              >
-                <View style={bkStyles.roomIcon}>
-                  <Text style={{ fontSize: 18 }}>📁</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={bkStyles.listCardTitle}>
-                    {roomExprs[0]?.roomName ?? ""}
-                  </Text>
-                  <Text style={bkStyles.listCardSub}>
-                    {roomExprs.length}개 저장됨
-                  </Text>
-                </View>
-                <Text style={styles.chevron}>›</Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
+          {/* 카테고리 상세 */}
+          {selectedCategory && (
+            <View style={{ gap: 10 }}>
+              {expressions
+                .filter((e) => e.category === selectedCategory)
+                .map((e) => renderExpression(e, true))}
+            </View>
+          )}
 
-        {/* 카테고리 상세 */}
-        {selectedCategory && (
-          <View style={{ gap: 10 }}>
-            {expressions
-              .filter((e) => e.category === selectedCategory)
-              .map((e) => renderExpression(e, true))}
-          </View>
-        )}
-
-        {/* 대화방 상세 */}
-        {selectedRoom && (
-          <View style={{ gap: 10 }}>
-            {groupByRoom()[selectedRoom]?.map((e) => renderExpression(e))}
-          </View>
-        )}
+          {/* 대화방 상세 */}
+          {selectedRoom && (
+            <View style={{ gap: 10 }}>
+              {groupByRoom()[selectedRoom]?.map((e) => renderExpression(e))}
+            </View>
+          )}
         </ScrollView>
       )}
     </View>
@@ -4681,14 +4784,6 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
           <View style={{ gap: 10 }}>
             {CURRENT_SUBSCRIPTION?.plan === selectedPlan ? (
               <View style={{ gap: 8 }}>
-                <View style={pyStyles.currentPlanBox}>
-                  <Text style={pyStyles.currentPlanText}>
-                    현재 구독 중인 플랜입니다
-                  </Text>
-                  <Text style={pyStyles.currentPlanSub}>
-                    다음 결제일: {CURRENT_SUBSCRIPTION.nextBillingDate}
-                  </Text>
-                </View>
                 <Pressable style={pyStyles.cancelBtn} onPress={handleCancel}>
                   <Text style={pyStyles.cancelBtnText}>구독 취소</Text>
                 </Pressable>
@@ -4731,7 +4826,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/faq";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -5524,7 +5619,7 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // 홈 화면에서 성공하셨던 그 주소 그대로 호출합니다!
         const res = await axios.get(`${API_URL}/api/users/me`, {
@@ -5579,7 +5674,7 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
       // '결정' 버튼을 눌렀을 때 -> 서버로 변경된 레벨 전송
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // ⭐️ 1. 저장된 토큰이 아예 없거나 null인지 확인!
         console.log("📌 현재 저장된 토큰:", accessToken);
@@ -5665,21 +5760,6 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
             <View style={{ flex: 1 }}>
               <Text style={mpStyles.nickname}>{userInfo.nickname}</Text>
               <Text style={mpStyles.email}>{userInfo.email}</Text>
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                  marginTop: 6,
-                }}
-              >
-                <View
-                  style={[mpStyles.dot, { backgroundColor: currentLevel.dot }]}
-                />
-                <Text style={mpStyles.levelSmall}>
-                  {currentLevel.id} · {currentLevel.eng}
-                </Text>
-              </View>
             </View>
             <Pressable onPress={logout} style={mpStyles.logoutBtn}>
               <Text style={mpStyles.logoutText}>로그아웃</Text>
@@ -5761,7 +5841,25 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
                   <Text
                     style={[mpStyles.barDay, isToday && { color: primary }]}
                   >
-                    {item.day}
+                    {/* ⭐️ 영어 요일을 한글로 매핑해주는 객체 활용 */}
+                    {
+                      {
+                        Mon: "월",
+                        Tue: "화",
+                        Wed: "수",
+                        Thu: "목",
+                        Fri: "금",
+                        Sat: "토",
+                        Sun: "일",
+                        MON: "월",
+                        TUE: "화",
+                        WED: "수",
+                        THU: "목",
+                        FRI: "금",
+                        SAT: "토",
+                        SUN: "일",
+                      }[item.day] || item.day // 매핑되는 게 없으면 원래 값 출력
+                    }
                   </Text>
                 </View>
               );
