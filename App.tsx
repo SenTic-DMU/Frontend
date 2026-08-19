@@ -5597,19 +5597,25 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
 
   // ⭐️ 1. 서버에서 받아올 사용자 정보를 담을 상태(State) 생성
   const [userInfo, setUserInfo] = useState({ nickname: "회원", email: "" });
-  const weekly = [
-    { day: "Mon", minute: 45, date: "04/07" },
-    { day: "Tue", minute: 60, date: "04/08" },
-    { day: "Wed", minute: 30, date: "04/09" },
-    { day: "Thu", minute: 75, date: "04/10" },
-    { day: "Fri", minute: 50, date: "04/11" },
-    { day: "Sat", minute: 90, date: "04/12" },
-    { day: "Sun", minute: 65, date: "04/13" },
-  ];
 
-  const totalMinutes = weekly.reduce((sum, item) => sum + item.minute, 0);
-  const maxMinutes = Math.max(...weekly.map((item) => item.minute));
-  const avgMinutes = Math.round(totalMinutes / weekly.length);
+  // ⭐️ 1. weekly 데이터가 어떻게 생겼는지 TypeScript에게 알려주는 타입 정의
+  type WeeklyStat = {
+    day: string;
+    minute: number;
+    date?: string;
+  };
+
+  // ⭐️ 2. 기존 더미데이터였던 통계 값들을 State로 변경!
+  const [weekly, setWeekly] = useState<WeeklyStat[]>([]);
+  const [totalMinutes, setTotalMinutes] = useState(0);
+  const [avgMinutes, setAvgMinutes] = useState(0);
+  const [continuousDays, setContinuousDays] = useState(0); // 앞서 말한 연속 출석일용
+
+  // ⭐️ 3. TypeScript가 minute를 확실히 숫자로 인식하므로 빨간 줄이 사라집니다!
+  const maxMinutes =
+    weekly.length > 0
+      ? Math.max(...weekly.map((item) => Number(item.minute)))
+      : 100;
 
   const currentLevel = levels.find((l) => l.id === userLevel)!;
 
@@ -5650,6 +5656,41 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
 
     fetchMyProfile();
   }, []); // 빈 배열을 넣어 화면이 처음 렌더링될 때 딱 한 번만 실행되게 합니다.
+
+  // ⭐️ 3. 방금 백엔드에서 만든 학습 통계 API 호출하기!
+  useEffect(() => {
+    const fetchStudyStats = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        if (!accessToken) return;
+
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+        const res = await axios.get(`${API_URL}/api/users/study-stats`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true",
+          },
+        });
+
+        // ⭐️ 서버에서 받아온 데이터를 State에 꽂아줍니다!
+        // (데이터 형식이 res.data.data.weekly 등일 수 있으니 백엔드 응답에 맞춰 수정이 필요할 수 있습니다)
+        setWeekly(res.data?.weekly || []);
+        setTotalMinutes(res.data?.totalMinutes || 0);
+        setAvgMinutes(res.data?.avgMinutes || 0);
+
+        // 만약 서버에서 연속 접속일 데이터도 준다면:
+        // setContinuousDays(res.data?.continuousDays || 0);
+      } catch (error: any) {
+        console.error(
+          "🚨 통계 데이터 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+
+    fetchStudyStats();
+  }, []);
 
   // ⭐️ 2. 그래프를 0.15초 뒤에 슉! 올라오게 만드는 useEffect (이게 있어야 그래프가 보입니다!)
   useEffect(() => {
@@ -5752,11 +5793,8 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
         {/* 프로필 카드 */}
         <View style={mpStyles.card}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-            <View style={mpStyles.avatar}>
-              <Text style={mpStyles.avatarText}>
-                {userInfo.nickname.charAt(0)}
-              </Text>
-            </View>
+            {/* ❌ avatar View 부분을 통째로 삭제했습니다! */}
+
             <View style={{ flex: 1 }}>
               <Text style={mpStyles.nickname}>{userInfo.nickname}</Text>
               <Text style={mpStyles.email}>{userInfo.email}</Text>
@@ -5767,24 +5805,41 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
           </View>
         </View>
 
-        {/* 학습 통계 */}
+        {/* ⭐️ 2. 학습 통계 부분 수정 */}
         <View style={{ flexDirection: "row", gap: 10 }}>
-          {[
-            {
-              label: "이번 주",
-              value: `${Math.round((totalMinutes / 60) * 10) / 10}h`,
-            },
-            { label: "일 평균", value: `${avgMinutes}분` },
-            { label: "연속 학습", value: "5일" },
-          ].map((stat) => (
-            <View key={stat.label} style={mpStyles.statBox}>
-              <Text style={mpStyles.statLabel}>{stat.label}</Text>
-              <Text style={mpStyles.statValue}>{stat.value}</Text>
+          {/* 이번 주 학습 시간 */}
+          <View style={mpStyles.statBox}>
+            <Text style={mpStyles.statLabel}>이번 주</Text>
+            <Text style={mpStyles.statValue}>
+              {Math.round((totalMinutes / 60) * 10) / 10}h
+            </Text>
+          </View>
+
+          {/* 일 평균 학습 시간 */}
+          <View style={mpStyles.statBox}>
+            <Text style={mpStyles.statLabel}>일 평균</Text>
+            <Text style={mpStyles.statValue}>{avgMinutes}분</Text>
+          </View>
+
+          {/* ⭐️ 연속 학습일 */}
+          <View style={mpStyles.statBox}>
+            <Text style={mpStyles.statLabel}>연속 학습</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                marginTop: 4,
+              }}
+            >
+              <Text style={[mpStyles.statValue, { marginTop: 0 }]}>
+                {continuousDays}일
+              </Text>
             </View>
-          ))}
+          </View>
         </View>
 
-        {/* 주간 그래프 */}
+        {/* 주간 그래프 (기존 코드 거의 동일, maxMinutes 방어 로직만 추가됨) */}
         <View style={mpStyles.card}>
           <View
             style={{
@@ -5810,12 +5865,16 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
           >
             {weekly.map((item, index) => {
               const isToday = index === weekly.length - 1;
+
+              // ⭐️ maxMinutes가 0일 때 NaN이 되는 것을 방지
+              const ratio = maxMinutes > 0 ? item.minute / maxMinutes : 0;
               const barH = isAnimated
-                ? Math.max(8, (item.minute / maxMinutes) * (CHART_HEIGHT - 28))
+                ? Math.max(8, ratio * (CHART_HEIGHT - 28))
                 : 0;
+
               return (
                 <View
-                  key={item.day}
+                  key={item.day || index.toString()} // 혹시 day가 없을 때를 대비
                   style={{
                     flex: 1,
                     alignItems: "center",
@@ -5841,25 +5900,22 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
                   <Text
                     style={[mpStyles.barDay, isToday && { color: primary }]}
                   >
-                    {/* ⭐️ 영어 요일을 한글로 매핑해주는 객체 활용 */}
-                    {
-                      {
-                        Mon: "월",
-                        Tue: "화",
-                        Wed: "수",
-                        Thu: "목",
-                        Fri: "금",
-                        Sat: "토",
-                        Sun: "일",
-                        MON: "월",
-                        TUE: "화",
-                        WED: "수",
-                        THU: "목",
-                        FRI: "금",
-                        SAT: "토",
-                        SUN: "일",
-                      }[item.day] || item.day // 매핑되는 게 없으면 원래 값 출력
-                    }
+                    {{
+                      Mon: "월",
+                      Tue: "화",
+                      Wed: "수",
+                      Thu: "목",
+                      Fri: "금",
+                      Sat: "토",
+                      Sun: "일",
+                      MON: "월",
+                      TUE: "화",
+                      WED: "수",
+                      THU: "목",
+                      FRI: "금",
+                      SAT: "토",
+                      SUN: "일",
+                    }[item.day] || item.day}
                   </Text>
                 </View>
               );
