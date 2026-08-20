@@ -19,6 +19,11 @@ import {
   View,
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  useFonts,
+  LilyScriptOne_400Regular,
+} from "@expo-google-fonts/lily-script-one";
 import * as ImagePicker from "expo-image-picker";
 import { WebView } from "react-native-webview";
 // ⭐️ 음성 재생을 위해 expo-av에서 Audio를 꼭 불러와야 합니다!
@@ -184,6 +189,7 @@ const TEST_CHAT_MESSAGES = [
 ];
 
 export default function App() {
+  const [fontsLoaded] = useFonts({ LilyScriptOne_400Regular });
   const [screen, setScreen] = useState<Screen>("login");
 
   // ⭐️ 1. 더미 데이터를 지우고, 상태(State)로 음성방을 관리하도록 추가합니다!
@@ -304,6 +310,16 @@ export default function App() {
       setKakaoLoggingIn(false);
     }
   };
+
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaView
+        style={[styles.safe, { alignItems: "center", justifyContent: "center" }]}
+      >
+        <ActivityIndicator size="large" color={primary} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -705,7 +721,8 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
         )}
         {usernameChecked === "available" && (
           <Text style={styles.signupSuccessText}>
-            ✓ 사용 가능한 아이디입니다
+            <Ionicons name="checkmark" size={12} color="#16A34A" />{" "}
+            사용 가능한 아이디입니다
           </Text>
         )}
 
@@ -802,14 +819,14 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
         </View>
         <Text style={styles.sectionTitle}>학습 모드</Text>
         <ModeCard
-          icon="🎙"
+          icon="mic-outline"
           title="음성 대화"
           desc="AI와 실시간 영어 회화 연습"
           color={primary}
           onPress={() => go("voiceRooms")}
         />
         <ModeCard
-          icon="💬"
+          icon="chatbubbles-outline"
           title="채팅 대화"
           desc="텍스트로 편하게 영어 채팅"
           color="#16A34A"
@@ -951,9 +968,11 @@ export function RoomListScreen({
             onLongPress={() => handleDeleteRoom(room.id, room.title)}
           >
             <View style={styles.voiceRoomIcon}>
-              <Text style={styles.voiceRoomIconText}>
-                {mode === "voice" ? "🎙" : "💬"}
-              </Text>
+              <Ionicons
+                name={mode === "voice" ? "mic-outline" : "chatbubbles-outline"}
+                size={18}
+                color={primary}
+              />
             </View>
             <View style={styles.roomPreview}>
               <View style={styles.roomPreviewTop}>
@@ -1126,6 +1145,14 @@ function SituationScreen({
         },
       );
 
+      if (response.data?.success === false) {
+        Alert.alert(
+          "방 생성 실패",
+          response.data?.message ?? "부적절한 상황 설정이에요.",
+        );
+        return;
+      }
+
       const newRoomId = response.data?.data?.id || response.data?.id;
 
       if (!newRoomId) {
@@ -1150,7 +1177,7 @@ function SituationScreen({
       );
       Alert.alert(
         "방 생성 실패",
-        "상황을 설정하는 중 서버 오류가 발생했습니다.",
+        error.response?.data?.message ?? "상황을 설정하는 중 서버 오류가 발생했습니다.",
       );
     } finally {
       setLoading(false);
@@ -1222,7 +1249,7 @@ function SituationScreen({
                   <Image source={{ uri: char.photoUri }} style={styles.photo} />
                 ) : (
                   <View style={styles.photoSlot}>
-                    <Text style={styles.cameraText}>📷</Text>
+                    <Ionicons name="camera-outline" size={22} color="#9CA3AF" />
                   </View>
                 )}
               </Pressable>
@@ -1281,6 +1308,9 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
 
   const [recording, setRecording] = useState<any>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [visibleFeedback, setVisibleFeedback] = useState<
+    FeedbackData[] | null
+  >(null);
 
   // 🎙️ 마이크 펄스 링 애니메이션 (녹음 중 반복 확대/축소)
   const micPulseAnim = useRef(new Animated.Value(1)).current;
@@ -1483,6 +1513,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   };
 
   const startRecording = async () => {
+    setVisibleFeedback(null);
     try {
       const permission = await Audio.requestPermissionsAsync();
       if (permission.status !== "granted") {
@@ -1546,6 +1577,14 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
         },
       );
 
+      if (response.data?.success === false) {
+        Alert.alert(
+          "전송 불가",
+          response.data?.message ?? "부적절한 내용이 포함되어 있어요.",
+        );
+        return;
+      }
+
       const responseData = response.data?.data || response.data;
 
       const userText = responseData?.userText || responseData?.content;
@@ -1561,6 +1600,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
           parsedFeedback = Array.isArray(rawFeedback)
             ? rawFeedback
             : [rawFeedback];
+          setVisibleFeedback(parsedFeedback);
         }
 
         newMessages.push({
@@ -1600,7 +1640,10 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
         "🚨 음성 전송 실패:",
         error.response?.data || error.message,
       );
-      Alert.alert("오류", "메시지를 전송하지 못했습니다.");
+      Alert.alert(
+        "전송 실패",
+        error.response?.data?.message ?? "메시지를 전송하지 못했습니다.",
+      );
     }
   };
 
@@ -1615,11 +1658,13 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
       {tab === "call" && (
         <View style={styles.callBody}>
           <View style={styles.callFeedbackSlot}>
-            {inCall &&
-              [...messages]
-                .reverse()
-                .find((m) => m.speaker === "user" && m.feedback)
-                ?.feedback?.map((item: any, index: number) => (
+            {inCall && visibleFeedback && (
+              <ScrollView
+                style={styles.feedbackScroll}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={false}
+              >
+                {visibleFeedback.map((item: any, index: number) => (
                   <View key={index} style={styles.feedbackCard}>
                     {renderFeedbackSection("단어 오류", item.wordErrors, "💡")}
                     {renderFeedbackSection(
@@ -1646,10 +1691,16 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
                       )}
                   </View>
                 ))}
+              </ScrollView>
+            )}
           </View>
           <View style={styles.avatarRingOuter}>
             <View style={[styles.avatarLarge, inCall && styles.avatarActive]}>
-              <Text style={styles.avatarEmoji}>{isPlaying ? "🎵" : "🤖"}</Text>
+              {isPlaying ? (
+                <Ionicons name="musical-notes" size={44} color={primary} />
+              ) : (
+                <MaterialCommunityIcons name="robot-outline" size={44} color={primary} />
+              )}
             </View>
           </View>
           <Text style={styles.h2}>AI 파트너</Text>
@@ -1796,7 +1847,7 @@ const renderFeedbackSection = (
                 >
                   {errorItem.original}
                 </Text>{" "}
-                ➡️{" "}
+                <Ionicons name="arrow-forward" size={13} color="#4caf50" />{" "}
                 <Text style={{ color: "#4caf50", fontWeight: "bold" }}>
                   {errorItem.suggested || errorItem.corrected}
                 </Text>
@@ -1994,6 +2045,16 @@ export function TextChatScreen({
         },
       );
 
+      if (response.data?.success === false) {
+        setMessages((prev) => prev.filter((msg) => msg.id !== userMsgId));
+        setInput(text);
+        Alert.alert(
+          "전송 불가",
+          response.data?.message ?? "부적절한 내용이 포함되어 있어요.",
+        );
+        return;
+      }
+
       if (response.data) {
         const aiFeedback = response.data.data?.feedback;
         if (aiFeedback) {
@@ -2026,6 +2087,12 @@ export function TextChatScreen({
       console.error(
         "🚨 통신 에러 상세:",
         error.response?.data || error.message,
+      );
+      setMessages((prev) => prev.filter((msg) => msg.id !== userMsgId));
+      setInput(text);
+      Alert.alert(
+        "전송 실패",
+        error.response?.data?.message ?? "메시지를 전송하지 못했습니다.",
       );
     }
   };
@@ -2455,7 +2522,8 @@ function FindAccountScreen({ go }: { go: (screen: Screen) => void }) {
             />
             {foundLoginId && (
               <Text style={styles.signupSuccessText}>
-                ✓ 가입된 아이디: {foundLoginId}
+                <Ionicons name="checkmark" size={12} color="#16A34A" />{" "}
+                가입된 아이디: {foundLoginId}
               </Text>
             )}
             <Pressable
@@ -2519,7 +2587,10 @@ function FindAccountScreen({ go }: { go: (screen: Screen) => void }) {
               </Pressable>
             </View>
             {rpVerified && (
-              <Text style={styles.signupSuccessText}>✓ 인증 완료</Text>
+              <Text style={styles.signupSuccessText}>
+                <Ionicons name="checkmark" size={12} color="#16A34A" /> 인증
+                완료
+              </Text>
             )}
             {rpCodeSent && !rpVerified && (
               <View style={[styles.signupInlineRow, { marginTop: 10 }]}>
@@ -2666,7 +2737,9 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
         <ScrollView contentContainerStyle={ntStyles.detailContent}>
           {selectedNotice.pinned && (
             <View style={ntStyles.importantBadge}>
-              <Text style={ntStyles.importantBadgeText}>📌 중요 공지</Text>
+              <Text style={ntStyles.importantBadgeText}>
+                <Ionicons name="pin" size={11} color="#EF4444" /> 중요 공지
+              </Text>
             </View>
           )}
           <Text style={ntStyles.detailTitle}>{selectedNotice.title}</Text>
@@ -2701,7 +2774,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
                 marginBottom: 10,
               }}
             >
-              <Text style={ntStyles.sectionIcon}>📌</Text>
+              <Ionicons name="pin" size={12} color="#EF4444" />
               <Text style={ntStyles.sectionLabelImportant}>중요 공지</Text>
             </View>
             <View style={{ gap: 8 }}>
@@ -2906,9 +2979,10 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
             onPress={() => deleteExpression(expr.id)}
             style={bkStyles.deleteBtn}
           >
-            <Text style={bkStyles.deleteBtnText}>🗑</Text>
+            <Ionicons name="trash-outline" size={16} color="#9CA3AF" />
           </Pressable>
         </View>
+<<<<<<< Updated upstream
         {expr.source === "ai" && (
           <Text style={bkStyles.exprSourceTag}>AI 답변에서 저장됨</Text>
         )}
@@ -2916,18 +2990,132 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
     );
   };
 
+=======
+        <View style={bkStyles.exprSourceRow}>
+          <Text style={bkStyles.exprSourceLabel}>
+            {expr.roomType === "voice"
+              ? "음성대화에서 저장"
+              : "채팅대화에서 저장"}
+          </Text>
+          {expr.source === "ai" && (
+            <View style={bkStyles.aiSourceBadge}>
+              <MaterialCommunityIcons
+                name="robot-outline"
+                size={10}
+                color={primary}
+              />
+              <Text style={bkStyles.aiSourceBadgeText}>AI 답변</Text>
+            </View>
+          )}
+        </View>
+      </Pressable>
+    );
+  };
+
+  // 🧩 홈 화면 카드용 미리보기 — 단어 목록을 바로 보여주는 대신
+  // 카테고리/대화방 요약만 작게 보여줍니다. 자세히는 "전체보기"로 이동.
+  if (embedded) {
+    const previewRooms = Object.entries(groupByRoom()).slice(0, 1);
+    return (
+      <View style={{ gap: 12 }}>
+        <View style={bkStyles.tabContainer}>
+          <Pressable
+            style={[
+              bkStyles.tab,
+              viewMode === "by-category" && bkStyles.tabActive,
+            ]}
+            onPress={() => setViewMode("by-category")}
+          >
+            <Text
+              style={[
+                bkStyles.tabText,
+                viewMode === "by-category" && bkStyles.tabTextActive,
+              ]}
+            >
+              카테고리
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[bkStyles.tab, viewMode === "by-room" && bkStyles.tabActive]}
+            onPress={() => setViewMode("by-room")}
+          >
+            <Text
+              style={[
+                bkStyles.tabText,
+                viewMode === "by-room" && bkStyles.tabTextActive,
+              ]}
+            >
+              대화방
+            </Text>
+          </Pressable>
+        </View>
+
+        {loading ? (
+          <ActivityIndicator size="small" color={primary} />
+        ) : viewMode === "by-category" ? (
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {(["단어", "문법", "문장"] as Category[]).map((cat) => {
+              const count = expressions.filter(
+                (e) => e.category === cat,
+              ).length;
+              const config = categoryConfig[cat];
+              return (
+                <Pressable
+                  key={cat}
+                  style={[bkStyles.homeCatChip, { backgroundColor: config.bg }]}
+                  onPress={() => go("bookmarks")}
+                >
+                  <Text
+                    style={[bkStyles.homeCatChipTitle, { color: config.color }]}
+                  >
+                    {cat}
+                  </Text>
+                  <Text style={bkStyles.homeCatChipCount}>{count}개 저장됨</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : previewRooms.length === 0 ? (
+          <Text style={{ color: "#9CA3AF", fontSize: 13 }}>
+            아직 저장된 표현이 없어요
+          </Text>
+        ) : (
+          <View style={{ gap: 8 }}>
+            {previewRooms.map(([roomKey, roomExprs]) => (
+              <Pressable
+                key={roomKey}
+                style={bkStyles.homeRoomRow}
+                onPress={() => go("bookmarks")}
+              >
+                <View style={bkStyles.homeRoomIcon}>
+                  <Ionicons name="folder-outline" size={15} color="#9CA3AF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={bkStyles.homeRoomTitle} numberOfLines={1}>
+                    {roomExprs[0]?.roomName ?? ""}
+                  </Text>
+                  <Text style={bkStyles.homeRoomSub}>
+                    {roomExprs.length}개 저장됨
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  }
+
+>>>>>>> Stashed changes
   return (
     <View style={styles.screenSoft}>
       {/* 헤더 */}
       {isInsideDetail ? (
         <View style={bkStyles.header}>
-          <Pressable
-            style={bkStyles.backBtn}
-            onPress={() => {
-              setSelectedCategory(null);
-              setSelectedRoom(null);
-            }}
+          <View
+            style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
           >
+<<<<<<< Updated upstream
             <Text style={bkStyles.backIcon}>‹</Text>
           </Pressable>
           <View>
@@ -2939,6 +3127,30 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
                 ? `${expressions.filter((e) => e.category === selectedCategory).length}개 저장됨`
                 : `${groupByRoom()[selectedRoom!]?.length ?? 0}개 저장됨`}
             </Text>
+=======
+            <Pressable
+              style={bkStyles.backBtn}
+              onPress={() => {
+                setSelectedCategory(null);
+                setSelectedRoom(null);
+              }}
+            >
+              <Text style={bkStyles.backIcon}>‹</Text>
+            </Pressable>
+            <View>
+              <Text style={bkStyles.headerTitle}>
+                {selectedCategory ??
+                  (selectedRoom
+                    ? (groupByRoom()[selectedRoom]?.[0]?.roomName ?? "")
+                    : "")}
+              </Text>
+              <Text style={bkStyles.headerSub}>
+                {selectedCategory
+                  ? `${expressions.filter((e) => e.category === selectedCategory).length}개 저장됨`
+                  : `${groupByRoom()[selectedRoom!]?.length ?? 0}개 저장됨`}
+              </Text>
+            </View>
+>>>>>>> Stashed changes
           </View>
         </View>
       ) : (
@@ -2979,7 +3191,7 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
                   viewMode === "by-category" && bkStyles.tabTextActive,
                 ]}
               >
-                카테고리 🏷
+                카테고리
               </Text>
             </Pressable>
             <Pressable
@@ -2998,7 +3210,7 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
                   viewMode === "by-room" && bkStyles.tabTextActive,
                 ]}
               >
-                대화방 📁
+                대화방
               </Text>
             </Pressable>
           </View>
@@ -3024,8 +3236,42 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
                     style={[bkStyles.catIcon, { backgroundColor: config.bg }]}
                   >
                     <View
+<<<<<<< Updated upstream
                       style={[bkStyles.catDot, { backgroundColor: config.dot }]}
                     />
+=======
+                      style={[bkStyles.catIcon, { backgroundColor: config.bg }]}
+                    >
+                      <View
+                        style={[
+                          bkStyles.catDot,
+                          { backgroundColor: config.dot },
+                        ]}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={bkStyles.listCardTitle}>{cat}</Text>
+                      <Text style={bkStyles.listCardSub}>{count}개 저장됨</Text>
+                    </View>
+                    <Text style={styles.chevron}>›</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+
+          {/* 대화방 목록 */}
+          {!isInsideDetail && viewMode === "by-room" && (
+            <View style={{ gap: 10 }}>
+              {Object.entries(groupByRoom()).map(([roomKey, roomExprs]) => (
+                <Pressable
+                  key={roomKey}
+                  style={bkStyles.listCard}
+                  onPress={() => setSelectedRoom(roomKey)}
+                >
+                  <View style={bkStyles.roomIcon}>
+                    <Ionicons name="folder-outline" size={18} color="#9CA3AF" />
+>>>>>>> Stashed changes
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={bkStyles.listCardTitle}>{cat}</Text>
@@ -3193,7 +3439,7 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
         <View style={stStyles.card}>
           <View style={stStyles.row}>
             <View style={stStyles.iconWrapBlue}>
-              <Text style={{ fontSize: 15 }}>🔔</Text>
+              <Ionicons name="notifications-outline" size={16} color="#2563EB" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={stStyles.rowTitle}>푸시 알림</Text>
@@ -3211,7 +3457,7 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
         <View style={stStyles.card}>
           <Pressable style={stStyles.row} onPress={() => go("faq")}>
             <View style={stStyles.iconWrapPurple}>
-              <Text style={{ fontSize: 15 }}>❓</Text>
+              <Ionicons name="help-circle-outline" size={16} color="#7C3AED" />
             </View>
             <Text style={[stStyles.rowTitle, { flex: 1 }]}>자주 묻는 질문</Text>
             <Text style={styles.chevron}>›</Text>
@@ -3221,7 +3467,7 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
         {/* 로그아웃 */}
         <Pressable style={stStyles.logoutBtn} onPress={logout}>
           <View style={stStyles.iconWrapRed}>
-            <Text style={{ fontSize: 15 }}>🚪</Text>
+            <Ionicons name="log-out-outline" size={16} color="#EF4444" />
           </View>
           <Text style={stStyles.logoutText}>로그아웃</Text>
         </Pressable>
@@ -3232,7 +3478,7 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
           onPress={openWithdrawModal}
         >
           <View style={stStyles.iconWrapGray}>
-            <Text style={{ fontSize: 15 }}>🚫</Text>
+            <Ionicons name="person-remove-outline" size={16} color="#6B7280" />
           </View>
           <Text style={stStyles.withdrawText}>회원탈퇴</Text>
         </Pressable>
@@ -3386,7 +3632,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
               }}
             >
               <View style={pyStyles.crownWrap}>
-                <Text style={{ fontSize: 20 }}>👑</Text>
+                <MaterialCommunityIcons name="crown" size={20} color="#FFFFFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={pyStyles.bannerSub}>현재 구독 중</Text>
@@ -3400,13 +3646,19 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
             </View>
             <View style={{ flexDirection: "row", gap: 10 }}>
               <View style={pyStyles.bannerInfoBox}>
-                <Text style={pyStyles.bannerInfoLabel}>⏱ 남은 기간</Text>
+                <Text style={pyStyles.bannerInfoLabel}>
+                  <Ionicons name="time-outline" size={10} color="#C7D2FE" />{" "}
+                  남은 기간
+                </Text>
                 <Text style={pyStyles.bannerInfoValue}>
                   D-{CURRENT_SUBSCRIPTION.daysLeft}
                 </Text>
               </View>
               <View style={pyStyles.bannerInfoBox}>
-                <Text style={pyStyles.bannerInfoLabel}>📅 다음 결제일</Text>
+                <Text style={pyStyles.bannerInfoLabel}>
+                  <Ionicons name="calendar-outline" size={10} color="#C7D2FE" />{" "}
+                  다음 결제일
+                </Text>
                 <Text style={pyStyles.bannerInfoValue}>
                   {CURRENT_SUBSCRIPTION.nextBillingDate}
                 </Text>
@@ -3416,7 +3668,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
         ) : (
           <View style={[pyStyles.banner, { alignItems: "center" }]}>
             <View style={[pyStyles.crownWrap, { marginBottom: 12 }]}>
-              <Text style={{ fontSize: 20 }}>👑</Text>
+              <MaterialCommunityIcons name="crown" size={20} color="#FFFFFF" />
             </View>
             <Text style={pyStyles.bannerTitle}>
               무제한 학습으로 영어 실력 향상
@@ -3523,14 +3775,11 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
                         gap: 8,
                       }}
                     >
-                      <Text
-                        style={{
-                          color: isSelected ? primary : "#D1D5DB",
-                          fontSize: 12,
-                        }}
-                      >
-                        ✓
-                      </Text>
+                      <Ionicons
+                        name="checkmark"
+                        size={14}
+                        color={isSelected ? primary : "#D1D5DB"}
+                      />
                       <Text
                         style={[
                           pyStyles.featureText,
@@ -3553,7 +3802,8 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
         {selectedPlan === "yearly" && (
           <View style={pyStyles.savingBox}>
             <Text style={pyStyles.savingText}>
-              💰 월간 대비{" "}
+              <Ionicons name="cash-outline" size={12} color="#15803D" /> 월간
+              대비{" "}
               <Text style={{ fontWeight: "800" }}>약 31,700원 절약</Text>됩니다
               (연 기준)
             </Text>
@@ -4158,6 +4408,36 @@ const bkStyles = StyleSheet.create({
   tabText: { color: "#6B7280", fontSize: 12, fontWeight: "700" },
   tabTextActive: { color: "#111827" },
   content: { padding: 16, paddingBottom: 32 },
+  homeCatChip: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    gap: 2,
+  },
+  homeCatChipTitle: { fontSize: 12, fontWeight: "700" },
+  homeCatChipCount: { fontSize: 10, color: "#9CA3AF" },
+  homeRoomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: 10,
+  },
+  homeRoomIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "#F9FAFB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  homeRoomTitle: { color: "#111827", fontSize: 13, fontWeight: "600" },
+  homeRoomSub: { color: "#9CA3AF", fontSize: 11, marginTop: 1 },
   listCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -4202,12 +4482,29 @@ const bkStyles = StyleSheet.create({
   exprTranslation: { color: "#9CA3AF", fontSize: 12 },
   exprMeta: { color: "#9CA3AF", fontSize: 10 },
   exprDate: { color: "#D1D5DB", fontSize: 10 },
-  exprSourceTag: {
+  exprSourceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 6,
+  },
+<<<<<<< Updated upstream
+=======
+  aiSourceBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#EEF2FF",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  aiSourceBadgeText: { fontSize: 10, fontWeight: "700", color: primary },
+  exprSourceLabel: {
     color: "#9CA3AF",
     fontSize: 10,
-    marginTop: 6,
-    alignSelf: "flex-end",
   },
+>>>>>>> Stashed changes
   catBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   catBadgeText: { fontSize: 10, fontWeight: "700" },
   deleteBtn: {
@@ -4217,7 +4514,6 @@ const bkStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  deleteBtnText: { fontSize: 13 },
 });
 
 const ntStyles = StyleSheet.create({
@@ -4938,19 +5234,13 @@ function Header({
       {actions ? (
         <View style={styles.headerActions}>
           <Pressable onPress={() => go("notice")} style={styles.headerAction}>
-            <Text>📣</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => go("bookmarks")}
-            style={styles.headerAction}
-          >
-            <Text>🔖</Text>
+            <Ionicons name="megaphone-outline" size={20} color="#4B5563" />
           </Pressable>
           <Pressable onPress={() => go("mypage")} style={styles.headerAction}>
-            <Text>👤</Text>
+            <Ionicons name="person-outline" size={20} color="#4B5563" />
           </Pressable>
           <Pressable onPress={() => go("settings")} style={styles.headerAction}>
-            <Text>⚙️</Text>
+            <Ionicons name="settings-outline" size={20} color="#4B5563" />
           </Pressable>
         </View>
       ) : (
@@ -4981,7 +5271,7 @@ function ModeCard({
   color,
   onPress,
 }: {
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   title: string;
   desc: string;
   color: string;
@@ -4990,7 +5280,7 @@ function ModeCard({
   return (
     <Pressable style={styles.modeCard} onPress={onPress}>
       <View style={[styles.modeIcon, { backgroundColor: `${color}18` }]}>
-        <Text style={styles.modeIconText}>{icon}</Text>
+        <Ionicons name={icon} size={25} color={color} />
       </View>
       <View style={styles.flex}>
         <Text style={styles.cardTitle}>{title}</Text>
@@ -5075,7 +5365,8 @@ const renderMessageFeedbackSection = (
                 {errorItem.original}
               </Text>
               <Text style={styles.msgFeedbackCorrected}>
-                ➡️ {errorItem.suggested || errorItem.corrected}
+                <Ionicons name="arrow-forward" size={14} color="#4caf50" />{" "}
+                {errorItem.suggested || errorItem.corrected}
               </Text>
               {errorItem.explanation ? (
                 <Text style={styles.msgFeedbackExplanation}>
@@ -5282,7 +5573,12 @@ export function FeedbackList({
     // (기존 emptyState 스타일은 프로젝트 설정에 맞게 유지)
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <Text style={{ fontSize: 30, marginBottom: 10 }}>🔕</Text>
+        <Ionicons
+          name="notifications-off-outline"
+          size={30}
+          color="#999"
+          style={{ marginBottom: 10 }}
+        />
         <Text style={{ color: "#999" }}>피드백이 꺼져 있습니다.</Text>
       </View>
     );
@@ -5428,8 +5724,17 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   loginContent: { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 28 },
   brandBlock: { alignItems: "center", paddingTop: 70, paddingBottom: 48 },
-  logo: { color: primary, fontSize: 50, fontWeight: "800", letterSpacing: 0 },
-  logoSmall: { color: primary, fontSize: 26, fontWeight: "800" },
+  logo: {
+    color: primary,
+    fontSize: 48,
+    fontFamily: "LilyScriptOne_400Regular",
+    letterSpacing: 0,
+  },
+  logoSmall: {
+    color: primary,
+    fontSize: 30,
+    fontFamily: "LilyScriptOne_400Regular",
+  },
   muted: { color: "#6B7280", fontSize: 14 },
   mutedSmall: { color: "#9CA3AF", fontSize: 12, marginTop: 4 },
   mutedBlock: {
@@ -5659,6 +5964,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+<<<<<<< Updated upstream
   modeIconText: { fontSize: 25 },
   card: {
     backgroundColor: "#FFFFFF",
@@ -5667,6 +5973,8 @@ const styles = StyleSheet.create({
     borderColor: "#F3F4F6",
     padding: 16,
   },
+=======
+>>>>>>> Stashed changes
   profileCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -5812,7 +6120,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  voiceRoomIconText: { fontSize: 18 },
   roomPreview: { flex: 1, minWidth: 0 },
   roomPreviewTop: {
     flexDirection: "row",
@@ -5882,7 +6189,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  cameraText: { fontSize: 22 },
   avatarOptions: { flex: 1, flexDirection: "row", gap: 8, flexWrap: "wrap" },
   avatarOption: {
     width: 38,
@@ -5940,6 +6246,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   callFeedbackSlot: { width: "100%", alignItems: "center", marginBottom: 12 },
+  feedbackScroll: { width: "100%", maxHeight: 160 },
   feedbackCard: {
     marginTop: 6,
     width: "100%",
@@ -5992,7 +6299,6 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: "#C7D2FE",
   },
-  avatarEmoji: { fontSize: 48 },
   callStatusRow: {
     flexDirection: "row",
     alignItems: "center",
