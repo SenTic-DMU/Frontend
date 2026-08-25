@@ -196,7 +196,7 @@ export default function App() {
         const token = await AsyncStorage.getItem("accessToken");
         if (!token) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // POST 방식으로 /start 또는 /end 주소로 찌릅니다 (바디 데이터는 없음)
         await axios.post(
@@ -269,7 +269,7 @@ export default function App() {
           return;
         }
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "ngrok-skip-browser-warning": "true", // 👈 혹시 빠져있었다면 이거 꼭 넣어주세요!
@@ -945,7 +945,7 @@ function ModeScreen({
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // ⭐️ 백엔드에서 알려준 정확한 주소(/api/users/me)로 수정!
         const res = await axios.get(`${API_URL}/api/users/me`, {
@@ -1070,7 +1070,8 @@ export function RoomListScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+              const API_URL =
+                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
               await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
@@ -1505,7 +1506,7 @@ export function VoiceChatScreen({
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
       // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
       if (scrapedKeys.has(key)) {
@@ -1637,7 +1638,7 @@ export function VoiceChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const currentRoomId = room.id;
 
         // ⭐️ 스크랩 내역과 메시지 내역 동시 호출!
@@ -1860,7 +1861,7 @@ export function VoiceChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const currentRoomId = room.id;
 
       // 통화 시작 상태로 변경
@@ -1973,7 +1974,7 @@ export function VoiceChatScreen({
   const sendVoiceToServer = async (fileUri: string) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
       const formData = new FormData();
       formData.append("file", {
@@ -2546,7 +2547,7 @@ export function TextChatScreen({
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
       // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
       if (scrapedKeys.has(key)) {
@@ -2623,7 +2624,7 @@ export function TextChatScreen({
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const payload = {
         content:
           "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
@@ -2667,7 +2668,7 @@ export function TextChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // ⭐️ 1. Promise.all을 사용하여 두 API를 동시에(병렬로) 호출합니다! (속도 2배 향상)
         const [messagesRes, scrapsRes] = await Promise.all([
@@ -2906,7 +2907,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const response = await axios.post(
         `${API_URL}/api/rooms/${room.id}/messages/chat`,
         { content: text },
@@ -3624,7 +3625,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
         // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
         const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/announcements";
 
         console.log("🚀 최종 요청 주소:", FULL_URL);
 
@@ -3888,7 +3889,7 @@ function BookmarksScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "ngrok-skip-browser-warning": "true",
@@ -3979,7 +3980,8 @@ function BookmarksScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+              const API_URL =
+                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
               await axios.delete(`${API_URL}/api/scraps/${expr.scrapId}`, {
                 headers: {
                   Authorization: `Bearer ${accessToken}`,
@@ -4885,7 +4887,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/faq";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -5684,7 +5686,7 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // 홈 화면에서 성공하셨던 그 주소 그대로 호출합니다!
         const res = await axios.get(`${API_URL}/api/users/me`, {
@@ -5725,7 +5727,7 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const res = await axios.get(`${API_URL}/api/users/study-stats`, {
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -5798,7 +5800,7 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
       // '결정' 버튼을 눌렀을 때 -> 서버로 변경된 레벨 전송
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // ⭐️ 1. 저장된 토큰이 아예 없거나 null인지 확인!
         console.log("📌 현재 저장된 토큰:", accessToken);
