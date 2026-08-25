@@ -18,6 +18,7 @@ import {
   Text,
   TextInput,
   View,
+  Linking,
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import * as ImagePicker from "expo-image-picker";
@@ -269,16 +270,17 @@ export default function App() {
           return;
         }
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        // ⭐️ 기존 헤더 코드에 백엔드가 알려준 옵션을 추가해 줍니다!
         const headers = {
           Authorization: `Bearer ${accessToken}`,
-          "ngrok-skip-browser-warning": "true", // 👈 혹시 빠져있었다면 이거 꼭 넣어주세요!
+          "ngrok-skip-browser-warning": "true", // 👈 추가된 부분!
         };
 
         // 1. 채팅방(Text) 목록 가져오기
         const chatResponse = await axios.get(
           `${API_URL}/api/rooms?roomType=CHAT`,
-          { headers },
+          { headers }, // 👈 방금 만든 무적 헤더가 여기에 쏙 들어갑니다.
         );
 
         // 2. 음성방(Voice) 목록 가져오기 (백엔드 파라미터가 'VOICE'라고 가정)
@@ -1070,7 +1072,8 @@ export function RoomListScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+              const API_URL =
+                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
               await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
@@ -1637,7 +1640,7 @@ export function VoiceChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const currentRoomId = room.id;
 
         // ⭐️ 스크랩 내역과 메시지 내역 동시 호출!
@@ -1860,7 +1863,7 @@ export function VoiceChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const currentRoomId = room.id;
 
       // 통화 시작 상태로 변경
@@ -1973,7 +1976,7 @@ export function VoiceChatScreen({
   const sendVoiceToServer = async (fileUri: string) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
       const formData = new FormData();
       formData.append("file", {
@@ -2623,7 +2626,7 @@ export function TextChatScreen({
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const payload = {
         content:
           "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
@@ -2906,7 +2909,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const response = await axios.post(
         `${API_URL}/api/rooms/${room.id}/messages/chat`,
         { content: text },
@@ -3624,7 +3627,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
         // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
         const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/announcements";
 
         console.log("🚀 최종 요청 주소:", FULL_URL);
 
@@ -4561,17 +4564,22 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
 function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
   type Plan = "free" | "monthly" | "yearly";
 
-  const CURRENT_SUBSCRIPTION: {
+  // ⭐️ 1. 더미 데이터 대신 서버에서 받아올 상태(State)를 만듭니다.
+  const [currentSubscription, setCurrentSubscription] = useState<{
     plan: Plan;
     nextBillingDate: string;
     daysLeft: number;
-  } | null = {
-    plan: "monthly",
-    nextBillingDate: "2026년 6월 11일",
-    daysLeft: 31,
-  };
+  } | null>(null);
 
-  const plans = {
+  const [loading, setLoading] = useState(true);
+  const [selectedPlan, setSelectedPlan] = useState<Plan>("monthly");
+
+  // ⭐️ 바로 여기! 기존 상태들 바로 밑에 쏙 넣어주세요!
+  const [showToss, setShowToss] = useState(false);
+  const [currentOrder, setCurrentOrder] = useState<any>(null);
+
+  // 플랜 정보는 가격이 자주 바뀌지 않는다면 프론트에 그대로 두어도 좋습니다.
+  const plans: Record<Plan, any> = {
     free: {
       name: "Free",
       price: "0",
@@ -4609,24 +4617,167 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
     },
   };
 
-  const [selectedPlan, setSelectedPlan] = useState<Plan>(
-    CURRENT_SUBSCRIPTION?.plan ?? "monthly",
-  );
+  // ⭐️ 2. 화면이 켜질 때 백엔드에서 내 결제(구독) 정보를 불러옵니다.
+  const fetchMySubscription = async () => {
+    try {
+      const token = await AsyncStorage.getItem("accessToken");
+      if (!token) return;
 
-  const handleSubscribe = () => {
-    Alert.alert("구독", `${plans[selectedPlan].name} 플랜 구독이 진행됩니다.`);
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+      // 1. 백엔드에서 알려준 새 주소로 변경 완료!
+      const res = await axios.get(`${API_URL}/api/payments/my`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "ngrok-skip-browser-warning": "true",
+        },
+      });
+
+      const paymentList = res.data.data;
+
+      // 2. 결제 내역 배열이 비어있지 않은지 확인
+      if (paymentList && paymentList.length > 0) {
+        // 보통 가장 최근 결제 내역이 0번째에 옵니다.
+        const latestPayment = paymentList[0];
+
+        // 3. 백엔드의 planId(숫자)를 프론트의 Plan(문자열)으로 변환!
+        // (금액이 14900원이니 planId: 2를 monthly로 매핑합니다)
+        let planString: Plan = "free";
+        if (latestPayment.planId === 2) planString = "monthly";
+        if (latestPayment.planId === 3) planString = "yearly";
+
+        // 4. 만료일(expiresAt)을 한글 포맷과 남은 일수로 예쁘게 계산
+        const expireDate = new Date(latestPayment.expiresAt);
+        const today = new Date();
+        const diffTime = expireDate.getTime() - today.getTime();
+        const calculatedDaysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // 밀리초 -> 일(day) 변환
+
+        const nextBillingDate = `${expireDate.getFullYear()}년 ${expireDate.getMonth() + 1}월 ${expireDate.getDate()}일`;
+
+        // 5. 프론트 화면용 상태 업데이트
+        setCurrentSubscription({
+          plan: planString,
+          nextBillingDate: nextBillingDate,
+          daysLeft: calculatedDaysLeft > 0 ? calculatedDaysLeft : 0,
+        });
+        setSelectedPlan(planString);
+      } else {
+        // 결제 내역이 비어있으면 구독 안 한 상태!
+        setCurrentSubscription(null);
+      }
+    } catch (error) {
+      console.error("🚨 구독 정보 불러오기 실패:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  useEffect(() => {
+    fetchMySubscription();
+  }, []);
+
+  // ⭐️ 3. 결제 버튼 눌렀을 때의 흐름
+  const handleSubscribe = async () => {
+    Alert.alert(
+      "구독 진행",
+      `${plans[selectedPlan].name} 플랜을 선택하시겠습니까?`,
+      [
+        { text: "취소", style: "cancel" },
+        {
+          text: "확인",
+          onPress: async () => {
+            const planInfo = {
+              free: { id: 1, amount: 0 },
+              monthly: { id: 2, amount: 14900 },
+              yearly: { id: 3, amount: 149000 },
+            };
+            const current = planInfo[selectedPlan];
+
+            try {
+              const token = await AsyncStorage.getItem("accessToken");
+              const API_URL =
+                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+              const headers = {
+                Authorization: `Bearer ${token}`,
+                "ngrok-skip-browser-warning": "true",
+              };
+
+              // 🟢 트랙 1: Free 플랜일 경우 (토스 결제창 생략)
+              if (selectedPlan === "free") {
+                await axios.post(
+                  `${API_URL}/api/payments/toss/confirm`,
+                  {
+                    /* ... 생략 ... */
+                  },
+                  { headers },
+                );
+                Alert.alert("변경 완료", "Free 플랜으로 변경되었습니다.");
+                fetchMySubscription();
+                return; // ⭐️ 여기서 Free 플랜은 함수가 끝납니다!
+              }
+
+              // ==========================================
+              // ⭐️ 바로 여기! 방금 가져오신 코드를 여기에 쏙 넣으시면 됩니다!
+              // ==========================================
+
+              // 🔵 트랙 2: Monthly / Yearly 유료 플랜일 경우
+              // 토스 결제창을 띄우기 위해 모달을 열고 결제 정보를 세팅합니다.
+              setCurrentOrder({
+                amount: current.amount,
+                planId: current.id,
+                planName: plans[selectedPlan].name,
+                orderId: `order-${Date.now()}`, // 주문번호 자동 생성
+              });
+              setShowToss(true); // 웹뷰 모달 열기!
+
+              // ==========================================
+            } catch (error: any) {
+              console.error(
+                "🚨 결제/플랜 변경 실패:",
+                error.response?.data || error.message,
+              );
+              Alert.alert("오류", "처리 중 문제가 발생했습니다.");
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // ⭐️ 4. 구독 취소하기
   const handleCancel = () => {
-    Alert.alert("구독 취소", "구독을 취소하시겠습니까?", [
+    Alert.alert("구독 취소", "정말 구독을 취소하시겠습니까?", [
       { text: "아니요", style: "cancel" },
       {
         text: "취소하기",
         style: "destructive",
-        onPress: () => Alert.alert("취소 완료", "구독이 취소되었습니다."),
+        onPress: async () => {
+          try {
+            const token = await AsyncStorage.getItem("accessToken");
+            const API_URL = "https://백엔드_API_주소_여기에_입력";
+
+            await axios.delete(`${API_URL}/api/subscriptions/me`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+
+            Alert.alert("취소 완료", "구독이 정상적으로 해지되었습니다.");
+            fetchMySubscription(); // 취소 후 화면 새로고침
+          } catch (error) {
+            Alert.alert("오류", "취소 중 문제가 발생했습니다.");
+          }
+        },
       },
     ]);
   };
+
+  // 로딩 중일 때 보여줄 화면
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color="#4F46E5" />
+      </View>
+    );
+  }
 
   return (
     <View
@@ -4654,7 +4805,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
         contentContainerStyle={pyStyles.content}
       >
         {/* 현재 구독 배너 */}
-        {CURRENT_SUBSCRIPTION ? (
+        {currentSubscription ? (
           <View style={pyStyles.banner}>
             <View
               style={{
@@ -4670,7 +4821,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
               <View style={{ flex: 1 }}>
                 <Text style={pyStyles.bannerSub}>현재 구독 중</Text>
                 <Text style={pyStyles.bannerTitle}>
-                  {plans[CURRENT_SUBSCRIPTION.plan].name} 플랜
+                  {plans[currentSubscription.plan].name} 플랜
                 </Text>
               </View>
               <View style={pyStyles.premiumTag}>
@@ -4681,13 +4832,13 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
               <View style={pyStyles.bannerInfoBox}>
                 <Text style={pyStyles.bannerInfoLabel}>⏱ 남은 기간</Text>
                 <Text style={pyStyles.bannerInfoValue}>
-                  D-{CURRENT_SUBSCRIPTION.daysLeft}
+                  D-{currentSubscription.daysLeft}
                 </Text>
               </View>
               <View style={pyStyles.bannerInfoBox}>
                 <Text style={pyStyles.bannerInfoLabel}>📅 다음 결제일</Text>
                 <Text style={pyStyles.bannerInfoValue}>
-                  {CURRENT_SUBSCRIPTION.nextBillingDate}
+                  {currentSubscription.nextBillingDate}
                 </Text>
               </View>
             </View>
@@ -4711,7 +4862,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
           {(["free", "monthly", "yearly"] as Plan[]).map((planId) => {
             const plan = plans[planId];
             const isSelected = selectedPlan === planId;
-            const isCurrent = CURRENT_SUBSCRIPTION?.plan === planId;
+            const isCurrent = currentSubscription?.plan === planId;
             const badge = "badge" in plan ? (plan as any).badge : null;
             return (
               <Pressable
@@ -4793,7 +4944,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
 
                 {/* 기능 목록 */}
                 <View style={{ gap: 6, paddingLeft: 24 }}>
-                  {plan.features.map((f) => (
+                  {plan.features.map((f: string) => (
                     <View
                       key={f}
                       style={{
@@ -4842,7 +4993,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
         {/* 결제 버튼 */}
         {selectedPlan !== "free" && (
           <View style={{ gap: 10 }}>
-            {CURRENT_SUBSCRIPTION?.plan === selectedPlan ? (
+            {currentSubscription?.plan === selectedPlan ? (
               <View style={{ gap: 8 }}>
                 <Pressable style={pyStyles.cancelBtn} onPress={handleCancel}>
                   <Text style={pyStyles.cancelBtnText}>구독 취소</Text>
@@ -4868,6 +5019,183 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
           </View>
         )}
       </ScrollView>
+      {/* ⭐️ 토스 결제창 모달 */}
+      {/* ⭐️ 방어막 추가: showToss가 켜져 있고, currentOrder 데이터가 확실히 있을 때만 모달을 그립니다! */}
+      {showToss && currentOrder && (
+        <Modal
+          visible={true}
+          animationType="slide"
+          onRequestClose={() => setShowToss(false)}
+        >
+          <WebView
+            style={{ flex: 1 }}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            originWhitelist={["*"]}
+            source={{
+              html: `
+                <!DOCTYPE html>
+                <html lang="ko">
+                  <head>
+                    <meta charset="utf-8" />
+                    <script src="https://js.tosspayments.com/v2/standard"></script>
+                  </head>
+                  <body>
+                    <div id="payment-method"></div>
+                    <div id="agreement"></div>
+                    <button id="payment-button" style="width:100%; padding:15px; background:#3182F6; color:white; border:none; border-radius:8px; font-size:16px; font-weight:bold; margin-top:20px;">결제하기</button>
+
+                    <script>
+                      main();
+                      async function main() {
+                        const button = document.getElementById("payment-button");
+                        
+                        const clientKey = "test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm";
+                        const tossPayments = TossPayments(clientKey);
+                        const customerKey = "A5IHwwhUdnF_7bnNQMYiM";
+                        
+                        const widgets = tossPayments.widgets({
+                          customerKey,
+                        });
+
+                        // ⭐️ currentOrder가 무조건 있기 때문에 안전하게 amount를 읽어옵니다.
+                        await widgets.setAmount({
+                          currency: "KRW",
+                          value: ${currentOrder.amount},
+                        });
+
+                        await Promise.all([
+                          widgets.renderPaymentMethods({
+                            selector: "#payment-method",
+                            variantKey: "DEFAULT",
+                          }),
+                          widgets.renderAgreement({ selector: "#agreement", variantKey: "AGREEMENT" }),
+                        ]);
+
+                        button.addEventListener("click", async function () {
+                          try {
+                            await widgets.requestPayment({
+                              orderId: '${currentOrder.orderId}',
+                              orderName: '${currentOrder.planName}',
+                              successUrl: 'sentic://payment/success',
+                              failUrl: 'sentic://payment/fail',
+                              customerEmail: 'customer123@gmail.com',
+                              customerName: 'User',
+                            });
+                          } catch (error) {
+                            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'FAIL', message: error.message }));
+                          }
+                        });
+                      }
+                    </script>
+                  </body>
+                </html>
+              `,
+            }}
+            onMessage={(event) => {
+              const data = JSON.parse(event.nativeEvent.data);
+              if (data.type === "FAIL") {
+                setShowToss(false);
+                Alert.alert("결제 에러", data.message);
+              }
+            }}
+            onShouldStartLoadWithRequest={(request) => {
+              const url = request.url;
+
+              if (url.startsWith("sentic://payment/success")) {
+                setShowToss(false);
+
+                const getParam = (name: string) => {
+                  const regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)");
+                  const results = regex.exec(url);
+                  if (!results || !results[2]) return "";
+                  return decodeURIComponent(results[2].replace(/\+/g, " "));
+                };
+
+                const paymentKey = getParam("paymentKey");
+                const orderId = getParam("orderId");
+
+                if (paymentKey && orderId) {
+                  (async () => {
+                    try {
+                      const token = await AsyncStorage.getItem("accessToken");
+                      const API_URL =
+                        "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+                      await axios.post(
+                        `${API_URL}/api/payments/toss/confirm`,
+                        {
+                          paymentKey: paymentKey,
+                          orderId: orderId,
+                          // ⭐️ 딥링크 처리에서도 안전하게 접근!
+                          amount: currentOrder.amount,
+                          planId: currentOrder.planId,
+                        },
+                        {
+                          headers: {
+                            Authorization: `Bearer ${token}`,
+                            "ngrok-skip-browser-warning": "true",
+                          },
+                        },
+                      );
+
+                      Alert.alert(
+                        "결제 완료",
+                        "결제가 성공적으로 처리되었습니다!",
+                      );
+                      fetchMySubscription();
+                    } catch (error) {
+                      Alert.alert(
+                        "승인 실패",
+                        "백엔드 결제 승인 중 오류가 발생했습니다.",
+                      );
+                    }
+                  })();
+                }
+                return false;
+              }
+
+              if (url.startsWith("sentic://payment/fail")) {
+                setShowToss(false);
+                Alert.alert("결제 실패", "결제가 취소되었거나 실패했습니다.");
+                return false;
+              }
+
+              if (
+                url.startsWith("http://") ||
+                url.startsWith("https://") ||
+                url.startsWith("about:blank")
+              ) {
+                return true;
+              }
+
+              let openUrl = url;
+              if (url.startsWith("intent:")) {
+                const schemeMatch = url.match(/scheme=([^;]+)/);
+                if (schemeMatch && schemeMatch[1]) {
+                  const scheme = schemeMatch[1];
+                  const path = url.split("#")[0].replace("intent://", "");
+                  openUrl = `${scheme}://${path}`;
+                }
+              }
+
+              Linking.openURL(openUrl).catch(() => {
+                const packageMatch = url.match(/package=([^;]+)/);
+                if (packageMatch && packageMatch[1]) {
+                  Linking.openURL(`market://details?id=${packageMatch[1]}`);
+                } else {
+                  Alert.alert(
+                    "앱 실행 실패",
+                    "결제 앱이 설치되어 있는지 확인해주세요.",
+                  );
+                }
+              });
+              return false;
+            }}
+          />
+        </Modal>
+      )}
+      {/* 👆 여기까지 덮어씌워주세요! */}
     </View>
   );
 }
@@ -4886,7 +5214,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/faq";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
