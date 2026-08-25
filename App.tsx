@@ -1,7 +1,8 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import {
+  AppState,
   Alert,
   Animated,
   StatusBar,
@@ -68,6 +69,7 @@ type Message = {
   text: string;
   time: string;
   feedback?: FeedbackData[];
+  isBookmarked?: boolean; // 👈 추가!
 };
 
 type PracticeRoom = {
@@ -190,6 +192,67 @@ const TEST_CHAT_MESSAGES = [
 
 export default function App() {
   const [fontsLoaded] = useFonts({ LilyScriptOne_400Regular });
+
+  // ⭐️ 현재 앱 상태를 저장할 변수
+  const appState = useRef(AppState.currentState);
+
+  useEffect(() => {
+    // ⭐️ 시작/종료 API를 호출해주는 공통 함수
+    const notifySession = async (type: "start" | "end") => {
+      try {
+        const token = await AsyncStorage.getItem("accessToken");
+        if (!token) return;
+
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+        // POST 방식으로 /start 또는 /end 주소로 찌릅니다 (바디 데이터는 없음)
+        await axios.post(
+          `${API_URL}/api/users/me/session/${type}`,
+          {},
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "ngrok-skip-browser-warning": "true",
+            },
+          },
+        );
+        console.log(`✅ 세션 [${type}] 서버 전송 완료!`);
+      } catch (err) {
+        console.error(`🚨 세션 [${type}] 전송 실패:`, err);
+      }
+    };
+
+    // 1. 앱이 처음 켜졌을 때 일단 start를 한 번 호출해 줍니다.
+    notifySession("start");
+
+    // 2. 앱 상태가 변할 때(켜짐/꺼짐) 실행되는 리스너
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      // 앱이 켜져있다가 -> 홈 화면으로 나가거나 화면을 껐을 때 (end 호출)
+      if (
+        appState.current.match(/active/) &&
+        (nextAppState === "background" || nextAppState === "inactive")
+      ) {
+        console.log("📱 앱 백그라운드로 이동! 종료 API 호출");
+        notifySession("end");
+      }
+
+      // 앱을 다시 켰을 때 (start 호출)
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === "active"
+      ) {
+        console.log("📱 앱 다시 활성화! 시작 API 호출");
+        notifySession("start");
+      }
+
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   const [screen, setScreen] = useState<Screen>("login");
 
   // ⭐️ 1. 더미 데이터를 지우고, 상태(State)로 음성방을 관리하도록 추가합니다!
@@ -213,7 +276,7 @@ export default function App() {
           return;
         }
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "ngrok-skip-browser-warning": "true", // 👈 혹시 빠져있었다면 이거 꼭 넣어주세요!
@@ -254,11 +317,12 @@ export default function App() {
       }
     };
 
-    // ⭐️ 3. 조건에 "voiceRooms" 화면일 때도 실행되도록 추가합니다!
+    // ⭐️ 3. 조건에 "voiceRooms"·"bookmarks" 화면일 때도 실행되도록 추가합니다!
     if (
       screen === "chatRooms" ||
       screen === "voiceRooms" ||
-      screen === "mode"
+      screen === "mode" ||
+      screen === "bookmarks"
     ) {
       fetchMyRooms();
     }
@@ -268,8 +332,32 @@ export default function App() {
   const [selectedMode, setSelectedMode] = useState<"voice" | "text">("voice");
   const [kakaoWebViewVisible, setKakaoWebViewVisible] = useState(false);
   const [kakaoLoggingIn, setKakaoLoggingIn] = useState(false);
+  const [scrapNavTarget, setScrapNavTarget] = useState<{
+    feedbackId: number | null;
+    expression: string;
+  } | null>(null);
 
   const go = (next: Screen) => setScreen(next);
+
+  const onOpenScrap = (expr: {
+    roomId: string;
+    roomType: "chat" | "voice";
+    roomName: string;
+    feedbackId: number | null;
+    text: string;
+  }) => {
+    const rooms = expr.roomType === "voice" ? voiceRooms : chatRooms;
+    const room = rooms.find((r) => String(r.id) === expr.roomId) ?? {
+      id: expr.roomId,
+      title: expr.roomName,
+      desc: "",
+      level: "맞춤",
+    };
+    setSelectedRoom(room);
+    setSelectedMode(expr.roomType === "voice" ? "voice" : "text");
+    setScrapNavTarget({ feedbackId: expr.feedbackId, expression: expr.text });
+    go(expr.roomType === "voice" ? "voiceChat" : "textChat");
+  };
   const startNewConversation = (mode: "voice" | "text") => {
     setSelectedMode(mode);
     setSelectedRoom({ id: `${mode}-new`, title: "", desc: "", level: "맞춤" });
@@ -296,6 +384,7 @@ export default function App() {
         if (data.data.refreshToken) {
           await AsyncStorage.setItem("refreshToken", data.data.refreshToken);
         }
+        isTestMode = false; // ⭐️ 이전에 테스트 모드로 들어갔던 상태가 남아있지 않도록 초기화
         go("mode");
       } else {
         Alert.alert(
@@ -351,7 +440,14 @@ export default function App() {
       {screen === "signup" && <SignupScreen go={go} />}
       {screen === "findAccount" && <FindAccountScreen go={go} />}
 
-      {screen === "mode" && <ModeScreen go={go} />}
+      {screen === "mode" && (
+        <ModeScreen
+          go={go}
+          chatRooms={chatRooms}
+          voiceRooms={voiceRooms}
+          onOpenScrap={onOpenScrap}
+        />
+      )}
       {screen === "voiceRooms" && (
         <RoomListScreen
           title="음성 대화"
@@ -389,13 +485,32 @@ export default function App() {
         />
       )}
       {screen === "voiceChat" && (
-        <VoiceChatScreen room={selectedRoom} go={go} />
+        <VoiceChatScreen
+          room={selectedRoom}
+          go={go}
+          scrapNavTarget={scrapNavTarget}
+          onConsumeScrapNavTarget={() => setScrapNavTarget(null)}
+        />
       )}
-      {screen === "textChat" && <TextChatScreen room={selectedRoom} go={go} />}
+      {screen === "textChat" && (
+        <TextChatScreen
+          room={selectedRoom}
+          go={go}
+          scrapNavTarget={scrapNavTarget}
+          onConsumeScrapNavTarget={() => setScrapNavTarget(null)}
+        />
+      )}
       {screen === "mypage" && <MyPageScreen go={go} />}
       {screen === "settings" && <SettingsScreen go={go} />}
       {screen === "payment" && <PaymentScreen go={go} />}
-      {screen === "bookmarks" && <BookmarksScreen go={go} />}
+      {screen === "bookmarks" && (
+        <BookmarksScreen
+          go={go}
+          chatRooms={chatRooms}
+          voiceRooms={voiceRooms}
+          onOpenScrap={onOpenScrap}
+        />
+      )}
       {screen === "notice" && <NoticeScreen go={go} />}
       {screen === "faq" && <FaqScreen go={go} />}
     </SafeAreaView>
@@ -445,6 +560,8 @@ function LoginScreen({
         if (data.data.refreshToken) {
           await AsyncStorage.setItem("refreshToken", data.data.refreshToken);
         }
+
+        isTestMode = false; // ⭐️ 이전에 테스트 모드로 들어갔던 상태가 남아있지 않도록 초기화
 
         // 저장이 완료된 후에야 다음 화면으로 넘어갑니다.
         go("mode");
@@ -802,17 +919,107 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
   );
 }
 
-function ModeScreen({ go }: { go: (screen: Screen) => void }) {
-  const weekly = [33, 42, 27, 36, 48, 24, 60];
+function ModeScreen({
+  go,
+  chatRooms,
+  voiceRooms,
+  onOpenScrap,
+}: {
+  go: (screen: Screen) => void;
+  chatRooms: any[];
+  voiceRooms: any[];
+  onOpenScrap: (expr: {
+    roomId: string;
+    roomType: "chat" | "voice";
+    roomName: string;
+    feedbackId: number | null;
+    text: string;
+  }) => void;
+}) {
+  // ⭐️ 1. 닉네임을 저장할 State 만들기 (데이터가 오기 전 기본값은 '회원')
+  const [nickname, setNickname] = useState("회원");
+
+  // ⭐️ 1. 보여주고 싶은 문구들을 배열로 쭈욱 작성합니다.
+  const greetings = [
+    "오늘도 영어 공부해요! 📖",
+    "매일 조금씩 성장하는 중! 🌱",
+    "영어 마스터가 되는 그날까지! 🚀",
+    "꾸준함이 실력을 만듭니다 💪",
+    "오늘의 10분이 내일을 바꿉니다 ✨",
+    "새로운 표현을 배워볼까요? 💡",
+    "Hello! 오늘도 힘차게 시작해 봐요! 😊",
+  ];
+
+  // ⭐️ 2. 화면이 처음 켜질 때 랜덤으로 하나를 뽑아서 State에 저장합니다.
+  // (useState 안에 콜백 함수를 넣으면 딱 처음 한 번만 랜덤값을 뽑아냅니다!)
+  const [randomGreeting] = useState(() => {
+    const randomIndex = Math.floor(Math.random() * greetings.length);
+    return greetings[randomIndex];
+  });
+
+  useEffect(() => {
+    const fetchMyProfile = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        if (!accessToken) return;
+
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+        // ⭐️ 백엔드에서 알려준 정확한 주소(/api/users/me)로 수정!
+        const res = await axios.get(`${API_URL}/api/users/me`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true",
+          },
+        });
+
+        // 백엔드 응답에서 닉네임 데이터 뽑아오기
+        // (응답 형태에 따라 nickname일 수도, name일 수도 있어서 둘 다 커버하도록 작성했습니다)
+        const myName =
+          res.data?.data?.nickname ||
+          res.data?.nickname ||
+          res.data?.data?.name ||
+          res.data?.name;
+
+        if (myName) {
+          setNickname(myName);
+        }
+      } catch (error: any) {
+        console.error(
+          "🚨 유저 정보 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+
+    fetchMyProfile();
+  }, []);
+
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       <Header title="SenTic" go={go} actions />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={[styles.content, { paddingBottom: 36 }]}
+      >
         <View style={styles.rowBetween}>
-          <View>
-            <Text style={styles.caption}>안녕하세요, 민지님</Text>
-            <Text style={styles.h2}>오늘도 영어 공부해요!</Text>
+          {/* ⭐️ 바로 여기! flex: 1을 주면 남은 공간 안에서만 크기를 차지하고, 글자가 길면 알아서 줄바꿈됩니다. */}
+          <View style={{ flex: 1, marginRight: 12 }}>
+            <Text style={styles.caption}>안녕하세요, {nickname}님</Text>
+            <Text style={styles.h2}>{randomGreeting}</Text>
           </View>
+
           <View style={styles.streak}>
             <Text style={styles.streakText}>불꽃 5일 연속</Text>
           </View>
@@ -832,47 +1039,20 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
           color="#16A34A"
           onPress={() => go("chatRooms")}
         />
-        <View style={styles.card}>
+        <View style={styles.savedExprCard}>
           <View style={styles.rowBetween}>
-            <Text style={styles.cardTitle}>이번 주 학습</Text>
-            <Pressable onPress={() => go("mypage")}>
-              <Text style={styles.linkText}>상세보기</Text>
+            <Text style={styles.cardTitle}>저장된 표현</Text>
+            <Pressable onPress={() => go("bookmarks")}>
+              <Text style={styles.linkText}>전체보기</Text>
             </Pressable>
           </View>
-          <View style={styles.chart}>
-            {weekly.map((minute, index) => (
-              <View key={index} style={styles.barWrap}>
-                <Text
-                  style={[
-                    styles.barMinute,
-                    index === weekly.length - 1 && styles.primaryText,
-                  ]}
-                >
-                  {minute}분
-                </Text>
-                <View
-                  style={[
-                    styles.bar,
-                    { height: minute * 1.4 },
-                    index === weekly.length - 1 && styles.activeBar,
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.barDay,
-                    index === weekly.length - 1 && styles.primaryText,
-                  ]}
-                >
-                  {["월", "화", "수", "목", "금", "토", "일"][index]}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-        <View style={styles.statsGrid}>
-          <Stat label="총 대화" value="24회" />
-          <Stat label="총 학습시간" value="8.5h" />
-          <Stat label="저장 표현" value="42개" />
+          <BookmarksScreen
+            embedded
+            go={go}
+            chatRooms={chatRooms}
+            voiceRooms={voiceRooms}
+            onOpenScrap={onOpenScrap}
+          />
         </View>
       </ScrollView>
     </View>
@@ -908,8 +1088,7 @@ export function RoomListScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL =
-                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
               await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
@@ -959,7 +1138,10 @@ export function RoomListScreen({
           <Text style={styles.newRoomButtonText}>+ 새 대화</Text>
         </Pressable>
       </View>
-      <ScrollView contentContainerStyle={styles.roomListContent}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={styles.roomListContent}
+      >
         {visibleRooms.map((room) => (
           <Pressable
             key={room.id}
@@ -1185,7 +1367,18 @@ function SituationScreen({
   };
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       <View style={styles.roomListHeader}>
         <Pressable
           style={styles.headerButton}
@@ -1202,7 +1395,10 @@ function SituationScreen({
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.setupContent}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={styles.setupContent}
+      >
         <Label text="대화방 제목" />
         <TextInput
           value={title}
@@ -1298,9 +1494,28 @@ function SituationScreen({
   );
 }
 
-export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
+export function VoiceChatScreen({
+  room,
+  go,
+  scrapNavTarget,
+  onConsumeScrapNavTarget,
+}: {
+  room: any;
+  go: any;
+  scrapNavTarget?: { feedbackId: number | null; expression: string } | null;
+  onConsumeScrapNavTarget?: () => void;
+}) {
   const [inCall, setInCall] = useState(false);
-  const [tab, setTab] = useState<"call" | "history">("call");
+  const [tab, setTab] = useState<"call" | "history">(
+    scrapNavTarget ? "history" : "call",
+  );
+  const [highlightedMessageId, setHighlightedMessageId] = useState<
+    string | null
+  >(null);
+  const [layoutTick, setLayoutTick] = useState(0);
+  const hasScrolledToHighlightRef = useRef(false);
+  const historyScrollRef = useRef<ScrollView>(null);
+  const bubbleYRef = useRef<Record<string, number>>({});
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [latestAiText, setLatestAiText] = useState("");
@@ -1311,6 +1526,87 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   const [visibleFeedback, setVisibleFeedback] = useState<
     FeedbackData[] | null
   >(null);
+
+  // ⭐️ 1-1. 스크랩 상태 관리용 Set 추가
+  const [scrapedKeys, setScrapedKeys] = useState<Set<string>>(new Set());
+
+  const [scrapIdMap, setScrapIdMap] = useState<Record<string, number>>({});
+
+  // ⭐️ 1-2. 스크랩 API 통신 함수 수정 (토글 기능 적용)
+  const handleScrap = async (key: string, entry: Record<string, any>) => {
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+      // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
+      if (scrapedKeys.has(key)) {
+        const targetScrapId = scrapIdMap[key]; // 저장해둔 scrapId 꺼내기
+
+        if (!targetScrapId) {
+          console.warn(
+            "🚨 삭제할 scrapId를 찾을 수 없습니다! (화면 새로고침 후 다시 시도)",
+          );
+          return;
+        }
+
+        // 백엔드로 DELETE API 요청 (scrapId 포함)
+        await axios.delete(`${API_URL}/api/scraps/${targetScrapId}`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true",
+          },
+        });
+
+        // 삭제 성공 시, 화면(UI) 업데이트 및 ID 목록에서 제거
+        setScrapedKeys((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(key);
+          return newSet;
+        });
+        setScrapIdMap((prev) => {
+          const newMap = { ...prev };
+          delete newMap[key];
+          return newMap;
+        });
+
+        console.log("❎ 스크랩 취소 완료! 삭제된 scrapId:", targetScrapId);
+        return; // 취소 로직 끝!
+      }
+
+      // ⭐️ 2. 아직 스크랩 안 된 상태라면? -> 스크랩 추가 (POST)
+      const payload = {
+        feedbackId: entry.feedbackId || null,
+        roomId: entry.roomId || null,
+        expression: entry.expression,
+        context: entry.context || "",
+        category: entry.category,
+      };
+
+      const res = await axios.post(`${API_URL}/api/scraps`, payload, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+      });
+
+      // 백엔드 응답에서 scrapId 쏙 뽑아오기
+      const newScrapId = res.data?.data?.scrapId;
+
+      if (newScrapId) {
+        // 성공 시 화면에 노란불 켜고, 새로 발급받은 scrapId 짝지어 저장하기!
+        setScrapedKeys((prev) => new Set(prev).add(key));
+        setScrapIdMap((prev) => ({ ...prev, [key]: newScrapId }));
+
+        console.log("✅ 스크랩 저장 성공! 발급된 scrapId:", newScrapId);
+      }
+    } catch (error: any) {
+      console.error(
+        "🚨 스크랩 처리 실패:",
+        error.response?.data || error.message,
+      );
+    }
+  };
 
   // 🎙️ 마이크 펄스 링 애니메이션 (녹음 중 반복 확대/축소)
   const micPulseAnim = useRef(new Animated.Value(1)).current;
@@ -1365,73 +1661,225 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   // ⭐️ 1. 방에 처음 들어왔을 때는 '과거 대화 기록'만 불러오고 가만히 대기합니다.
   useEffect(() => {
     const fetchHistoryOnly = async () => {
-      // 🧪 테스트 모드에서는 서버 호출 없이 예시 대화를 채워줍니다.
       if (isTestMode) {
-        setMessages(TEST_VOICE_MESSAGES);
-        const lastAiMsg = [...TEST_VOICE_MESSAGES]
-          .reverse()
-          .find((m) => m.speaker === "ai");
-        if (lastAiMsg) setLatestAiText(lastAiMsg.text);
+        // ... (테스트 모드 유지) ...
         return;
       }
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const currentRoomId = room.id;
 
-        const historyRes = await axios.get(
-          `${API_URL}/api/rooms/${currentRoomId}/messages`,
-          {
+        // ⭐️ 스크랩 내역과 메시지 내역 동시 호출!
+        const [historyRes, scrapsRes] = await Promise.all([
+          axios.get(`${API_URL}/api/rooms/${currentRoomId}/messages`, {
             headers: {
               Authorization: `Bearer ${accessToken}`,
               "ngrok-skip-browser-warning": "true",
             },
-          },
-        );
+          }),
+          axios.get(`${API_URL}/api/scraps?roomId=${currentRoomId}`, {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "ngrok-skip-browser-warning": "true",
+            },
+          }),
+        ]);
 
         const pastMessages = historyRes.data?.data || historyRes.data || [];
+        const scraps = scrapsRes.data?.data || scrapsRes.data || [];
 
-        const formattedHistory = pastMessages.map((msg: any, idx: number) => {
-          let parsedFeedback = undefined;
-          if (msg.feedback) {
-            const rawFeedback =
-              typeof msg.feedback === "string"
-                ? JSON.parse(msg.feedback)
-                : msg.feedback;
+        if (pastMessages.length > 0) {
+          const loadedScrapedKeys = new Set<string>();
 
-            parsedFeedback = Array.isArray(rawFeedback)
-              ? rawFeedback
-              : [rawFeedback];
+          const formattedHistory = pastMessages.map((msg: any, idx: number) => {
+            // --- 피드백 파싱 ---
+            let parsedFeedback = undefined;
+            if (msg.feedback) {
+              const rawFeedback =
+                typeof msg.feedback === "string"
+                  ? JSON.parse(msg.feedback)
+                  : msg.feedback;
+              parsedFeedback = Array.isArray(rawFeedback)
+                ? rawFeedback
+                : [rawFeedback];
+            }
+
+            // --- AI 메시지 매칭 ---
+            if (msg.senderType === "AI") {
+              // ⭐️ some 대신 find를 써서 스크랩 데이터를 통째로 가져옵니다!
+              const matchedAiScrap = scraps.find(
+                (s: any) => !s.feedbackId && s.expression === msg.contentText,
+              );
+
+              // 매칭된 스크랩 내역이 있다면?
+              if (matchedAiScrap) {
+                const aiScrapKey = `${msg.id?.toString() || idx}-ai`;
+
+                // 1. 화면에 노란불 켜기
+                loadedScrapedKeys.add(aiScrapKey);
+
+                // 2. 나중에 취소(DELETE)할 때를 대비해 scrapId 저장하기!
+                setScrapIdMap((prev) => ({
+                  ...prev,
+                  [aiScrapKey]: matchedAiScrap.scrapId,
+                }));
+              }
+            }
+
+            // --- 사용자 피드백 매칭 ---
+            if (msg.senderType === "USER" && parsedFeedback) {
+              parsedFeedback.forEach((item: any, index: number) => {
+                const currentFeedbackId = item.id;
+                if (!currentFeedbackId) return;
+
+                const myScraps = scraps.filter(
+                  (s: any) => s.feedbackId === currentFeedbackId,
+                );
+
+                if (myScraps.length > 0) {
+                  // ⭐️ 2. [추천 문장] 매칭 (여기가 수정된 부분입니다!)
+                  const matchedScrap = myScraps.find(
+                    (s: any) => s.expression === item.perfectSentence,
+                  );
+
+                  if (matchedScrap) {
+                    const perfectKey = `${msg.id?.toString() || idx}-${index}-perfect`;
+                    loadedScrapedKeys.add(perfectKey);
+
+                    // 추가: 나중에 취소(DELETE)할 때를 대비해 scrapId 저장
+                    setScrapIdMap((prev) => ({
+                      ...prev,
+                      [perfectKey]: matchedScrap.scrapId,
+                    }));
+                  }
+
+                  const matchErrorList = (errorData: any, suffix: string) => {
+                    if (!errorData || errorData === "[]") return;
+                    try {
+                      const errors =
+                        typeof errorData === "string"
+                          ? JSON.parse(errorData)
+                          : errorData;
+
+                      errors.forEach((err: any, errIndex: number) => {
+                        const targetExpression =
+                          err.suggested ||
+                          err.corrected ||
+                          err.original ||
+                          err.text ||
+                          "";
+
+                        // ⭐️ 여기도 some 대신 find로 매칭된 데이터를 가져옵니다.
+                        const matchedErrScrap = myScraps.find(
+                          (s: any) => s.expression === targetExpression,
+                        );
+
+                        if (matchedErrScrap) {
+                          const errKey = `${msg.id?.toString() || idx}-${index}-${suffix}-${errIndex}`;
+                          loadedScrapedKeys.add(errKey); // 노란불 켜기
+
+                          // ⭐️ scrapId 저장하기
+                          setScrapIdMap((prev) => ({
+                            ...prev,
+                            [errKey]: matchedErrScrap.scrapId,
+                          }));
+                        }
+                      });
+                    } catch (e) {
+                      console.error("오류 목록 파싱 에러:", e);
+                    }
+                  };
+
+                  matchErrorList(item.wordErrors, "word");
+                  matchErrorList(item.grammarErrors, "grammar");
+                  matchErrorList(item.expressionErrors, "expr");
+                }
+              });
+            }
+
+            return {
+              id: msg.id?.toString() || `history-${idx}`,
+              speaker: msg.senderType === "USER" ? "user" : "ai",
+              text: msg.contentText || "",
+              time: msg.createdAt ? msg.createdAt.substring(11, 16) : "이전",
+              feedback: parsedFeedback,
+            };
+          });
+
+          setMessages(formattedHistory);
+          setScrapedKeys(loadedScrapedKeys); // ⭐️ 스크랩 세팅
+
+          // ⭐️ [추가] 대화 내역을 불러온 직후, 맨 아래(최신 메시지)로 스크롤 이동!
+          setTimeout(() => {
+            historyScrollRef.current?.scrollToEnd({ animated: false });
+          }, 100); // 렌더링이 완료될 시간을 살짝 주기 위해 setTimeout 사용
+
+          if (scrapNavTarget) {
+            let targetId: string | null = null;
+            if (scrapNavTarget.feedbackId) {
+              targetId =
+                formattedHistory.find(
+                  (m: any) =>
+                    m.speaker === "user" &&
+                    m.feedback?.some(
+                      (f: any) => f.id === scrapNavTarget.feedbackId,
+                    ),
+                )?.id ?? null;
+            } else if (scrapNavTarget.expression) {
+              targetId =
+                formattedHistory.find(
+                  (m: any) =>
+                    m.speaker === "ai" && m.text === scrapNavTarget.expression,
+                )?.id ?? null;
+            }
+            setHighlightedMessageId(targetId);
           }
 
-          return {
-            id: msg.id?.toString() || `history-${idx}`,
-            speaker: msg.senderType === "USER" ? "user" : "ai",
-            text: msg.contentText || "",
-            time: msg.createdAt ? msg.createdAt.substring(11, 16) : "이전",
-            feedback: parsedFeedback,
-          };
-        });
-
-        setMessages(formattedHistory);
-
-        const lastAiMsg = [...formattedHistory]
-          .reverse()
-          .find((m: any) => m.speaker === "ai");
-        if (lastAiMsg) setLatestAiText(lastAiMsg.text);
+          const lastAiMsg = [...formattedHistory]
+            .reverse()
+            .find((m: any) => m.speaker === "ai");
+          if (lastAiMsg) setLatestAiText(lastAiMsg.text);
+        }
       } catch (error: any) {
         console.error(
           "🚨 음성방 기록 불러오기 실패:",
           error.response?.data || error.message,
         );
+      } finally {
+        if (scrapNavTarget) onConsumeScrapNavTarget?.();
       }
     };
 
-    if (room?.id) {
-      fetchHistoryOnly();
-    }
+    if (room?.id) fetchHistoryOnly();
   }, [room?.id]);
+
+  // ⭐️ 사용자가 'history'(기록) 탭을 누르거나 메시지가 바뀔 때 맨 아래로 자동 포커싱!
+  useEffect(() => {
+    if (tab === "history" && messages.length > 0) {
+      setTimeout(() => {
+        historyScrollRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+    }
+  }, [tab, messages]);
+
+  useEffect(() => {
+    hasScrolledToHighlightRef.current = false;
+  }, [highlightedMessageId]);
+
+  useEffect(() => {
+    if (!highlightedMessageId || hasScrolledToHighlightRef.current) return;
+    const y = bubbleYRef.current[highlightedMessageId];
+    if (y == null) return;
+    hasScrolledToHighlightRef.current = true;
+    requestAnimationFrame(() => {
+      historyScrollRef.current?.scrollTo({
+        y: Math.max(y - 40, 0),
+        animated: true,
+      });
+    });
+  }, [highlightedMessageId, messages, layoutTick]);
 
   // ⭐️ 2. 사용자가 '시작' 버튼을 눌렀을 때만 실행되는 AI 인사말 호출 함수
   const handleStartCall = async () => {
@@ -1443,7 +1891,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const currentRoomId = room.id;
 
       // 통화 시작 상태로 변경
@@ -1557,7 +2005,7 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   const sendVoiceToServer = async (fileUri: string) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
       const formData = new FormData();
       formData.append("file", {
@@ -1648,7 +2096,13 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
   };
 
   return (
-    <View style={styles.screen}>
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: "#fff", // 👈 헤더 색상과 맞춤
+        paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 24,
+      }}
+    >
       <Header title={room.title} go={go} backTo="voiceRooms" />
       <TabBar
         active={tab}
@@ -1785,7 +2239,228 @@ export function VoiceChatScreen({ room, go }: { room: any; go: any }) {
           )}
         </View>
       )}
-      {tab === "history" && <MessageList messages={messages} />}
+      {tab === "history" && (
+        <ScrollView
+          ref={historyScrollRef}
+          style={{ flex: 1, paddingHorizontal: 16 }}
+          contentContainerStyle={{ paddingVertical: 20 }}
+        >
+          {messages.map((msg, idx) => {
+            const isUser = msg.speaker === "user";
+
+            // ⭐️ 고유 키 생성 (백엔드 매칭과 동일하게)
+            const msgId = msg.id || idx.toString();
+            const aiScrapKey = `${msgId}-ai`;
+            const isAiScraped = scrapedKeys.has(aiScrapKey);
+            const isHighlighted = msgId === highlightedMessageId;
+
+            return (
+              <View
+                key={msgId}
+                onLayout={(e) => {
+                  bubbleYRef.current[msgId] = e.nativeEvent.layout.y;
+                  if (
+                    highlightedMessageId &&
+                    !hasScrolledToHighlightRef.current
+                  ) {
+                    setLayoutTick((t) => t + 1);
+                  }
+                }}
+                style={{
+                  marginBottom: 20,
+                  alignItems: isUser ? "flex-end" : "flex-start",
+                  width: "100%",
+                }}
+              >
+                {/* 대화 말풍선 */}
+                <View
+                  style={{
+                    backgroundColor: isUser ? "#5C6BC0" : "#ffffff",
+                    padding: 12,
+                    borderRadius: 16,
+                    borderBottomRightRadius: isUser ? 4 : 16,
+                    borderBottomLeftRadius: isUser ? 16 : 4,
+                    maxWidth: "80%",
+                    elevation: 1,
+                    borderWidth: isHighlighted ? 2 : 0,
+                    borderColor: "#FBBF24",
+                  }}
+                >
+                  <Text
+                    style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}
+                  >
+                    {msg.text}
+                  </Text>
+                </View>
+
+                {/* 🔖 AI 말풍선용 스크랩 버튼 */}
+                {!isUser && (
+                  <Pressable
+                    // ⭐️ 스크랩 여부에 따라 스타일만 바꿔줍니다.
+                    style={
+                      isAiScraped ? styles.aiScrapBadge : styles.aiScrapButton
+                    }
+                    onPress={() =>
+                      handleScrap(aiScrapKey, {
+                        roomId: room.id,
+                        expression: msg.text,
+                        context: "",
+                        category: "EXPRESSION",
+                      })
+                    }
+                  >
+                    <BookmarkIcon
+                      color={isAiScraped ? "#fff" : "#9CA3AF"}
+                      size={11}
+                      // ⭐️ 아이콘이 칠해지는 속성(filled)이 있다면 여기에 연결해줍니다.
+                      filled={isAiScraped ? true : undefined}
+                    />
+                    <Text
+                      style={
+                        isAiScraped
+                          ? styles.aiScrapBadgeText
+                          : styles.aiScrapText
+                      }
+                    >
+                      {isAiScraped ? "스크랩됨" : "스크랩"}
+                    </Text>
+                  </Pressable>
+                )}
+
+                {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에만) */}
+                {isUser &&
+                  msg.feedback &&
+                  msg.feedback.map((item: any, index: number) => {
+                    const perfectKey = `${msgId}-${index}-perfect`;
+                    const isPerfectScraped = scrapedKeys.has(perfectKey);
+
+                    const makeScrapCtx = (suffix: string) => ({
+                      keyPrefix: `${msgId}-${index}-${suffix}`,
+                      isScraped: (key: string) => scrapedKeys.has(key),
+                      onScrap: (key: string, entry: Record<string, any>) => {
+                        let mappedCategory = "EXPRESSION";
+                        if (entry.category === "단어 오류" || suffix === "word")
+                          mappedCategory = "WORD";
+                        if (
+                          entry.category === "문법 오류" ||
+                          suffix === "grammar"
+                        )
+                          mappedCategory = "GRAMMAR";
+                        if (
+                          entry.category === "어색한 표현" ||
+                          suffix === "expr"
+                        )
+                          mappedCategory = "EXPRESSION";
+
+                        handleScrap(key, {
+                          feedbackId: item.id,
+                          expression:
+                            entry.expression ||
+                            entry.corrected ||
+                            entry.text ||
+                            entry.original ||
+                            "",
+                          context: msg.text,
+                          category: mappedCategory,
+                        });
+                      },
+                    });
+
+                    return (
+                      <View
+                        key={index}
+                        style={{
+                          marginTop: 8,
+                          backgroundColor: "#FFF9C4",
+                          padding: 16,
+                          borderRadius: 16,
+                          width: "85%",
+                          gap: 12,
+                        }}
+                      >
+                        {renderFeedbackSection(
+                          "단어 오류",
+                          item.wordErrors,
+                          "💡",
+                          makeScrapCtx("word"),
+                        )}
+                        {renderFeedbackSection(
+                          "문법 오류",
+                          item.grammarErrors,
+                          "💡",
+                          makeScrapCtx("grammar"),
+                        )}
+                        {renderFeedbackSection(
+                          "어색한 표현",
+                          item.expressionErrors,
+                          "💡",
+                          makeScrapCtx("expr"),
+                        )}
+
+                        {item.perfectSentence &&
+                          item.perfectSentence.trim() !== "[]" && (
+                            <View
+                              style={{
+                                paddingTop: 12,
+                                borderTopWidth: 1,
+                                borderColor: "#E0E0E0",
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontWeight: "bold",
+                                  color: "#333",
+                                  marginBottom: 4,
+                                }}
+                              >
+                                ✨ 추천 문장
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: 15,
+                                  color: "#1976D2",
+                                  fontWeight: "600",
+                                  marginBottom: 8,
+                                }}
+                              >
+                                {item.perfectSentence}
+                              </Text>
+                              <Pressable
+                                style={[
+                                  styles.scrapButton,
+                                  { alignSelf: "flex-end" },
+                                  isPerfectScraped && styles.scrapButtonActive,
+                                ]}
+                                // 🚨 1. 여기에 있던 disabled={isPerfectScraped} 를 싹 지웠습니다! 🚨
+
+                                onPress={() =>
+                                  handleScrap(perfectKey, {
+                                    feedbackId: item.id,
+                                    expression: item.perfectSentence,
+                                    context: msg.text,
+                                    category: "EXPRESSION",
+                                  })
+                                }
+                              >
+                                <BookmarkIcon
+                                  color="#8A6D00"
+                                  size={12}
+                                  filled={isPerfectScraped}
+                                />
+                                <Text style={styles.scrapButtonText}>
+                                  {isPerfectScraped ? "스크랩됨" : "스크랩"}
+                                </Text>
+                              </Pressable>
+                            </View>
+                          )}
+                      </View>
+                    );
+                  })}
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -1825,12 +2500,12 @@ const renderFeedbackSection = (
         <Text style={{ fontWeight: "bold", marginBottom: 4, color: "#333" }}>
           {icon} {title}
         </Text>
-        {parsedData.map((errorItem: any, index: number) => {
-          const itemKey = `${scrapCtx?.keyPrefix}-${index}`;
+        {parsedData.map((errorItem: any, errIndex: number) => {
+          const itemKey = `${scrapCtx?.keyPrefix}-${errIndex}`;
           const isScraped = scrapCtx?.isScraped(itemKey) ?? false;
           return (
             <View
-              key={index}
+              key={errIndex}
               style={{
                 backgroundColor: "rgba(255, 255, 255, 0.6)", // 살짝 투명한 흰색 박스
                 padding: 10,
@@ -1862,7 +2537,6 @@ const renderFeedbackSection = (
                     { alignSelf: "flex-end", marginTop: 8 },
                     isScraped && styles.scrapButtonActive,
                   ]}
-                  disabled={isScraped}
                   onPress={() =>
                     scrapCtx.onScrap(itemKey, {
                       source: "user",
@@ -1899,24 +2573,109 @@ const renderFeedbackSection = (
 export function TextChatScreen({
   room,
   go,
+  scrapNavTarget,
+  onConsumeScrapNavTarget,
 }: {
-  room: { id: number; title: string };
+  room: { id: string | number; title: string };
   go: (screen: any) => void;
+  scrapNavTarget?: { feedbackId: number | null; expression: string } | null;
+  onConsumeScrapNavTarget?: () => void;
 }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<any[]>([]); // Message 타입 대체
   const [scrapedKeys, setScrapedKeys] = useState<Set<string>>(new Set());
+  const [highlightedMessageId, setHighlightedMessageId] = useState<
+    string | null
+  >(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const bubbleYRef = useRef<Record<string, number>>({});
+  const [layoutTick, setLayoutTick] = useState(0);
+  const hasScrolledToHighlightRef = useRef(false);
+
+  // ⭐️ 1. scrapId를 매핑해서 관리할 state 추가 (컴포넌트 상단 state 선언부 쪽에 같이 넣어주세요!)
+  const [scrapIdMap, setScrapIdMap] = useState<Record<string, number>>({});
 
   const handleScrap = async (key: string, entry: Record<string, any>) => {
-    if (scrapedKeys.has(key)) return;
-    await addScrapedExpression(entry);
-    setScrapedKeys((prev) => new Set(prev).add(key));
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+      // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
+      if (scrapedKeys.has(key)) {
+        const targetScrapId = scrapIdMap[key]; // 저장해둔 scrapId 꺼내기
+
+        if (!targetScrapId) {
+          console.warn(
+            "🚨 삭제할 scrapId를 찾을 수 없습니다! (화면 새로고침 후 다시 시도)",
+          );
+          return;
+        }
+
+        // 백엔드로 DELETE API 요청 (scrapId 포함)
+        await axios.delete(`${API_URL}/api/scraps/${targetScrapId}`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true",
+          },
+        });
+
+        // 삭제 성공 시, 화면(UI) 업데이트 및 ID 목록에서 제거
+        setScrapedKeys((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(key);
+          return newSet;
+        });
+        setScrapIdMap((prev) => {
+          const newMap = { ...prev };
+          delete newMap[key];
+          return newMap;
+        });
+
+        console.log("❎ 스크랩 취소 완료! 삭제된 scrapId:", targetScrapId);
+        return; // 취소 로직 끝!
+      }
+
+      // ⭐️ 2. 아직 스크랩되지 않은 상태라면? -> 스크랩 추가 (POST)
+      const payload = {
+        feedbackId: entry.feedbackId || null,
+        roomId: entry.roomId || null,
+        expression: entry.expression,
+        context: entry.context || "",
+        category: entry.category,
+      };
+
+      console.log("👉 [요청 데이터]:", JSON.stringify(payload, null, 2));
+
+      const res = await axios.post(`${API_URL}/api/scraps`, payload, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+      });
+
+      // 백엔드 응답에서 scrapId 쏙 뽑아오기
+      const newScrapId = res.data?.data?.scrapId;
+
+      if (newScrapId) {
+        // 성공 시 화면에 노란불 켜고, 새로 발급받은 scrapId 짝지어 저장하기!
+        setScrapedKeys((prev) => new Set(prev).add(key));
+        setScrapIdMap((prev) => ({ ...prev, [key]: newScrapId }));
+
+        console.log("✅ 스크랩 저장 성공! 발급된 scrapId:", newScrapId);
+      }
+    } catch (error: any) {
+      console.error(
+        "🚨 스크랩 처리 실패:",
+        error.response?.data || error.message,
+      );
+    }
   };
 
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const payload = {
         content:
           "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
@@ -1952,7 +2711,7 @@ export function TextChatScreen({
 
   useEffect(() => {
     const fetchChatHistory = async () => {
-      // 🧪 테스트 모드에서는 서버 호출 없이 예시 대화를 채워줍니다.
+      // 🧪 테스트 모드 (기존 동일)
       if (isTestMode) {
         setMessages(TEST_CHAT_MESSAGES);
         return;
@@ -1961,22 +2720,50 @@ export function TextChatScreen({
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
-        const response = await axios.get(
-          `${API_URL}/api/rooms/${room.id}/messages`,
-          { headers: { Authorization: `Bearer ${accessToken}` } },
-        );
 
+        // ⭐️ 1. Promise.all을 사용하여 두 API를 동시에(병렬로) 호출합니다! (속도 2배 향상)
+        const [messagesRes, scrapsRes] = await Promise.all([
+          axios.get(`${API_URL}/api/rooms/${room.id}/messages`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+          axios.get(`${API_URL}/api/scraps?roomId=${room.id}`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+        ]);
+
+        const history = messagesRes.data?.data || messagesRes.data || [];
+        const scraps = scrapsRes.data?.data || scrapsRes.data || [];
+
+        // ⭐️ 바로 여기! 매칭 작업을 시작하기 전에 두 데이터가 어떻게 생겼는지 까봅시다!
+        console.log("=========================================");
         console.log(
-          "👉 백엔드 데이터 확인:",
-          JSON.stringify(response.data, null, 2),
+          "👀 1. 서버가 준 메시지(history) 데이터:",
+          JSON.stringify(history, null, 2),
         );
+        console.log(
+          "👀 2. 서버가 준 스크랩(scraps) 데이터:",
+          JSON.stringify(scraps, null, 2),
+        );
+        console.log("=========================================");
 
-        const history = response.data?.data || response.data || [];
         if (history.length > 0) {
+          // ⭐️ 2. 검색을 빠르게 하기 위해 스크랩된 feedbackId들을 Set으로 만들어 둡니다.
+          // (예: 백엔드가 [{ feedbackId: 1 }, { feedbackId: 5 }] 형태로 준다고 가정)
+          const scrapedFeedbackIds = new Set(
+            scraps.map((scrap: any) => scrap.feedbackId).filter(Boolean),
+          );
+
+          // (선택) AI 메시지는 feedbackId가 아니라 messageId로 관리될 수 있으니 미리 빼둡니다.
+          const scrapedMessageIds = new Set(
+            scraps.map((scrap: any) => scrap.messageId).filter(Boolean),
+          );
+
+          const loadedScrapedKeys = new Set<string>();
+
           const formattedHistory = history
             .filter((msg: any) => !msg.contentText.includes("(시스템:"))
             .map((msg: any) => {
-              // ⭐️ 여기에 피드백 변환 로직이 들어갑니다!
+              // --- 피드백 파싱 (기존과 동일) ---
               let parsedFeedback = undefined;
               if (msg.feedback) {
                 const rawFeedback =
@@ -1989,7 +2776,98 @@ export function TextChatScreen({
                   : [rawFeedback];
               }
 
-              // ⭐️ 괄호가 ({ }) 에서 { return { ... } } 형태로 바뀌었습니다.
+              // ⭐️ 3. 백엔드에서 받은 스크랩 목록과 현재 메시지를 "매칭" 합니다!
+
+              // --- [AI 메시지 매칭] ---
+              if (msg.senderType === "AI") {
+                const matchedAiScrap = scraps.find(
+                  (s: any) => !s.feedbackId && s.expression === msg.contentText,
+                );
+
+                if (matchedAiScrap) {
+                  const aiScrapKey = `${msg.id.toString()}-ai`;
+                  loadedScrapedKeys.add(aiScrapKey);
+
+                  // ⭐️ 삭제를 위해 scrapId 저장!
+                  setScrapIdMap((prev) => ({
+                    ...prev,
+                    [aiScrapKey]: matchedAiScrap.scrapId,
+                  }));
+                }
+              }
+
+              // --- [사용자 피드백 매칭] ---
+              if (msg.senderType === "USER" && parsedFeedback) {
+                parsedFeedback.forEach((item: any, index: number) => {
+                  const currentFeedbackId = item.id;
+                  if (!currentFeedbackId) return;
+
+                  const myScraps = scraps.filter(
+                    (s: any) => s.feedbackId === currentFeedbackId,
+                  );
+
+                  if (myScraps.length > 0) {
+                    // 1. [추천 문장] 매칭 (some 대신 find 사용)
+                    const matchedPerfect = myScraps.find(
+                      (s: any) => s.expression === item.perfectSentence,
+                    );
+
+                    if (matchedPerfect) {
+                      const perfectKey = `${msg.id.toString()}-${index}-perfect`;
+                      loadedScrapedKeys.add(perfectKey);
+
+                      // ⭐️ 삭제를 위해 scrapId 저장!
+                      setScrapIdMap((prev) => ({
+                        ...prev,
+                        [perfectKey]: matchedPerfect.scrapId,
+                      }));
+                    }
+
+                    // 2. [단어/문법/표현 오류] 매칭 헬퍼 함수
+                    const matchErrorList = (errorData: any, suffix: string) => {
+                      if (!errorData || errorData === "[]") return;
+                      try {
+                        const errors =
+                          typeof errorData === "string"
+                            ? JSON.parse(errorData)
+                            : errorData;
+
+                        errors.forEach((err: any, errIndex: number) => {
+                          const targetExpression =
+                            err.suggested ||
+                            err.corrected ||
+                            err.original ||
+                            err.text ||
+                            "";
+
+                          // some 대신 find로 매칭된 스크랩 객체를 통째로 가져옴
+                          const matchedErrScrap = myScraps.find(
+                            (s: any) => s.expression === targetExpression,
+                          );
+
+                          if (matchedErrScrap) {
+                            const errKey = `${msg.id.toString()}-${index}-${suffix}-${errIndex}`;
+                            loadedScrapedKeys.add(errKey);
+
+                            // ⭐️ 삭제를 위해 scrapId 저장!
+                            setScrapIdMap((prev) => ({
+                              ...prev,
+                              [errKey]: matchedErrScrap.scrapId,
+                            }));
+                          }
+                        });
+                      } catch (e) {
+                        console.error("오류 목록 파싱 에러:", e);
+                      }
+                    };
+
+                    matchErrorList(item.wordErrors, "word");
+                    matchErrorList(item.grammarErrors, "grammar");
+                    matchErrorList(item.expressionErrors, "expr");
+                  }
+                });
+              }
+
               return {
                 id: msg.id.toString(),
                 speaker: msg.senderType === "AI" ? "ai" : "user",
@@ -1998,20 +2876,67 @@ export function TextChatScreen({
                   hour: "2-digit",
                   minute: "2-digit",
                 }),
-                feedback: parsedFeedback, // 👈 추출한 피드백 데이터를 추가!
+                feedback: parsedFeedback,
               };
             });
+
           setMessages(formattedHistory);
+          setScrapedKeys(loadedScrapedKeys); // 화면에 스크랩 상태 일괄 적용!
+
+          // ⭐️ [추가] 대화 내역을 불러온 직후, 맨 아래(최신 메시지)로 스크롤 이동!
+          setTimeout(() => {
+            scrollViewRef.current?.scrollToEnd({ animated: false });
+          }, 100); // 렌더링이 완료될 시간을 살짝 주기 위해 setTimeout 사용
+
+          if (scrapNavTarget) {
+            let targetId: string | null = null;
+            if (scrapNavTarget.feedbackId) {
+              targetId =
+                formattedHistory.find(
+                  (m: any) =>
+                    m.speaker === "user" &&
+                    m.feedback?.some(
+                      (f: any) => f.id === scrapNavTarget.feedbackId,
+                    ),
+                )?.id ?? null;
+            } else if (scrapNavTarget.expression) {
+              targetId =
+                formattedHistory.find(
+                  (m: any) =>
+                    m.speaker === "ai" && m.text === scrapNavTarget.expression,
+                )?.id ?? null;
+            }
+            setHighlightedMessageId(targetId);
+          }
         } else {
           requestInitialGreeting();
         }
       } catch (error) {
-        console.error("🚨 대화 내역 불러오기 실패:", error);
+        console.error("🚨 대화 내역 및 스크랩 불러오기 실패:", error);
+      } finally {
+        if (scrapNavTarget) onConsumeScrapNavTarget?.();
       }
     };
 
     if (room?.id) fetchChatHistory();
   }, [room?.id]);
+
+  useEffect(() => {
+    hasScrolledToHighlightRef.current = false;
+  }, [highlightedMessageId]);
+
+  useEffect(() => {
+    if (!highlightedMessageId || hasScrolledToHighlightRef.current) return;
+    const y = bubbleYRef.current[highlightedMessageId];
+    if (y == null) return;
+    hasScrolledToHighlightRef.current = true;
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollTo({
+        y: Math.max(y - 40, 0),
+        animated: true,
+      });
+    });
+  }, [highlightedMessageId, messages, layoutTick]);
 
   const send = async () => {
     const text = input.trim();
@@ -2033,7 +2958,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const response = await axios.post(
         `${API_URL}/api/rooms/${room.id}/messages/chat`,
         { content: text },
@@ -2101,23 +3026,38 @@ export function TextChatScreen({
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-      style={{ flex: 1, backgroundColor: "#f5f5f5" }} // styles.screen 대체
+      style={{
+        flex: 1,
+        backgroundColor: "#fff", // 👈 상단바/하단바 영역을 흰색(헤더 색)으로 통일
+        paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 24,
+      }} // styles.screen 대체
     >
       {<Header title={room.title} go={go} backTo="chatRooms" />}
 
       {/* ⭐️ 3. MessageList를 빼버리고 여기서 직접 채팅과 피드백을 그립니다! */}
       <ScrollView
-        style={{ flex: 1, paddingHorizontal: 16 }}
+        ref={scrollViewRef}
+        style={{ flex: 1, backgroundColor: "#f5f5f5", paddingHorizontal: 16 }}
         contentContainerStyle={{ paddingVertical: 20 }}
       >
         {messages.map((msg) => {
           const isUser = msg.speaker === "user";
           const aiScrapKey = `${msg.id}-ai`;
           const isAiScraped = scrapedKeys.has(aiScrapKey);
+          const isHighlighted = msg.id === highlightedMessageId;
 
           return (
             <View
               key={msg.id}
+              onLayout={(e) => {
+                bubbleYRef.current[msg.id] = e.nativeEvent.layout.y;
+                if (
+                  highlightedMessageId &&
+                  !hasScrolledToHighlightRef.current
+                ) {
+                  setLayoutTick((t) => t + 1);
+                }
+              }}
               style={{
                 marginBottom: 20,
                 alignItems: isUser ? "flex-end" : "flex-start",
@@ -2134,6 +3074,8 @@ export function TextChatScreen({
                   borderBottomLeftRadius: isUser ? 16 : 4,
                   maxWidth: "80%",
                   elevation: 1, // 안드로이드 그림자
+                  borderWidth: isHighlighted ? 2 : 0,
+                  borderColor: "#FBBF24",
                 }}
               >
                 <Text style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}>
@@ -2142,26 +3084,36 @@ export function TextChatScreen({
               </View>
 
               {/* 🔖 AI 말풍선용 스크랩 버튼 */}
-              {!isUser &&
-                (isAiScraped ? (
-                  <View style={styles.aiScrapBadge}>
-                    <BookmarkIcon color="#fff" size={11} filled />
-                    <Text style={styles.aiScrapBadgeText}>스크랩됨</Text>
-                  </View>
-                ) : (
-                  <Pressable
-                    style={styles.aiScrapButton}
-                    onPress={() =>
-                      handleScrap(aiScrapKey, {
-                        source: "ai",
-                        text: msg.text,
-                      })
+              {!isUser && (
+                <Pressable
+                  // ⭐️ 스크랩 여부에 따라 배경 스타일만 바꿔줍니다!
+                  style={
+                    isAiScraped ? styles.aiScrapBadge : styles.aiScrapButton
+                  }
+                  onPress={() =>
+                    handleScrap(aiScrapKey, {
+                      roomId: room.id,
+                      expression: msg.text,
+                      context: "",
+                      category: "EXPRESSION",
+                    })
+                  }
+                >
+                  <BookmarkIcon
+                    color={isAiScraped ? "#fff" : "#9CA3AF"}
+                    size={11}
+                    // ⭐️ 스크랩 상태일 때만 아이콘 안을 채워줍니다!
+                    filled={isAiScraped ? true : undefined}
+                  />
+                  <Text
+                    style={
+                      isAiScraped ? styles.aiScrapBadgeText : styles.aiScrapText
                     }
                   >
-                    <BookmarkIcon color="#9CA3AF" size={11} />
-                    <Text style={styles.aiScrapText}>스크랩</Text>
-                  </Pressable>
-                ))}
+                    {isAiScraped ? "스크랩됨" : "스크랩"}
+                  </Text>
+                </Pressable>
+              )}
 
               {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에, feedback 데이터가 있을 때만 등장!) */}
               {isUser &&
@@ -2169,14 +3121,70 @@ export function TextChatScreen({
                 msg.feedback.map((item: any, index: number) => {
                   const hasPerfectSentence =
                     item.perfectSentence &&
-                    item.perfectSentence.trim() !== "[]";
+                    item.perfectSentence.trim() !== "[]" &&
+                    item.perfectSentence.trim() !== "";
 
+                  // 1. 단어, 문법, 어색한 표현이 실제로 내용이 있는지 검사하는 헬퍼 함수
+                  const hasContent = (data: any) => {
+                    if (
+                      !data ||
+                      data === "[]" ||
+                      data.toString().trim() === "[]"
+                    )
+                      return false;
+                    try {
+                      const parsed = Array.isArray(data)
+                        ? data
+                        : JSON.parse(data);
+                      return Array.isArray(parsed) && parsed.length > 0;
+                    } catch {
+                      return false;
+                    }
+                  };
+
+                  const hasWord = hasContent(item.wordErrors);
+                  const hasGrammar = hasContent(item.grammarErrors);
+                  const hasExpr = hasContent(item.expressionErrors);
+
+                  // 2. 오류나 추천 문장 중 단 하나라도 존재하지 않는다면 아예 렌더링하지 않음!
+                  const hasAnyFeedback =
+                    hasWord || hasGrammar || hasExpr || hasPerfectSentence;
+                  if (!hasAnyFeedback) return null;
+
+                  // ⭐️ 도우미 함수: 단어/문법/표현 오류 스크랩 버튼을 누를 때 데이터를 백엔드 양식으로 싹 바꿔줍니다!
                   const makeScrapCtx = (suffix: string): ScrapContext => ({
                     keyPrefix: `${msg.id}-${index}-${suffix}`,
                     isScraped: (key) => scrapedKeys.has(key),
-                    onScrap: handleScrap,
+                    onScrap: (key, entry) => {
+                      let mappedCategory = "EXPRESSION";
+                      if (entry.category === "단어 오류" || suffix === "word")
+                        mappedCategory = "WORD";
+                      if (
+                        entry.category === "문법 오류" ||
+                        suffix === "grammar"
+                      )
+                        mappedCategory = "GRAMMAR";
+                      if (entry.category === "어색한 표현" || suffix === "expr")
+                        mappedCategory = "EXPRESSION";
+
+                      const targetExpression =
+                        entry.expression ||
+                        entry.corrected ||
+                        entry.text ||
+                        entry.original ||
+                        "";
+
+                      handleScrap(key, {
+                        feedbackId: item.id,
+                        expression: targetExpression,
+                        context: msg.text,
+                        category: mappedCategory,
+                      });
+                    },
                   });
-                  const perfectKey = `${msg.id}-${index}-perfect`;
+
+                  const msgId = msg.id || Math.random().toString();
+                  const perfectKey = `${msgId}-${index}-perfect`;
                   const isPerfectScraped = scrapedKeys.has(perfectKey);
 
                   return (
@@ -2243,12 +3251,12 @@ export function TextChatScreen({
                               { alignSelf: "flex-end" },
                               isPerfectScraped && styles.scrapButtonActive,
                             ]}
-                            disabled={isPerfectScraped}
                             onPress={() =>
                               handleScrap(perfectKey, {
-                                source: "user",
-                                original: msg.text,
-                                perfectSentence: item.perfectSentence,
+                                feedbackId: item.id,
+                                expression: item.perfectSentence,
+                                context: msg.text,
+                                category: "EXPRESSION",
                               })
                             }
                           >
@@ -2688,7 +3696,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
         // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
         const FULL_URL =
-          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/announcements";
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
 
         console.log("🚀 최종 요청 주소:", FULL_URL);
 
@@ -2724,7 +3732,18 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
   if (selectedNotice) {
     return (
-      <View style={styles.screenSoft}>
+      <View
+        style={[
+          styles.screenSoft,
+          {
+            flex: 1,
+            backgroundColor: "#fff",
+            paddingTop: StatusBar.currentHeight
+              ? StatusBar.currentHeight + 10
+              : 24,
+          },
+        ]}
+      >
         <View style={ntStyles.header}>
           <Pressable
             style={ntStyles.backBtn}
@@ -2734,7 +3753,10 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
           </Pressable>
           <Text style={ntStyles.headerTitle}>공지사항</Text>
         </View>
-        <ScrollView contentContainerStyle={ntStyles.detailContent}>
+        <ScrollView
+          style={{ backgroundColor: "#F9FAFB" }}
+          contentContainerStyle={ntStyles.detailContent}
+        >
           {selectedNotice.pinned && (
             <View style={ntStyles.importantBadge}>
               <Text style={ntStyles.importantBadgeText}>
@@ -2755,14 +3777,28 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
   }
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       <View style={ntStyles.header}>
         <Pressable style={ntStyles.backBtn} onPress={() => go("mode")}>
           <Text style={ntStyles.backIcon}>‹</Text>
         </Pressable>
         <Text style={ntStyles.headerTitle}>공지사항</Text>
       </View>
-      <ScrollView contentContainerStyle={ntStyles.listContent}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={ntStyles.listContent}
+      >
         {/* 중요 공지 */}
         {importantNotices.length > 0 && (
           <View style={{ marginBottom: 8 }}>
@@ -2829,19 +3865,41 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
   );
 }
 
-function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
+function BookmarksScreen({
+  go,
+  chatRooms,
+  voiceRooms,
+  onOpenScrap,
+  embedded = false,
+}: {
+  go: (screen: Screen) => void;
+  chatRooms: any[];
+  voiceRooms: any[];
+  onOpenScrap: (expr: {
+    roomId: string;
+    roomType: "chat" | "voice";
+    roomName: string;
+    feedbackId: number | null;
+    text: string;
+  }) => void;
+  // 🧩 true면 홈 화면 카드 안에 들어가는 미리보기 모드 — 자체 헤더/탭 없이 상위 몇 개만 보여줍니다.
+  embedded?: boolean;
+}) {
   type ViewMode = "by-category" | "by-room";
   type Category = "단어" | "문법" | "문장";
 
   interface SavedExpression {
-    id: string;
+    id: string; // scrapId를 문자열로 (React key + 삭제 API 호출용)
+    scrapId: number;
     text: string;
-    translation: string;
+    context: string;
     category: Category;
     roomName: string;
     roomId: string;
+    roomType: "chat" | "voice";
     savedDate: string;
-    source?: "ai" | "user";
+    source: "ai" | "user";
+    feedbackId: number | null;
   }
 
   const categoryConfig: Record<
@@ -2853,82 +3911,137 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
     문장: { color: "#16A34A", bg: "#F0FDF4", dot: "#4ADE80" },
   };
 
+  const backendCategoryToKorean = (category: string): Category => {
+    if (category === "WORD") return "단어";
+    if (category === "GRAMMAR") return "문법";
+    return "문장";
+  };
+
   const [viewMode, setViewMode] = useState<ViewMode>("by-category");
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(
     null,
   );
+  // selectedRoom은 `${roomType}:${roomId}` 형태의 합성 키를 저장합니다.
+  // (roomName만으로는 서로 다른 방이 같은 이름을 가질 수 있어 키 충돌이 발생하므로)
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
-  const [expressions, setExpressions] = useState<SavedExpression[]>([
-    {
-      id: "1",
-      text: "I'd like to order a coffee, please.",
-      translation: "커피를 주문하고 싶습니다.",
-      category: "문장",
-      roomName: "카페에서 주문하기",
-      roomId: "1",
-      savedDate: "04/28",
-    },
-    {
-      id: "2",
-      text: "What's up?",
-      translation: "안녕? / 어떻게 지내?",
-      category: "단어",
-      roomName: "영화 이야기",
-      roomId: "2",
-      savedDate: "04/28",
-    },
-    {
-      id: "3",
-      text: "Subject-verb agreement",
-      translation: "주어-동사 일치",
-      category: "문법",
-      roomName: "비즈니스 미팅",
-      roomId: "3",
-      savedDate: "04/27",
-    },
-    {
-      id: "4",
-      text: "Could you please help me?",
-      translation: "도와주실 수 있으신가요?",
-      category: "문장",
-      roomName: "카페에서 주문하기",
-      roomId: "1",
-      savedDate: "04/26",
-    },
-    {
-      id: "5",
-      text: "That sounds like a great plan!",
-      translation: "정말 좋은 계획인 것 같아요!",
-      category: "문장",
-      roomName: "일상 대화",
-      roomId: "4",
-      savedDate: "04/29",
-      source: "ai",
-    },
-    {
-      id: "6",
-      text: "I really appreciate your help.",
-      translation: "도와주셔서 정말 감사해요.",
-      category: "문장",
-      roomName: "카페에서 주문하기",
-      roomId: "1",
-      savedDate: "04/25",
-      source: "ai",
-    },
-  ]);
+  const [expressions, setExpressions] = useState<SavedExpression[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchAllScraps = async () => {
+      if (cancelled) return;
+      setLoading(true);
+      setFetchError(false);
+
+      if (isTestMode) {
+        if (!cancelled) {
+          setExpressions([]);
+          setLoading(false);
+        }
+        return;
+      }
+
+      const rooms = [
+        ...chatRooms.map((r) => ({ ...r, roomType: "chat" as const })),
+        ...voiceRooms.map((r) => ({ ...r, roomType: "voice" as const })),
+      ];
+
+      if (rooms.length === 0) {
+        if (!cancelled) {
+          setExpressions([]);
+          setLoading(false);
+        }
+        return;
+      }
+
+      let hadError = false;
+
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const headers = {
+          Authorization: `Bearer ${accessToken}`,
+          "ngrok-skip-browser-warning": "true",
+        };
+
+        const results = await Promise.all(
+          rooms.map((room) =>
+            axios
+              .get(`${API_URL}/api/scraps?roomId=${room.id}`, { headers })
+              .then((res) => {
+                const scraps = res.data?.data || res.data || [];
+                return scraps.map((scrap: any) => ({ scrap, room }));
+              })
+              .catch((error: any) => {
+                console.error(
+                  `🚨 방(${room.id}) 스크랩 조회 실패:`,
+                  error.response?.data || error.message,
+                );
+                hadError = true;
+                return [];
+              }),
+          ),
+        );
+
+        const mapped: SavedExpression[] = results
+          .flat()
+          .map(({ scrap, room }: any) => ({
+            id: String(scrap.scrapId ?? scrap.id),
+            scrapId: scrap.scrapId ?? scrap.id,
+            text: scrap.expression,
+            context: scrap.context || "",
+            category: backendCategoryToKorean(scrap.category),
+            roomName: room.title,
+            roomId: String(room.id),
+            roomType: room.roomType,
+            savedDate: scrap.createdAt
+              ? scrap.createdAt.slice(5, 10).replace("-", "/")
+              : "-",
+            source: scrap.feedbackId ? "user" : "ai",
+            feedbackId: scrap.feedbackId ?? null,
+          }));
+
+        if (!cancelled) {
+          setExpressions(mapped);
+          if (hadError) setFetchError(true);
+        }
+      } catch (error: any) {
+        console.error(
+          "🚨 저장된 표현 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+        if (!cancelled) setFetchError(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    fetchAllScraps();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatRooms, voiceRooms, retryTick]);
 
   const isInsideDetail = selectedCategory !== null || selectedRoom !== null;
 
+  // 대화방을 `roomType:roomId` 합성 키로 그룹핑합니다. roomName만 쓰면
+  // 이름이 같은 서로 다른 방(예: "새로운 대화")이 하나로 합쳐지는 문제가 있습니다.
   const groupByRoom = () => {
     const grouped: { [key: string]: SavedExpression[] } = {};
     expressions.forEach((expr) => {
-      if (!grouped[expr.roomName]) grouped[expr.roomName] = [];
-      grouped[expr.roomName].push(expr);
+      const key = `${expr.roomType}:${expr.roomId}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(expr);
     });
     return grouped;
   };
 
-  const deleteExpression = (id: string) => {
+  const deleteExpression = (expr: SavedExpression) => {
     Alert.alert(
       "표현 삭제",
       "이 표현을 정말 삭제하시겠습니까?\n(삭제 후 복구할 수 없습니다.)",
@@ -2937,8 +4050,25 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
         {
           text: "삭제",
           style: "destructive",
-          onPress: () => {
-            setExpressions((prev) => prev.filter((e) => e.id !== id));
+          onPress: async () => {
+            try {
+              const accessToken = await AsyncStorage.getItem("accessToken");
+              const API_URL =
+                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+              await axios.delete(`${API_URL}/api/scraps/${expr.scrapId}`, {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  "ngrok-skip-browser-warning": "true",
+                },
+              });
+              setExpressions((prev) => prev.filter((e) => e.id !== expr.id));
+            } catch (error: any) {
+              console.error(
+                "🚨 스크랩 삭제 실패:",
+                error.response?.data || error.message,
+              );
+              Alert.alert("삭제 실패", "잠시 후 다시 시도해주세요.");
+            }
           },
         },
       ],
@@ -2948,13 +4078,27 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
   const renderExpression = (expr: SavedExpression, showRoom = false) => {
     const config = categoryConfig[expr.category];
     return (
-      <View key={expr.id} style={bkStyles.exprCard}>
+      <Pressable
+        key={expr.id}
+        style={bkStyles.exprCard}
+        onPress={() =>
+          onOpenScrap({
+            roomId: expr.roomId,
+            roomType: expr.roomType,
+            roomName: expr.roomName,
+            feedbackId: expr.feedbackId,
+            text: expr.text,
+          })
+        }
+      >
         <View
           style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}
         >
           <View style={{ flex: 1 }}>
             <Text style={bkStyles.exprText}>{expr.text}</Text>
-            <Text style={bkStyles.exprTranslation}>{expr.translation}</Text>
+            {expr.context ? (
+              <Text style={bkStyles.exprTranslation}>{expr.context}</Text>
+            ) : null}
             <View
               style={{
                 flexDirection: "row",
@@ -2976,21 +4120,12 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
             </View>
           </View>
           <Pressable
-            onPress={() => deleteExpression(expr.id)}
+            onPress={() => deleteExpression(expr)}
             style={bkStyles.deleteBtn}
           >
             <Ionicons name="trash-outline" size={16} color="#9CA3AF" />
           </Pressable>
         </View>
-<<<<<<< Updated upstream
-        {expr.source === "ai" && (
-          <Text style={bkStyles.exprSourceTag}>AI 답변에서 저장됨</Text>
-        )}
-      </View>
-    );
-  };
-
-=======
         <View style={bkStyles.exprSourceRow}>
           <Text style={bkStyles.exprSourceLabel}>
             {expr.roomType === "voice"
@@ -3012,122 +4147,45 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
     );
   };
 
-  // 🧩 홈 화면 카드용 미리보기 — 단어 목록을 바로 보여주는 대신
-  // 카테고리/대화방 요약만 작게 보여줍니다. 자세히는 "전체보기"로 이동.
+  // 🧩 홈 화면 카드용 미리보기 — 자체 헤더/탭 없이 최근 저장한 표현 몇 개만 보여줍니다.
   if (embedded) {
-    const previewRooms = Object.entries(groupByRoom()).slice(0, 1);
+    const preview = expressions.slice(0, 3);
     return (
-      <View style={{ gap: 12 }}>
-        <View style={bkStyles.tabContainer}>
-          <Pressable
-            style={[
-              bkStyles.tab,
-              viewMode === "by-category" && bkStyles.tabActive,
-            ]}
-            onPress={() => setViewMode("by-category")}
-          >
-            <Text
-              style={[
-                bkStyles.tabText,
-                viewMode === "by-category" && bkStyles.tabTextActive,
-              ]}
-            >
-              카테고리
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[bkStyles.tab, viewMode === "by-room" && bkStyles.tabActive]}
-            onPress={() => setViewMode("by-room")}
-          >
-            <Text
-              style={[
-                bkStyles.tabText,
-                viewMode === "by-room" && bkStyles.tabTextActive,
-              ]}
-            >
-              대화방
-            </Text>
-          </Pressable>
-        </View>
-
+      <View>
         {loading ? (
           <ActivityIndicator size="small" color={primary} />
-        ) : viewMode === "by-category" ? (
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            {(["단어", "문법", "문장"] as Category[]).map((cat) => {
-              const count = expressions.filter(
-                (e) => e.category === cat,
-              ).length;
-              const config = categoryConfig[cat];
-              return (
-                <Pressable
-                  key={cat}
-                  style={[bkStyles.homeCatChip, { backgroundColor: config.bg }]}
-                  onPress={() => go("bookmarks")}
-                >
-                  <Text
-                    style={[bkStyles.homeCatChipTitle, { color: config.color }]}
-                  >
-                    {cat}
-                  </Text>
-                  <Text style={bkStyles.homeCatChipCount}>{count}개 저장됨</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        ) : previewRooms.length === 0 ? (
+        ) : expressions.length === 0 ? (
           <Text style={{ color: "#9CA3AF", fontSize: 13 }}>
             아직 저장된 표현이 없어요
           </Text>
         ) : (
-          <View style={{ gap: 8 }}>
-            {previewRooms.map(([roomKey, roomExprs]) => (
-              <Pressable
-                key={roomKey}
-                style={bkStyles.homeRoomRow}
-                onPress={() => go("bookmarks")}
-              >
-                <View style={bkStyles.homeRoomIcon}>
-                  <Ionicons name="folder-outline" size={15} color="#9CA3AF" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={bkStyles.homeRoomTitle} numberOfLines={1}>
-                    {roomExprs[0]?.roomName ?? ""}
-                  </Text>
-                  <Text style={bkStyles.homeRoomSub}>
-                    {roomExprs.length}개 저장됨
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
+          <View style={{ gap: 10 }}>
+            {preview.map((expr) => renderExpression(expr, true))}
           </View>
         )}
       </View>
     );
   }
 
->>>>>>> Stashed changes
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       {/* 헤더 */}
       {isInsideDetail ? (
         <View style={bkStyles.header}>
           <View
             style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
           >
-<<<<<<< Updated upstream
-            <Text style={bkStyles.backIcon}>‹</Text>
-          </Pressable>
-          <View>
-            <Text style={bkStyles.headerTitle}>
-              {selectedCategory ?? selectedRoom}
-            </Text>
-            <Text style={bkStyles.headerSub}>
-              {selectedCategory
-                ? `${expressions.filter((e) => e.category === selectedCategory).length}개 저장됨`
-                : `${groupByRoom()[selectedRoom!]?.length ?? 0}개 저장됨`}
-            </Text>
-=======
             <Pressable
               style={bkStyles.backBtn}
               onPress={() => {
@@ -3150,7 +4208,6 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
                   : `${groupByRoom()[selectedRoom!]?.length ?? 0}개 저장됨`}
               </Text>
             </View>
->>>>>>> Stashed changes
           </View>
         </View>
       ) : (
@@ -3217,36 +4274,89 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
         </View>
       )}
 
-      <ScrollView contentContainerStyle={bkStyles.content}>
-        {/* 카테고리 목록 */}
-        {!isInsideDetail && viewMode === "by-category" && (
-          <View style={{ gap: 10 }}>
-            {(["단어", "문법", "문장"] as Category[]).map((cat) => {
-              const count = expressions.filter(
-                (e) => e.category === cat,
-              ).length;
-              const config = categoryConfig[cat];
-              return (
-                <Pressable
-                  key={cat}
-                  style={bkStyles.listCard}
-                  onPress={() => setSelectedCategory(cat)}
-                >
-                  <View
-                    style={[bkStyles.catIcon, { backgroundColor: config.bg }]}
+      {loading ? (
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            paddingTop: 60,
+          }}
+        >
+          <ActivityIndicator size="large" color={primary} />
+        </View>
+      ) : expressions.length === 0 ? (
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            paddingTop: 60,
+            gap: 12,
+          }}
+        >
+          <Text style={{ color: "#9CA3AF", fontSize: 13 }}>
+            {fetchError
+              ? "표현을 불러오지 못했어요. 다시 시도해주세요."
+              : "아직 저장된 표현이 없어요"}
+          </Text>
+          {fetchError && (
+            <Pressable
+              onPress={() => setRetryTick((t) => t + 1)}
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: 8,
+                backgroundColor: "#F3F4F6",
+              }}
+            >
+              <Text
+                style={{ color: "#374151", fontSize: 13, fontWeight: "600" }}
+              >
+                다시 시도
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      ) : (
+        <ScrollView
+          style={{ backgroundColor: "#F9FAFB" }}
+          contentContainerStyle={bkStyles.content}
+        >
+          {fetchError && (
+            <Text
+              style={{
+                color: "#B45309",
+                fontSize: 12,
+                backgroundColor: "#FFFBEB",
+                padding: 8,
+                borderRadius: 8,
+                marginBottom: 10,
+              }}
+            >
+              일부 표현을 불러오지 못했어요. 표시된 목록이 최신이 아닐 수
+              있습니다.
+            </Text>
+          )}
+          {/* 카테고리 목록 */}
+          {!isInsideDetail && viewMode === "by-category" && (
+            <View style={{ gap: 10 }}>
+              {(["단어", "문법", "문장"] as Category[]).map((cat) => {
+                const count = expressions.filter(
+                  (e) => e.category === cat,
+                ).length;
+                const config = categoryConfig[cat];
+                return (
+                  <Pressable
+                    key={cat}
+                    style={bkStyles.listCard}
+                    onPress={() => setSelectedCategory(cat)}
                   >
                     <View
-<<<<<<< Updated upstream
-                      style={[bkStyles.catDot, { backgroundColor: config.dot }]}
-                    />
-=======
                       style={[bkStyles.catIcon, { backgroundColor: config.bg }]}
                     >
                       <View
-                        style={[
-                          bkStyles.catDot,
-                          { backgroundColor: config.dot },
-                        ]}
+                        style={[bkStyles.catDot, { backgroundColor: config.dot }]}
                       />
                     </View>
                     <View style={{ flex: 1 }}>
@@ -3271,59 +4381,38 @@ function BookmarksScreen({ go }: { go: (screen: Screen) => void }) {
                 >
                   <View style={bkStyles.roomIcon}>
                     <Ionicons name="folder-outline" size={18} color="#9CA3AF" />
->>>>>>> Stashed changes
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={bkStyles.listCardTitle}>{cat}</Text>
-                    <Text style={bkStyles.listCardSub}>{count}개 저장됨</Text>
+                    <Text style={bkStyles.listCardTitle}>
+                      {roomExprs[0]?.roomName ?? ""}
+                    </Text>
+                    <Text style={bkStyles.listCardSub}>
+                      {roomExprs.length}개 저장됨
+                    </Text>
                   </View>
                   <Text style={styles.chevron}>›</Text>
                 </Pressable>
-              );
-            })}
-          </View>
-        )}
+              ))}
+            </View>
+          )}
 
-        {/* 대화방 목록 */}
-        {!isInsideDetail && viewMode === "by-room" && (
-          <View style={{ gap: 10 }}>
-            {Object.entries(groupByRoom()).map(([roomName, roomExprs]) => (
-              <Pressable
-                key={roomName}
-                style={bkStyles.listCard}
-                onPress={() => setSelectedRoom(roomName)}
-              >
-                <View style={bkStyles.roomIcon}>
-                  <Text style={{ fontSize: 18 }}>📁</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={bkStyles.listCardTitle}>{roomName}</Text>
-                  <Text style={bkStyles.listCardSub}>
-                    {roomExprs.length}개 저장됨
-                  </Text>
-                </View>
-                <Text style={styles.chevron}>›</Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
+          {/* 카테고리 상세 */}
+          {selectedCategory && (
+            <View style={{ gap: 10 }}>
+              {expressions
+                .filter((e) => e.category === selectedCategory)
+                .map((e) => renderExpression(e, true))}
+            </View>
+          )}
 
-        {/* 카테고리 상세 */}
-        {selectedCategory && (
-          <View style={{ gap: 10 }}>
-            {expressions
-              .filter((e) => e.category === selectedCategory)
-              .map((e) => renderExpression(e, true))}
-          </View>
-        )}
-
-        {/* 대화방 상세 */}
-        {selectedRoom && (
-          <View style={{ gap: 10 }}>
-            {groupByRoom()[selectedRoom]?.map((e) => renderExpression(e))}
-          </View>
-        )}
-      </ScrollView>
+          {/* 대화방 상세 */}
+          {selectedRoom && (
+            <View style={{ gap: 10 }}>
+              {groupByRoom()[selectedRoom]?.map((e) => renderExpression(e))}
+            </View>
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -3407,7 +4496,18 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
   );
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       {/* 헤더 */}
       <View style={stStyles.header}>
         <Pressable style={stStyles.backBtn} onPress={() => go("mode")}>
@@ -3416,7 +4516,10 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
         <Text style={stStyles.headerTitle}>설정</Text>
       </View>
 
-      <ScrollView contentContainerStyle={stStyles.content}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={stStyles.content}
+      >
         {/* 계정 */}
         <Text style={stStyles.sectionLabel}>계정</Text>
         <View style={stStyles.card}>
@@ -3610,7 +4713,18 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
   };
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       {/* 헤더 */}
       <View style={pyStyles.header}>
         <Pressable style={pyStyles.backBtn} onPress={() => go("mypage")}>
@@ -3619,7 +4733,10 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
         <Text style={pyStyles.headerTitle}>결제 및 구독</Text>
       </View>
 
-      <ScrollView contentContainerStyle={pyStyles.content}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={pyStyles.content}
+      >
         {/* 현재 구독 배너 */}
         {CURRENT_SUBSCRIPTION ? (
           <View style={pyStyles.banner}>
@@ -3815,14 +4932,6 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
           <View style={{ gap: 10 }}>
             {CURRENT_SUBSCRIPTION?.plan === selectedPlan ? (
               <View style={{ gap: 8 }}>
-                <View style={pyStyles.currentPlanBox}>
-                  <Text style={pyStyles.currentPlanText}>
-                    현재 구독 중인 플랜입니다
-                  </Text>
-                  <Text style={pyStyles.currentPlanSub}>
-                    다음 결제일: {CURRENT_SUBSCRIPTION.nextBillingDate}
-                  </Text>
-                </View>
                 <Pressable style={pyStyles.cancelBtn} onPress={handleCancel}>
                   <Text style={pyStyles.cancelBtnText}>구독 취소</Text>
                 </Pressable>
@@ -3865,7 +4974,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const FULL_URL =
-          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/faq";
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -3896,7 +5005,18 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
   }, []);
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       {/* 헤더 */}
       <View style={fqStyles.header}>
         <Pressable style={fqStyles.backBtn} onPress={() => go("settings")}>
@@ -3912,7 +5032,10 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
           style={{ marginTop: 50 }}
         />
       ) : (
-        <ScrollView contentContainerStyle={fqStyles.content}>
+        <ScrollView
+          style={{ backgroundColor: "#F9FAFB" }}
+          contentContainerStyle={fqStyles.content}
+        >
           <View style={fqStyles.card}>
             {/* ⭐️ 백엔드에서 받은 1단 배열(faqs)을 바로 map으로 돌립니다! */}
             {faqs.map((faq, index) => {
@@ -4488,8 +5611,6 @@ const bkStyles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: 6,
   },
-<<<<<<< Updated upstream
-=======
   aiSourceBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -4503,8 +5624,8 @@ const bkStyles = StyleSheet.create({
   exprSourceLabel: {
     color: "#9CA3AF",
     fontSize: 10,
+    marginTop: 4,
   },
->>>>>>> Stashed changes
   catBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   catBadgeText: { fontSize: 10, fontWeight: "700" },
   deleteBtn: {
@@ -4661,57 +5782,213 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
   const [levelConfirmed, setLevelConfirmed] = useState(true);
   const [isAnimated, setIsAnimated] = useState(false);
 
-  const userInfo = { nickname: "영어마스터", email: "user@example.com" };
-  const weekly = [
-    { day: "Mon", minute: 45, date: "04/07" },
-    { day: "Tue", minute: 60, date: "04/08" },
-    { day: "Wed", minute: 30, date: "04/09" },
-    { day: "Thu", minute: 75, date: "04/10" },
-    { day: "Fri", minute: 50, date: "04/11" },
-    { day: "Sat", minute: 90, date: "04/12" },
-    { day: "Sun", minute: 65, date: "04/13" },
-  ];
+  // ⭐️ 1. 서버에서 받아올 사용자 정보를 담을 상태(State) 생성
+  const [userInfo, setUserInfo] = useState({ nickname: "회원", email: "" });
 
-  const totalMinutes = weekly.reduce((sum, item) => sum + item.minute, 0);
-  const maxMinutes = Math.max(...weekly.map((item) => item.minute));
-  const avgMinutes = Math.round(totalMinutes / weekly.length);
+  // ⭐️ 1. weekly 데이터가 어떻게 생겼는지 TypeScript에게 알려주는 타입 정의
+  type WeeklyStat = {
+    day: string;
+    minute: number;
+    date?: string;
+  };
+
+  // ⭐️ 2. 기존 더미데이터였던 통계 값들을 State로 변경!
+  const [weekly, setWeekly] = useState<WeeklyStat[]>([]);
+  const [totalMinutes, setTotalMinutes] = useState(0);
+  const [avgMinutes, setAvgMinutes] = useState(0);
+  const [continuousDays, setContinuousDays] = useState(0); // 앞서 말한 연속 출석일용
+
+  // ⭐️ 3. TypeScript가 minute를 확실히 숫자로 인식하므로 빨간 줄이 사라집니다!
+  const maxMinutes =
+    weekly.length > 0
+      ? Math.max(...weekly.map((item) => Number(item.minute)))
+      : 100;
 
   const currentLevel = levels.find((l) => l.id === userLevel)!;
 
+  useEffect(() => {
+    const fetchMyProfile = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        if (!accessToken) return;
+
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+        // 홈 화면에서 성공하셨던 그 주소 그대로 호출합니다!
+        const res = await axios.get(`${API_URL}/api/users/me`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true",
+          },
+        });
+
+        // 이름과 이메일 추출 (백엔드 응답 형태에 맞춰 유연하게)
+        const fetchedName =
+          res.data?.data?.nickname ||
+          res.data?.nickname ||
+          res.data?.data?.name ||
+          res.data?.name ||
+          "회원";
+        const fetchedEmail = res.data?.data?.email || res.data?.email || "";
+
+        // 가져온 정보를 상태에 업데이트
+        setUserInfo({ nickname: fetchedName, email: fetchedEmail });
+      } catch (error: any) {
+        console.error(
+          "🚨 마이페이지 유저 정보 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+
+    fetchMyProfile();
+  }, []); // 빈 배열을 넣어 화면이 처음 렌더링될 때 딱 한 번만 실행되게 합니다.
+
+  // ⭐️ 3. 방금 백엔드에서 만든 학습 통계 API 호출하기!
+  useEffect(() => {
+    // 1. 통계를 불러오는 함수는 기존과 완벽하게 동일합니다.
+    const fetchStudyStats = async () => {
+      console.log("🚀 통계 API 찌르는 중!");
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        if (!accessToken) return;
+
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const res = await axios.get(`${API_URL}/api/users/study-stats`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            // ⭐️ ngrok 경고창을 무시하는 필살기 헤더 3대장!
+            "ngrok-skip-browser-warning": "69420",
+            "Bypass-Tunnel-Reminder": "true",
+            "User-Agent": "PostmanRuntime/7.28.4",
+          },
+        });
+
+        const stats = res.data?.data || {};
+        const weeklyData = stats.weekly || [];
+        setWeekly(weeklyData);
+
+        const calcTotal = weeklyData.reduce(
+          (sum: number, item: any) => sum + Number(item.minute),
+          0,
+        );
+        const calcAvg = Math.round(calcTotal / 7);
+
+        setTotalMinutes(
+          stats.totalMinutes > 0 ? stats.totalMinutes : calcTotal,
+        );
+        setAvgMinutes(stats.avgMinutes > 0 ? stats.avgMinutes : calcAvg);
+        setContinuousDays(stats.continuousDays || 0);
+      } catch (error: any) {
+        console.error(
+          "🚨 통계 데이터 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+
+    // 2. 처음 화면이 켜질 때 한 번 불러옵니다.
+    fetchStudyStats();
+
+    // ⭐️ 3. 앱이 켜질 때마다(백그라운드 -> 액티브) 알아서 새로고침하도록 리스너를 달아줍니다!
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active") {
+        console.log("🔄 마이페이지가 다시 활성화됨! 통계 새로고침!");
+        fetchStudyStats(); // API 다시 찌르기!
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  // ⭐️ 2. 그래프를 0.15초 뒤에 슉! 올라오게 만드는 useEffect (이게 있어야 그래프가 보입니다!)
   useEffect(() => {
     const t = setTimeout(() => setIsAnimated(true), 150);
     return () => clearTimeout(t);
   }, []);
 
-  const handleLevelButtonClick = () => {
+  // 🚀 한글 레벨을 백엔드가 원하는 영어 대문자로 바꿔주는 매핑 딕셔너리
+  const levelMapping: Record<Level, string> = {
+    초급: "BEGINNER",
+    중급: "INTERMEDIATE",
+    고급: "ADVANCED",
+  };
+
+  // 🚀 학습 레벨 변경 및 백엔드 연동 함수
+  const handleLevelButtonClick = async () => {
     if (levelConfirmed) {
+      // '변경' 버튼을 눌렀을 때 -> 수정 모드로 진입
       setPendingLevel(userLevel);
       setLevelConfirmed(false);
     } else {
-      setUserLevel(pendingLevel);
-      setLevelConfirmed(true);
+      // '결정' 버튼을 눌렀을 때 -> 서버로 변경된 레벨 전송
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+        // ⭐️ 1. 저장된 토큰이 아예 없거나 null인지 확인!
+        console.log("📌 현재 저장된 토큰:", accessToken);
+
+        // 한글을 영어 대문자로 변환 (예: "중급" -> "INTERMEDIATE")
+        const mappedDifficulty = levelMapping[pendingLevel];
+
+        // ⭐️ 2. 어떤 주소와 파라미터로 요청을 날리는지 확인!
+        console.log(
+          "📌 요청 URL:",
+          `${API_URL}/api/users/me/level?difficulty=${mappedDifficulty}`,
+        );
+
+        // ⭐️ 명세에 맞춘 PUT 요청 (Query Parameter로 전달)
+        await axios.put(
+          `${API_URL}/api/users/me/level?difficulty=${mappedDifficulty}`,
+          {}, // Body가 아니므로 빈 객체 전달
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+
+        // 서버 통신 성공 시 화면 상태 업데이트
+        setUserLevel(pendingLevel);
+        setLevelConfirmed(true);
+      } catch (error: any) {
+        console.error(
+          "🚨 레벨 변경 실패:",
+          error.response?.data || error.message,
+        );
+        Alert.alert(
+          "오류",
+          "학습 레벨 변경에 실패했습니다. 다시 시도해 주세요.",
+        );
+      }
     }
   };
 
   const logout = () => {
     Alert.alert("로그아웃", "정말 로그아웃 하시겠습니까?", [
       { text: "취소", style: "cancel" },
-      {
-        text: "로그아웃",
-        style: "destructive",
-        onPress: async () => {
-          await AsyncStorage.removeItem("accessToken");
-          await AsyncStorage.removeItem("refreshToken");
-          go("login");
-        },
-      },
+      { text: "로그아웃", style: "destructive", onPress: () => go("login") },
     ]);
   };
 
   const CHART_HEIGHT = 128;
 
   return (
-    <View style={styles.screenSoft}>
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
       {/* 헤더 */}
       <View style={mpStyles.header}>
         <Pressable style={mpStyles.backBtn} onPress={() => go("mode")}>
@@ -4720,33 +5997,18 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
         <Text style={mpStyles.headerTitle}>마이 페이지</Text>
       </View>
 
-      <ScrollView contentContainerStyle={mpStyles.content}>
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={mpStyles.content}
+      >
         {/* 프로필 카드 */}
         <View style={mpStyles.card}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-            <View style={mpStyles.avatar}>
-              <Text style={mpStyles.avatarText}>
-                {userInfo.nickname.charAt(0)}
-              </Text>
-            </View>
+            {/* ❌ avatar View 부분을 통째로 삭제했습니다! */}
+
             <View style={{ flex: 1 }}>
               <Text style={mpStyles.nickname}>{userInfo.nickname}</Text>
               <Text style={mpStyles.email}>{userInfo.email}</Text>
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                  marginTop: 6,
-                }}
-              >
-                <View
-                  style={[mpStyles.dot, { backgroundColor: currentLevel.dot }]}
-                />
-                <Text style={mpStyles.levelSmall}>
-                  {currentLevel.id} · {currentLevel.eng}
-                </Text>
-              </View>
             </View>
             <Pressable onPress={logout} style={mpStyles.logoutBtn}>
               <Text style={mpStyles.logoutText}>로그아웃</Text>
@@ -4754,24 +6016,47 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
           </View>
         </View>
 
-        {/* 학습 통계 */}
+        {/* ⭐️ 2. 학습 통계 부분 수정 */}
         <View style={{ flexDirection: "row", gap: 10 }}>
-          {[
-            {
-              label: "이번 주",
-              value: `${Math.round((totalMinutes / 60) * 10) / 10}h`,
-            },
-            { label: "일 평균", value: `${avgMinutes}분` },
-            { label: "연속 학습", value: "5일" },
-          ].map((stat) => (
-            <View key={stat.label} style={mpStyles.statBox}>
-              <Text style={mpStyles.statLabel}>{stat.label}</Text>
-              <Text style={mpStyles.statValue}>{stat.value}</Text>
+          {/* 이번 주 학습 시간 */}
+          <View style={mpStyles.statBox}>
+            <Text style={mpStyles.statLabel}>이번 주</Text>
+            <Text style={mpStyles.statValue}>
+              {/* ⭐️ 60분 미만이면 '2분', 60분 이상이면 '1.5h'처럼 표시되도록 방어! */}
+              {totalMinutes < 60
+                ? `${totalMinutes}분`
+                : `${Math.round((totalMinutes / 60) * 10) / 10}h`}
+            </Text>
+          </View>
+
+          {/* 일 평균 학습 시간 */}
+          <View style={mpStyles.statBox}>
+            <Text style={mpStyles.statLabel}>일 평균</Text>
+            <Text style={mpStyles.statValue}>
+              {/* ⭐️ 총 시간이 있는데 평균이 0으로 반올림되었다면 최소 '1분'으로 표시! */}
+              {totalMinutes > 0 && avgMinutes === 0 ? 1 : avgMinutes}분
+            </Text>
+          </View>
+
+          {/* ⭐️ 연속 학습일 */}
+          <View style={mpStyles.statBox}>
+            <Text style={mpStyles.statLabel}>연속 학습</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                marginTop: 4,
+              }}
+            >
+              <Text style={[mpStyles.statValue, { marginTop: 0 }]}>
+                {continuousDays}일
+              </Text>
             </View>
-          ))}
+          </View>
         </View>
 
-        {/* 주간 그래프 */}
+        {/* 주간 그래프 (기존 코드 거의 동일, maxMinutes 방어 로직만 추가됨) */}
         <View style={mpStyles.card}>
           <View
             style={{
@@ -4797,12 +6082,16 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
           >
             {weekly.map((item, index) => {
               const isToday = index === weekly.length - 1;
+
+              // ⭐️ maxMinutes가 0일 때 NaN이 되는 것을 방지
+              const ratio = maxMinutes > 0 ? item.minute / maxMinutes : 0;
               const barH = isAnimated
-                ? Math.max(8, (item.minute / maxMinutes) * (CHART_HEIGHT - 28))
+                ? Math.max(8, ratio * (CHART_HEIGHT - 28))
                 : 0;
+
               return (
                 <View
-                  key={item.day}
+                  key={item.day || index.toString()} // 혹시 day가 없을 때를 대비
                   style={{
                     flex: 1,
                     alignItems: "center",
@@ -4828,7 +6117,22 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
                   <Text
                     style={[mpStyles.barDay, isToday && { color: primary }]}
                   >
-                    {item.day}
+                    {{
+                      Mon: "월",
+                      Tue: "화",
+                      Wed: "수",
+                      Thu: "목",
+                      Fri: "금",
+                      Sat: "토",
+                      Sun: "일",
+                      MON: "월",
+                      TUE: "화",
+                      WED: "수",
+                      THU: "목",
+                      FRI: "금",
+                      SAT: "토",
+                      SUN: "일",
+                    }[item.day] || item.day}
                   </Text>
                 </View>
               );
@@ -5694,15 +6998,6 @@ function Label({ text }: { text: string }) {
   return <Text style={styles.label}>{text}</Text>;
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.stat}>
-      <Text style={styles.mutedSmall}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#FFFFFF" },
   webViewClose: {
@@ -5957,6 +7252,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 14,
   },
+  savedExprCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: 16,
+    gap: 12,
+    marginBottom: 8,
+  },
   modeIcon: {
     width: 52,
     height: 52,
@@ -5964,17 +7268,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-<<<<<<< Updated upstream
-  modeIconText: { fontSize: 25 },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    padding: 16,
-  },
-=======
->>>>>>> Stashed changes
   profileCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -6043,45 +7336,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   cardTitle: { color: "#111827", fontSize: 15, fontWeight: "800" },
-  chart: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    height: 120,
-    marginTop: 16,
-  },
-  barWrap: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 4,
-  },
-  bar: {
-    width: "62%",
-    backgroundColor: "#C7D2FE",
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-  },
-  activeBar: { backgroundColor: primary },
-  barMinute: { color: "#9CA3AF", fontSize: 10 },
-  barDay: { color: "#9CA3AF", fontSize: 11 },
-  primaryText: { color: primary },
-  statsGrid: { flexDirection: "row", gap: 10 },
-  stat: {
-    flex: 1,
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-  },
-  statValue: {
-    color: "#111827",
-    fontSize: 16,
-    fontWeight: "900",
-    marginTop: 4,
-  },
   roomCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
