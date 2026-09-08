@@ -1152,9 +1152,11 @@ export function RoomListScreen({
             onLongPress={() => handleDeleteRoom(room.id, room.title)}
           >
             <View style={styles.voiceRoomIcon}>
-              <Text style={styles.voiceRoomIconText}>
-                {mode === "voice" ? "🎙" : "💬"}
-              </Text>
+              <Ionicons
+                name={mode === "voice" ? "mic-outline" : "chatbubbles-outline"}
+                size={18}
+                color={primary}
+              />
             </View>
             <View style={styles.roomPreview}>
               <View style={styles.roomPreviewTop}>
@@ -4996,14 +4998,11 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
                         gap: 8,
                       }}
                     >
-                      <Text
-                        style={{
-                          color: isSelected ? primary : "#D1D5DB",
-                          fontSize: 12,
-                        }}
-                      >
-                        ✓
-                      </Text>
+                      <Ionicons
+                        name="checkmark"
+                        size={14}
+                        color={isSelected ? primary : "#D1D5DB"}
+                      />
                       <Text
                         style={[
                           pyStyles.featureText,
@@ -6805,7 +6804,7 @@ function Header({
             onPress={() => go("bookmarks")}
             style={styles.headerAction}
           >
-            <Text>🔖</Text>
+            <Ionicons name="bookmark-outline" size={20} color="#4B5563" />
           </Pressable>
           <Pressable onPress={() => go("mypage")} style={styles.headerAction}>
             <Ionicons name="person-outline" size={20} color="#4B5563" />
@@ -7144,7 +7143,12 @@ export function FeedbackList({
     // (기존 emptyState 스타일은 프로젝트 설정에 맞게 유지)
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <Text style={{ fontSize: 30, marginBottom: 10 }}>🔕</Text>
+        <Ionicons
+          name="notifications-off-outline"
+          size={30}
+          color="#999"
+          style={{ marginBottom: 10 }}
+        />
         <Text style={{ color: "#999" }}>피드백이 꺼져 있습니다.</Text>
       </View>
     );
