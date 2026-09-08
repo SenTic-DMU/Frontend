@@ -1851,6 +1851,31 @@ export function VoiceChatScreen({
 
   const [scrapIdMap, setScrapIdMap] = useState<Record<string, number>>({});
 
+  // 🔊 기록 탭에서 AI 메시지를 다시 읽어주는 TTS (실시간 통화 자동재생과는 별개)
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      Speech.stop();
+    };
+  }, []);
+
+  const toggleSpeakMessage = (id: string, text: string) => {
+    if (speakingId === id) {
+      Speech.stop();
+      setSpeakingId(null);
+      return;
+    }
+    Speech.stop();
+    setSpeakingId(id);
+    Speech.speak(text, {
+      language: "en-US",
+      onDone: () => setSpeakingId(null),
+      onStopped: () => setSpeakingId(null),
+      onError: () => setSpeakingId(null),
+    });
+  };
+
   // ⭐️ 1-2. 스크랩 API 통신 함수 수정 (토글 기능 적용)
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
@@ -2574,7 +2599,8 @@ export function VoiceChatScreen({
                   width: "100%",
                 }}
               >
-                {/* 대화 말풍선 (AI는 캐릭터 아바타+이름을 옆에 붙여서 보여줍니다) */}
+                {/* 대화 말풍선 (AI는 캐릭터 아바타+이름을 옆에 붙여서 보여주고,
+                    스크랩/읽어주기 버튼도 같은 컬럼 안에 넣어서 말풍선과 왼쪽 끝을 맞춥니다) */}
                 {(() => {
                   const bubble = (
                     <View
@@ -2597,50 +2623,71 @@ export function VoiceChatScreen({
                       </Text>
                     </View>
                   );
-                  return isUser ? (
-                    bubble
-                  ) : (
+                  if (isUser) return bubble;
+
+                  return (
                     <AiMessageRow
                       character={room.characters?.[msg.characterIndex ?? 0]}
                     >
                       {bubble}
+                      {/* 🔖 스크랩 버튼 + 🔊 읽어주기 버튼 */}
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
+                      >
+                        <Pressable
+                          // ⭐️ 스크랩 여부에 따라 스타일만 바꿔줍니다.
+                          style={
+                            isAiScraped
+                              ? styles.aiScrapBadge
+                              : styles.aiScrapButton
+                          }
+                          onPress={() =>
+                            handleScrap(aiScrapKey, {
+                              roomId: room.id,
+                              expression: msg.text,
+                              context: "",
+                              category: "EXPRESSION",
+                            })
+                          }
+                        >
+                          <BookmarkIcon
+                            color={isAiScraped ? "#fff" : "#9CA3AF"}
+                            size={11}
+                            // ⭐️ 아이콘이 칠해지는 속성(filled)이 있다면 여기에 연결해줍니다.
+                            filled={isAiScraped ? true : undefined}
+                          />
+                          <Text
+                            style={
+                              isAiScraped
+                                ? styles.aiScrapBadgeText
+                                : styles.aiScrapText
+                            }
+                          >
+                            {isAiScraped ? "스크랩됨" : "스크랩"}
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => toggleSpeakMessage(msgId, msg.text)}
+                          style={styles.aiScrapButton}
+                        >
+                          <Ionicons
+                            name={
+                              speakingId === msgId
+                                ? "stop-circle-outline"
+                                : "volume-medium-outline"
+                            }
+                            size={13}
+                            color={speakingId === msgId ? primary : "#9CA3AF"}
+                          />
+                        </Pressable>
+                      </View>
                     </AiMessageRow>
                   );
                 })()}
-
-                {/* 🔖 AI 말풍선용 스크랩 버튼 */}
-                {!isUser && (
-                  <Pressable
-                    // ⭐️ 스크랩 여부에 따라 스타일만 바꿔줍니다.
-                    style={
-                      isAiScraped ? styles.aiScrapBadge : styles.aiScrapButton
-                    }
-                    onPress={() =>
-                      handleScrap(aiScrapKey, {
-                        roomId: room.id,
-                        expression: msg.text,
-                        context: "",
-                        category: "EXPRESSION",
-                      })
-                    }
-                  >
-                    <BookmarkIcon
-                      color={isAiScraped ? "#fff" : "#9CA3AF"}
-                      size={11}
-                      // ⭐️ 아이콘이 칠해지는 속성(filled)이 있다면 여기에 연결해줍니다.
-                      filled={isAiScraped ? true : undefined}
-                    />
-                    <Text
-                      style={
-                        isAiScraped
-                          ? styles.aiScrapBadgeText
-                          : styles.aiScrapText
-                      }
-                    >
-                      {isAiScraped ? "스크랩됨" : "스크랩"}
-                    </Text>
-                  </Pressable>
-                )}
 
                 {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에만) */}
                 {isUser &&
@@ -2908,6 +2955,31 @@ export function TextChatScreen({
   >(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const bubbleYRef = useRef<Record<string, number>>({});
+
+  // 🔊 AI 메시지를 TTS로 읽어주는 버튼용 상태
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      Speech.stop();
+    };
+  }, []);
+
+  const toggleSpeakMessage = (id: string, text: string) => {
+    if (speakingId === id) {
+      Speech.stop();
+      setSpeakingId(null);
+      return;
+    }
+    Speech.stop();
+    setSpeakingId(id);
+    Speech.speak(text, {
+      language: "en-US",
+      onDone: () => setSpeakingId(null),
+      onStopped: () => setSpeakingId(null),
+      onError: () => setSpeakingId(null),
+    });
+  };
   const [layoutTick, setLayoutTick] = useState(0);
   const hasScrolledToHighlightRef = useRef(false);
 
@@ -3367,7 +3439,8 @@ export function TextChatScreen({
                 width: "100%",
               }}
             >
-              {/* 대화 말풍선 (AI는 캐릭터 아바타+이름을 옆에 붙여서 보여줍니다) */}
+              {/* 대화 말풍선 (AI는 캐릭터 아바타+이름을 옆에 붙여서 보여주고,
+                  스크랩/읽어주기 버튼도 같은 컬럼 안에 넣어서 말풍선과 왼쪽 끝을 맞춥니다) */}
               {(() => {
                 const bubble = (
                   <View
@@ -3390,46 +3463,71 @@ export function TextChatScreen({
                     </Text>
                   </View>
                 );
-                return isUser ? (
-                  bubble
-                ) : (
-                  <AiMessageRow character={room.characters?.[0]}>
+                if (isUser) return bubble;
+
+                return (
+                  <AiMessageRow
+                    character={room.characters?.[msg.characterIndex ?? 0]}
+                  >
                     {bubble}
+                    {/* 🔖 스크랩 버튼 + 🔊 읽어주기 버튼 */}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 10,
+                      }}
+                    >
+                      <Pressable
+                        // ⭐️ 스크랩 여부에 따라 배경 스타일만 바꿔줍니다!
+                        style={
+                          isAiScraped
+                            ? styles.aiScrapBadge
+                            : styles.aiScrapButton
+                        }
+                        onPress={() =>
+                          handleScrap(aiScrapKey, {
+                            roomId: room.id,
+                            expression: msg.text,
+                            context: "",
+                            category: "EXPRESSION",
+                          })
+                        }
+                      >
+                        <BookmarkIcon
+                          color={isAiScraped ? "#fff" : "#9CA3AF"}
+                          size={11}
+                          // ⭐️ 스크랩 상태일 때만 아이콘 안을 채워줍니다!
+                          filled={isAiScraped ? true : undefined}
+                        />
+                        <Text
+                          style={
+                            isAiScraped
+                              ? styles.aiScrapBadgeText
+                              : styles.aiScrapText
+                          }
+                        >
+                          {isAiScraped ? "스크랩됨" : "스크랩"}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => toggleSpeakMessage(msg.id, msg.text)}
+                        style={styles.aiScrapButton}
+                      >
+                        <Ionicons
+                          name={
+                            speakingId === msg.id
+                              ? "stop-circle-outline"
+                              : "volume-medium-outline"
+                          }
+                          size={13}
+                          color={speakingId === msg.id ? primary : "#9CA3AF"}
+                        />
+                      </Pressable>
+                    </View>
                   </AiMessageRow>
                 );
               })()}
-
-              {/* 🔖 AI 말풍선용 스크랩 버튼 */}
-              {!isUser && (
-                <Pressable
-                  // ⭐️ 스크랩 여부에 따라 배경 스타일만 바꿔줍니다!
-                  style={
-                    isAiScraped ? styles.aiScrapBadge : styles.aiScrapButton
-                  }
-                  onPress={() =>
-                    handleScrap(aiScrapKey, {
-                      roomId: room.id,
-                      expression: msg.text,
-                      context: "",
-                      category: "EXPRESSION",
-                    })
-                  }
-                >
-                  <BookmarkIcon
-                    color={isAiScraped ? "#fff" : "#9CA3AF"}
-                    size={11}
-                    // ⭐️ 스크랩 상태일 때만 아이콘 안을 채워줍니다!
-                    filled={isAiScraped ? true : undefined}
-                  />
-                  <Text
-                    style={
-                      isAiScraped ? styles.aiScrapBadgeText : styles.aiScrapText
-                    }
-                  >
-                    {isAiScraped ? "스크랩됨" : "스크랩"}
-                  </Text>
-                </Pressable>
-              )}
 
               {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에, feedback 데이터가 있을 때만 등장!) */}
               {isUser &&
