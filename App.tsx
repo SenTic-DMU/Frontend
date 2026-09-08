@@ -1,4 +1,11 @@
-import { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import {
+  useMemo,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  ReactNode,
+} from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import {
@@ -30,6 +37,7 @@ import * as ImagePicker from "expo-image-picker";
 import { WebView } from "react-native-webview";
 // ⭐️ 음성 재생을 위해 expo-av에서 Audio를 꼭 불러와야 합니다!
 import { Audio } from "expo-av";
+import * as Speech from "expo-speech";
 
 const KAKAO_REST_API_KEY = "5775a3641d33077c7adf61cbcc01d0a9";
 const KAKAO_REDIRECT_URI = "https://localhost/kakao";
@@ -50,7 +58,8 @@ type Screen =
   | "payment"
   | "bookmarks"
   | "notice"
-  | "faq";
+  | "faq"
+  | "trash";
 
 // ⭐️ 피드백 객체의 생김새 정의
 interface FeedbackData {
@@ -71,6 +80,9 @@ type Message = {
   time: string;
   feedback?: FeedbackData[];
   isBookmarked?: boolean; // 👈 추가!
+  // 🗣️ 2명 이상의 캐릭터가 있는 방에서 누가 말했는지 (room.characters의 인덱스).
+  // 지금 백엔드 응답엔 이 값이 없어서 항상 undefined → 0번 캐릭터로 처리됨.
+  characterIndex?: number;
 };
 
 type PracticeRoom = {
@@ -81,6 +93,7 @@ type PracticeRoom = {
   lastMessage?: string;
   date?: string;
   duration?: string;
+  characters?: { name: string; avatar: string; photoUri: string | null }[];
 };
 
 declare const global: { accessToken?: string };
@@ -100,6 +113,7 @@ const TEST_VOICE_ROOMS: PracticeRoom[] = [
     desc: "카페에서 음료를 주문하는 상황극",
     date: "오늘",
     level: "맞춤",
+    characters: [{ name: "바리스타", avatar: "👩", photoUri: null }],
   },
 ];
 
@@ -110,8 +124,67 @@ const TEST_CHAT_ROOMS: PracticeRoom[] = [
     desc: "영어로 면접 보는 상황극",
     date: "오늘",
     level: "맞춤",
+    // 🗣️ 면접관 2명 — 말풍선 캐릭터별 분리 확인용 테스트 데이터
+    characters: [
+      { name: "면접관 A", avatar: "🧑‍💼", photoUri: null },
+      { name: "면접관 B", avatar: "👩‍💼", photoUri: null },
+    ],
   },
 ];
+
+// 🗑️ 대화방 휴지통 — 지금은 AsyncStorage에만 저장합니다. 서버에 휴지통 개념이 생기면
+// 아래 함수들 내부만 axios 호출로 바꾸면 되도록 사용하는 쪽(화면)에서는 이 함수들만 부릅니다.
+type TrashedRoom = PracticeRoom & {
+  roomType: "voice" | "chat";
+  trashedAt: string;
+};
+
+const TRASH_STORAGE_KEY = "trashedRooms";
+// ⚠️ "30일 후 자동 삭제"는 UI 문구일 뿐, 실제 만료 처리는 백엔드가 (여러 기기 동기화를 위해)
+// 주기적으로 해줘야 합니다. 클라이언트는 여기서 시간을 재서 지우지 않습니다.
+
+async function getTrashedRooms(): Promise<TrashedRoom[]> {
+  const raw = await AsyncStorage.getItem(TRASH_STORAGE_KEY);
+  return raw ? JSON.parse(raw) : [];
+}
+
+async function moveRoomToTrash(
+  room: PracticeRoom,
+  roomType: "voice" | "chat",
+) {
+  const trashed = await getTrashedRooms();
+  const next = [
+    ...trashed.filter((r) => String(r.id) !== String(room.id)),
+    { ...room, roomType, trashedAt: new Date().toISOString() },
+  ];
+  await AsyncStorage.setItem(TRASH_STORAGE_KEY, JSON.stringify(next));
+}
+
+async function restoreRoomFromTrash(roomId: string | number) {
+  const trashed = await getTrashedRooms();
+  const next = trashed.filter((r) => String(r.id) !== String(roomId));
+  await AsyncStorage.setItem(TRASH_STORAGE_KEY, JSON.stringify(next));
+}
+
+// ⚠️ 서버에 진짜 삭제 요청을 보내는 유일한 지점입니다 (복구/휴지통 이동은 서버를 건드리지 않음).
+async function permanentlyDeleteRoom(roomId: string | number) {
+  try {
+    const accessToken = await AsyncStorage.getItem("accessToken");
+    const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+    await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  } catch (error: any) {
+    console.error(
+      "🚨 방 영구삭제(서버) 실패:",
+      error.response?.data || error.message,
+    );
+    // 서버 호출이 실패해도(지금처럼 서버가 꺼져 있는 경우 포함) 로컬 휴지통에서는 지웁니다.
+  }
+  const trashed = await getTrashedRooms();
+  const next = trashed.filter((r) => String(r.id) !== String(roomId));
+  await AsyncStorage.setItem(TRASH_STORAGE_KEY, JSON.stringify(next));
+}
 
 const TEST_VOICE_MESSAGES: Message[] = [
   {
@@ -162,6 +235,7 @@ const TEST_CHAT_MESSAGES = [
     speaker: "ai",
     text: "Hi there! Thanks for coming in today. Can you tell me a bit about yourself?",
     time: "10:30",
+    characterIndex: 0, // 면접관 A
   },
   {
     id: "tt-2",
@@ -188,6 +262,7 @@ const TEST_CHAT_MESSAGES = [
     speaker: "ai",
     text: "That's great! What made you interested in this field?",
     time: "10:31",
+    characterIndex: 1, // 면접관 B
   },
 ];
 
@@ -477,6 +552,9 @@ export default function App() {
             go("textChat");
           }}
         />
+      )}
+      {screen === "trash" && (
+        <TrashScreen onBack={() => go("mode")} />
       )}
       {screen === "situation" && (
         <SituationScreen
@@ -1076,41 +1154,54 @@ export function RoomListScreen({
   onCreate: () => void;
   onPick: (room: PracticeRoom) => void;
 }) {
+  const roomType: "voice" | "chat" = mode === "voice" ? "voice" : "chat";
   const [hiddenRooms, setHiddenRooms] = useState<(number | string)[]>([]);
+  // 🗑️ 이 목록으로 다시 들어올 때마다 휴지통에 들어간 방 id를 다시 확인해서 걸러줍니다.
+  // (진짜 삭제가 아니라 휴지통 이동이라 서버 목록에는 여전히 남아있을 수 있음)
+  const [trashedIds, setTrashedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    getTrashedRooms().then((trashed) => {
+      if (cancelled) return;
+      setTrashedIds(
+        new Set(
+          trashed
+            .filter((r) => r.roomType === roomType)
+            .map((r) => String(r.id)),
+        ),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [roomType]);
 
   const handleDeleteRoom = (roomId: number | string, roomTitle: string) => {
     Alert.alert(
       "대화방 삭제",
-      `'${roomTitle}' 대화방을 정말 삭제하시겠습니까?\n(삭제 후 복구할 수 없습니다.)`,
+      `'${roomTitle}' 대화방을 삭제하시겠습니까?\n(삭제 후 30일 동안은 휴지통에서 복구할 수 있어요.)`,
       [
         { text: "취소", style: "cancel" },
         {
           text: "삭제",
           style: "destructive",
           onPress: async () => {
-            try {
-              const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
-
-              await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
-                headers: { Authorization: `Bearer ${accessToken}` },
-              });
-
-              setHiddenRooms((prev) => [...prev, roomId]);
-            } catch (error: any) {
-              console.error(
-                "🚨 방 삭제 실패:",
-                error.response?.data || error.message,
-              );
-              Alert.alert("오류", "대화방 삭제에 실패했습니다.");
+            const room = rooms.find((r) => r.id === roomId);
+            if (room) {
+              await moveRoomToTrash(room, roomType);
             }
+            setHiddenRooms((prev) => [...prev, roomId]);
           },
         },
       ],
     );
   };
 
-  const visibleRooms = rooms.filter((room) => !hiddenRooms.includes(room.id));
+  const visibleRooms = rooms.filter(
+    (room) =>
+      !hiddenRooms.includes(room.id) && !trashedIds.has(String(room.id)),
+  );
 
   return (
     <View
@@ -1182,6 +1273,217 @@ export function RoomListScreen({
   );
 }
 
+// 🗑️ 대화방 휴지통 — 음성/채팅 대화방 목록 화면 헤더의 휴지통 아이콘에서 진입합니다.
+function TrashScreen({ onBack }: { onBack: () => void }) {
+  const [trashedRooms, setTrashedRooms] = useState<TrashedRoom[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    let trashed = await getTrashedRooms();
+
+    // 🧪 테스트 모드에서 휴지통이 비어있으면 구경할 수 있게 더미 두 개(음성/채팅) 넣어둡니다.
+    if (isTestMode && trashed.length === 0) {
+      await moveRoomToTrash(
+        {
+          id: "test-trash-1",
+          title: "공항에서 체크인하기",
+          desc: "공항 카운터에서 체크인하는 상황극",
+          date: "어제",
+        },
+        "voice",
+      );
+      await moveRoomToTrash(
+        {
+          id: "test-trash-2",
+          title: "호텔 예약 문의하기",
+          desc: "호텔에 예약 관련해서 문의하는 상황극",
+          date: "그저께",
+        },
+        "chat",
+      );
+      trashed = await getTrashedRooms();
+    }
+
+    setTrashedRooms(trashed);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const handleRestore = (room: TrashedRoom) => {
+    Alert.alert(
+      "대화방 복구",
+      `'${room.title}' 대화방을 복구할까요?\n(복구하면 대화방 목록으로 다시 돌아가요.)`,
+      [
+        { text: "취소", style: "cancel" },
+        {
+          text: "복구",
+          onPress: async () => {
+            await restoreRoomFromTrash(room.id);
+            setTrashedRooms((prev) => prev.filter((r) => r.id !== room.id));
+          },
+        },
+      ],
+    );
+  };
+
+  const handlePermanentDelete = (room: TrashedRoom) => {
+    Alert.alert(
+      "완전히 삭제",
+      `'${room.title}' 대화방을 완전히 삭제하시겠습니까?\n(삭제 후에는 복구할 수 없습니다.)`,
+      [
+        { text: "취소", style: "cancel" },
+        {
+          text: "삭제",
+          style: "destructive",
+          onPress: async () => {
+            await permanentlyDeleteRoom(room.id);
+            setTrashedRooms((prev) => prev.filter((r) => r.id !== room.id));
+          },
+        },
+      ],
+    );
+  };
+
+  const sortedTrash = [...trashedRooms].sort((a, b) =>
+    b.trashedAt.localeCompare(a.trashedAt),
+  );
+
+  return (
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
+      <View style={styles.roomListHeader}>
+        <Pressable style={styles.headerButton} onPress={onBack}>
+          <Text style={styles.headerIcon}>‹</Text>
+        </Pressable>
+        <View style={styles.flex}>
+          <Text style={styles.roomListTitle}>휴지통</Text>
+        </View>
+      </View>
+
+      <ScrollView
+        style={{ backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={styles.roomListContent}
+      >
+        {loading ? (
+          <ActivityIndicator
+            size="small"
+            color={primary}
+            style={{ marginTop: 20 }}
+          />
+        ) : sortedTrash.length === 0 ? (
+          <Text style={trashStyles.emptyText}>휴지통이 비어있어요</Text>
+        ) : (
+          sortedTrash.map((room) => (
+            <View key={room.id} style={trashStyles.card}>
+              <View style={{ flex: 1 }}>
+                <View style={trashStyles.titleRow}>
+                  <Text style={trashStyles.title} numberOfLines={1}>
+                    {room.title}
+                  </Text>
+                  <View style={trashStyles.typeBadge}>
+                    <Ionicons
+                      name={
+                        room.roomType === "voice"
+                          ? "mic-outline"
+                          : "chatbubbles-outline"
+                      }
+                      size={10}
+                      color={primary}
+                    />
+                    <Text style={trashStyles.typeBadgeText}>
+                      {room.roomType === "voice" ? "음성" : "채팅"}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={trashStyles.desc} numberOfLines={1}>
+                  {room.lastMessage ?? room.desc}
+                </Text>
+                <Text style={trashStyles.date}>
+                  {room.trashedAt.slice(5, 10).replace("-", "/")} 삭제됨
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", gap: 6 }}>
+                <Pressable
+                  onPress={() => handleRestore(room)}
+                  style={trashStyles.iconBtn}
+                >
+                  <Ionicons
+                    name="arrow-undo-outline"
+                    size={18}
+                    color={primary}
+                  />
+                </Pressable>
+                <Pressable
+                  onPress={() => handlePermanentDelete(room)}
+                  style={trashStyles.iconBtn}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                </Pressable>
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+const trashStyles = StyleSheet.create({
+  emptyText: {
+    textAlign: "center",
+    color: "#9CA3AF",
+    marginTop: 40,
+    fontSize: 13,
+  },
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: 14,
+    marginBottom: 10,
+    gap: 10,
+  },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  title: { fontSize: 14, fontWeight: "700", color: "#111827", flexShrink: 1 },
+  typeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#EEF2FF",
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  typeBadgeText: { fontSize: 10, fontWeight: "700", color: primary },
+  desc: { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
+  date: { fontSize: 11, color: "#D1D5DB", marginTop: 4 },
+  iconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F9FAFB",
+  },
+});
+
 function SituationScreen({
   mode,
   room,
@@ -1193,40 +1495,44 @@ function SituationScreen({
   go: (screen: Screen) => void;
   onStart: (room: PracticeRoom) => void;
 }) {
+  // 🧑‍🤝‍🧑 1인 프리셋 3개 + 2인 프리셋 1개. randomize()가 이 중 하나를 랜덤으로 고릅니다.
   const presets = [
     {
       title: "카페에서 주문하기",
       desc: "처음 방문한 카페에서 원하는 메뉴를 묻고 추천을 받는 상황",
-      name: "바리스타",
-      trait: "친절하고 빠르게 주문을 도와주는 직원",
-      avatar: "👩",
+      characters: [
+        { name: "바리스타", trait: "친절하고 빠르게 주문을 도와주는 직원", avatar: "👩" },
+      ],
     },
     {
       title: "비즈니스 미팅",
       desc: "프로젝트 진행 상황을 공유하고 다음 일정을 조율하는 상황",
-      name: "Alex",
-      trait: "차분하고 논리적인 해외 파트너",
-      avatar: "👨",
+      characters: [
+        { name: "Alex", trait: "차분하고 논리적인 해외 파트너", avatar: "👨" },
+      ],
     },
     {
       title: "여행 계획 세우기",
       desc: "여름 여행지를 고르고 일정과 예산을 영어로 상의하는 상황",
-      name: "여행 친구",
-      trait: "호기심이 많고 새로운 장소를 좋아함",
-      avatar: "🧑",
+      characters: [
+        { name: "여행 친구", trait: "호기심이 많고 새로운 장소를 좋아함", avatar: "🧑" },
+      ],
+    },
+    {
+      title: "친구 두 명과 브런치 약속 잡기",
+      desc: "주말 브런치 장소와 시간을 두 친구와 함께 영어로 정하는 상황",
+      characters: [
+        { name: "이든", trait: "느긋하고 맛집 탐방을 좋아함", avatar: "🧑" },
+        { name: "소피", trait: "활발하고 계획 세우는 걸 좋아함", avatar: "👩" },
+      ],
     },
   ];
 
   const [title, setTitle] = useState(room.title || "");
   const [desc, setDesc] = useState(room.desc || "");
-  const [characters, setCharacters] = useState([
-    {
-      name: presets[0].name,
-      trait: presets[0].trait,
-      avatar: presets[0].avatar,
-      photoUri: null as string | null,
-    },
-  ]);
+  const [characters, setCharacters] = useState(
+    presets[0].characters.map((c) => ({ ...c, photoUri: null as string | null })),
+  );
 
   // 💡 통신 중 버튼을 비활성화하기 위한 로딩 상태 추가
   const [loading, setLoading] = useState(false);
@@ -1273,14 +1579,7 @@ function SituationScreen({
     const next = presets[Math.floor(Math.random() * presets.length)];
     setTitle(next.title);
     setDesc(next.desc);
-    setCharacters([
-      {
-        name: next.name,
-        trait: next.trait,
-        avatar: next.avatar,
-        photoUri: null,
-      },
-    ]);
+    setCharacters(next.characters.map((c) => ({ ...c, photoUri: null })));
   };
 
   const start = async () => {
@@ -1484,6 +1783,35 @@ function SituationScreen({
           onPress={start}
         />
       </ScrollView>
+    </View>
+  );
+}
+
+// 💬 AI 말풍선 앞에 캐릭터 아바타(사진 또는 이모지) + 이름을 붙여서 감싸는 행.
+// 내 메시지는 이 컴포넌트를 쓰지 않고 말풍선만 그대로 둡니다.
+function AiMessageRow({
+  character,
+  children,
+}: {
+  character?: { name: string; avatar: string; photoUri: string | null } | null;
+  children: ReactNode;
+}) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+      <View style={styles.msgAvatar}>
+        {character?.photoUri ? (
+          <Image
+            source={{ uri: character.photoUri }}
+            style={styles.msgAvatarImage}
+          />
+        ) : (
+          <Text style={styles.msgAvatarEmoji}>{character?.avatar ?? "🙂"}</Text>
+        )}
+      </View>
+      <View style={{ flexShrink: 1 }}>
+        <Text style={styles.msgAvatarName}>{character?.name || "AI"}</Text>
+        {children}
+      </View>
     </View>
   );
 }
@@ -2246,26 +2574,39 @@ export function VoiceChatScreen({
                   width: "100%",
                 }}
               >
-                {/* 대화 말풍선 */}
-                <View
-                  style={{
-                    backgroundColor: isUser ? "#5C6BC0" : "#ffffff",
-                    padding: 12,
-                    borderRadius: 16,
-                    borderBottomRightRadius: isUser ? 4 : 16,
-                    borderBottomLeftRadius: isUser ? 16 : 4,
-                    maxWidth: "80%",
-                    elevation: 1,
-                    borderWidth: isHighlighted ? 2 : 0,
-                    borderColor: "#FBBF24",
-                  }}
-                >
-                  <Text
-                    style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}
-                  >
-                    {msg.text}
-                  </Text>
-                </View>
+                {/* 대화 말풍선 (AI는 캐릭터 아바타+이름을 옆에 붙여서 보여줍니다) */}
+                {(() => {
+                  const bubble = (
+                    <View
+                      style={{
+                        backgroundColor: isUser ? "#5C6BC0" : "#ffffff",
+                        padding: 12,
+                        borderRadius: 16,
+                        borderBottomRightRadius: isUser ? 4 : 16,
+                        borderBottomLeftRadius: isUser ? 16 : 4,
+                        maxWidth: "80%",
+                        elevation: 1,
+                        borderWidth: isHighlighted ? 2 : 0,
+                        borderColor: "#FBBF24",
+                      }}
+                    >
+                      <Text
+                        style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}
+                      >
+                        {msg.text}
+                      </Text>
+                    </View>
+                  );
+                  return isUser ? (
+                    bubble
+                  ) : (
+                    <AiMessageRow
+                      character={room.characters?.[msg.characterIndex ?? 0]}
+                    >
+                      {bubble}
+                    </AiMessageRow>
+                  );
+                })()}
 
                 {/* 🔖 AI 말풍선용 스크랩 버튼 */}
                 {!isUser && (
@@ -2550,7 +2891,11 @@ export function TextChatScreen({
   scrapNavTarget,
   onConsumeScrapNavTarget,
 }: {
-  room: { id: string | number; title: string };
+  room: {
+    id: string | number;
+    title: string;
+    characters?: { name: string; avatar: string; photoUri: string | null }[];
+  };
   go: (screen: any) => void;
   scrapNavTarget?: { feedbackId: number | null; expression: string } | null;
   onConsumeScrapNavTarget?: () => void;
@@ -3022,24 +3367,37 @@ export function TextChatScreen({
                 width: "100%",
               }}
             >
-              {/* 대화 말풍선 */}
-              <View
-                style={{
-                  backgroundColor: isUser ? "#5C6BC0" : "#ffffff", // 내 메시지는 파란색, AI는 흰색
-                  padding: 12,
-                  borderRadius: 16,
-                  borderBottomRightRadius: isUser ? 4 : 16,
-                  borderBottomLeftRadius: isUser ? 16 : 4,
-                  maxWidth: "80%",
-                  elevation: 1, // 안드로이드 그림자
-                  borderWidth: isHighlighted ? 2 : 0,
-                  borderColor: "#FBBF24",
-                }}
-              >
-                <Text style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}>
-                  {msg.text}
-                </Text>
-              </View>
+              {/* 대화 말풍선 (AI는 캐릭터 아바타+이름을 옆에 붙여서 보여줍니다) */}
+              {(() => {
+                const bubble = (
+                  <View
+                    style={{
+                      backgroundColor: isUser ? "#5C6BC0" : "#ffffff", // 내 메시지는 파란색, AI는 흰색
+                      padding: 12,
+                      borderRadius: 16,
+                      borderBottomRightRadius: isUser ? 4 : 16,
+                      borderBottomLeftRadius: isUser ? 16 : 4,
+                      maxWidth: "80%",
+                      elevation: 1, // 안드로이드 그림자
+                      borderWidth: isHighlighted ? 2 : 0,
+                      borderColor: "#FBBF24",
+                    }}
+                  >
+                    <Text
+                      style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}
+                    >
+                      {msg.text}
+                    </Text>
+                  </View>
+                );
+                return isUser ? (
+                  bubble
+                ) : (
+                  <AiMessageRow character={room.characters?.[0]}>
+                    {bubble}
+                  </AiMessageRow>
+                );
+              })()}
 
               {/* 🔖 AI 말풍선용 스크랩 버튼 */}
               {!isUser && (
@@ -3886,6 +4244,29 @@ function BookmarksScreen({
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      Speech.stop();
+    };
+  }, []);
+
+  const toggleSpeak = (expr: SavedExpression) => {
+    if (speakingId === expr.id) {
+      Speech.stop();
+      setSpeakingId(null);
+      return;
+    }
+    Speech.stop();
+    setSpeakingId(expr.id);
+    Speech.speak(expr.text, {
+      language: "en-US",
+      onDone: () => setSpeakingId(null),
+      onStopped: () => setSpeakingId(null),
+      onError: () => setSpeakingId(null),
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -3897,7 +4278,34 @@ function BookmarksScreen({
 
       if (isTestMode) {
         if (!cancelled) {
-          setExpressions([]);
+          setExpressions([
+            {
+              id: "dummy-1",
+              scrapId: 1,
+              text: "I really appreciate your help.",
+              context: "도움에 진심으로 감사할 때 쓰는 표현이에요.",
+              category: "문장",
+              roomName: "테스트 방",
+              roomId: "dummy-room",
+              roomType: "voice",
+              savedDate: "09/08",
+              source: "ai",
+              feedbackId: null,
+            },
+            {
+              id: "dummy-2",
+              scrapId: 2,
+              text: "appreciate",
+              context: "감사하다, 진가를 알아보다",
+              category: "단어",
+              roomName: "테스트 방",
+              roomId: "dummy-room",
+              roomType: "chat",
+              savedDate: "09/08",
+              source: "user",
+              feedbackId: null,
+            },
+          ]);
           setLoading(false);
         }
         return;
@@ -4077,12 +4485,28 @@ function BookmarksScreen({
               <Text style={bkStyles.exprDate}>{expr.savedDate}</Text>
             </View>
           </View>
-          <Pressable
-            onPress={() => deleteExpression(expr)}
-            style={bkStyles.deleteBtn}
-          >
-            <Ionicons name="trash-outline" size={16} color="#9CA3AF" />
-          </Pressable>
+          <View style={{ flexDirection: "row", gap: 4 }}>
+            <Pressable
+              onPress={() => toggleSpeak(expr)}
+              style={bkStyles.deleteBtn}
+            >
+              <Ionicons
+                name={
+                  speakingId === expr.id
+                    ? "stop-circle-outline"
+                    : "volume-medium-outline"
+                }
+                size={16}
+                color={speakingId === expr.id ? primary : "#9CA3AF"}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => deleteExpression(expr)}
+              style={bkStyles.deleteBtn}
+            >
+              <Ionicons name="trash-outline" size={16} color="#9CA3AF" />
+            </Pressable>
+          </View>
         </View>
         <View style={bkStyles.exprSourceRow}>
           <Text style={bkStyles.exprSourceLabel}>
@@ -6045,6 +6469,37 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
   // ⭐️ 1. 서버에서 받아올 사용자 정보를 담을 상태(State) 생성
   const [userInfo, setUserInfo] = useState({ nickname: "회원", email: "" });
 
+  // 📸 내 프로필 사진 (백엔드 업로드 API가 아직 없어 기기에만 로컬로 저장)
+  const [profilePhotoUri, setProfilePhotoUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem("profilePhotoUri").then((uri) => {
+      if (uri) setProfilePhotoUri(uri);
+    });
+  }, []);
+
+  const pickProfilePhoto = async () => {
+    if (Platform.OS !== "web") {
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("권한 필요", "갤러리 접근 권한이 필요합니다.");
+        return;
+      }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setProfilePhotoUri(uri);
+      await AsyncStorage.setItem("profilePhotoUri", uri);
+    }
+  };
+
   // ⭐️ 1. weekly 데이터가 어떻게 생겼는지 TypeScript에게 알려주는 타입 정의
   type WeeklyStat = {
     day: string;
@@ -6264,7 +6719,20 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
         {/* 프로필 카드 */}
         <View style={mpStyles.card}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-            {/* ❌ avatar View 부분을 통째로 삭제했습니다! */}
+            <Pressable onPress={pickProfilePhoto} style={mpStyles.profilePhoto}>
+              {profilePhotoUri ? (
+                <Image
+                  source={{ uri: profilePhotoUri }}
+                  style={mpStyles.profilePhotoImage}
+                />
+              ) : (
+                <Ionicons
+                  name="person-circle-outline"
+                  size={52}
+                  color="#C7CBD1"
+                />
+              )}
+            </Pressable>
 
             <View style={{ flex: 1 }}>
               <Text style={mpStyles.nickname}>{userInfo.nickname}</Text>
@@ -6671,6 +7139,16 @@ const mpStyles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarText: { color: primary, fontSize: 22, fontWeight: "900" },
+  profilePhoto: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  profilePhotoImage: { width: 56, height: 56, borderRadius: 28 },
   nickname: { color: "#111827", fontSize: 14, fontWeight: "700" },
   email: { color: "#9CA3AF", fontSize: 12, marginTop: 2 },
   dot: { width: 6, height: 6, borderRadius: 3 },
@@ -6799,6 +7277,9 @@ function Header({
         <View style={styles.headerActions}>
           <Pressable onPress={() => go("notice")} style={styles.headerAction}>
             <Ionicons name="megaphone-outline" size={20} color="#4B5563" />
+          </Pressable>
+          <Pressable onPress={() => go("trash")} style={styles.headerAction}>
+            <Ionicons name="trash-bin-outline" size={20} color="#4B5563" />
           </Pressable>
           <Pressable
             onPress={() => go("bookmarks")}
@@ -7266,6 +7747,23 @@ function Label({ text }: { text: string }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#FFFFFF" },
+  msgAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  msgAvatarImage: { width: 32, height: 32, borderRadius: 16 },
+  msgAvatarEmoji: { fontSize: 16 },
+  msgAvatarName: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginBottom: 6,
+    marginLeft: 4,
+  },
   webViewClose: {
     padding: 14,
     borderBottomWidth: 1,
