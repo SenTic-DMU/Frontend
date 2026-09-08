@@ -48,12 +48,14 @@ type Screen =
   | "signup"
   | "findAccount"
   | "mode"
+  | "learningData"
+  | "league"
+  | "quiz"
   | "voiceRooms"
   | "chatRooms"
   | "situation"
   | "voiceChat"
   | "textChat"
-  | "mypage"
   | "settings"
   | "payment"
   | "bookmarks"
@@ -517,13 +519,11 @@ export default function App() {
       {screen === "signup" && <SignupScreen go={go} />}
       {screen === "findAccount" && <FindAccountScreen go={go} />}
 
-      {screen === "mode" && (
-        <ModeScreen
-          go={go}
-          chatRooms={chatRooms}
-          voiceRooms={voiceRooms}
-          onOpenScrap={onOpenScrap}
-        />
+      {screen === "mode" && <ModeScreen go={go} />}
+      {screen === "learningData" && <LearningDataScreen go={go} />}
+      {screen === "league" && <ComingSoonScreen title="리그" go={go} />}
+      {screen === "quiz" && (
+        <ComingSoonScreen title="퀴즈" go={go} backTo="mode" />
       )}
       {screen === "voiceRooms" && (
         <RoomListScreen
@@ -554,7 +554,7 @@ export default function App() {
         />
       )}
       {screen === "trash" && (
-        <TrashScreen onBack={() => go("mode")} />
+        <TrashScreen onBack={() => go("settings")} />
       )}
       {screen === "situation" && (
         <SituationScreen
@@ -580,7 +580,6 @@ export default function App() {
           onConsumeScrapNavTarget={() => setScrapNavTarget(null)}
         />
       )}
-      {screen === "mypage" && <MyPageScreen go={go} />}
       {screen === "settings" && <SettingsScreen go={go} />}
       {screen === "payment" && <PaymentScreen go={go} />}
       {screen === "bookmarks" && (
@@ -593,9 +592,12 @@ export default function App() {
       )}
       {screen === "notice" && <NoticeScreen go={go} />}
       {screen === "faq" && <FaqScreen go={go} />}
+      {TAB_SCREENS.includes(screen) && <BottomTabBar screen={screen} go={go} />}
     </SafeAreaView>
   );
 }
+
+const TAB_SCREENS: Screen[] = ["mode", "learningData", "league", "settings"];
 
 function LoginScreen({
   go,
@@ -999,23 +1001,7 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
   );
 }
 
-function ModeScreen({
-  go,
-  chatRooms,
-  voiceRooms,
-  onOpenScrap,
-}: {
-  go: (screen: Screen) => void;
-  chatRooms: any[];
-  voiceRooms: any[];
-  onOpenScrap: (expr: {
-    roomId: string;
-    roomType: "chat" | "voice";
-    roomName: string;
-    feedbackId: number | null;
-    text: string;
-  }) => void;
-}) {
+function ModeScreen({ go }: { go: (screen: Screen) => void }) {
   // ⭐️ 1. 닉네임을 저장할 State 만들기 (데이터가 오기 전 기본값은 '회원')
   const [nickname, setNickname] = useState("회원");
 
@@ -1088,7 +1074,7 @@ function ModeScreen({
         },
       ]}
     >
-      <Header title="SenTic" go={go} actions />
+      <Header title="SenTic" go={go} />
       <ScrollView
         style={{ backgroundColor: "#F9FAFB" }}
         contentContainerStyle={[styles.content, { paddingBottom: 36 }]}
@@ -1105,35 +1091,34 @@ function ModeScreen({
           </View>
         </View>
         <Text style={styles.sectionTitle}>학습 모드</Text>
-        <ModeCard
-          icon="mic-outline"
-          title="음성 대화"
-          desc="AI와 실시간 영어 회화 연습"
-          color={primary}
-          onPress={() => go("voiceRooms")}
-        />
-        <ModeCard
-          icon="chatbubbles-outline"
-          title="채팅 대화"
-          desc="텍스트로 편하게 영어 채팅"
-          color="#16A34A"
-          onPress={() => go("chatRooms")}
-        />
-        <View style={styles.savedExprCard}>
-          <View style={styles.rowBetween}>
-            <Text style={styles.cardTitle}>저장된 표현</Text>
-            <Pressable onPress={() => go("bookmarks")}>
-              <Text style={styles.linkText}>전체보기</Text>
-            </Pressable>
-          </View>
-          <BookmarksScreen
-            embedded
-            go={go}
-            chatRooms={chatRooms}
-            voiceRooms={voiceRooms}
-            onOpenScrap={onOpenScrap}
+        <View style={styles.modeCardRow}>
+          <ModeCard
+            icon="mic-outline"
+            title="음성 대화"
+            desc="AI와 실시간 영어 회화 연습"
+            color={primary}
+            onPress={() => go("voiceRooms")}
+          />
+          <ModeCard
+            icon="chatbubbles-outline"
+            title="채팅 대화"
+            desc="텍스트로 편하게 영어 채팅"
+            color="#16A34A"
+            onPress={() => go("chatRooms")}
           />
         </View>
+        <ShortcutBanner
+          icon="bookmark-outline"
+          color={primary}
+          title="저장된 표현"
+          onPress={() => go("bookmarks")}
+        />
+        <ShortcutBanner
+          icon="school-outline"
+          color="#7C3AED"
+          title="퀴즈"
+          onPress={() => go("quiz")}
+        />
       </ScrollView>
     </View>
   );
@@ -4204,7 +4189,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
       ]}
     >
       <View style={ntStyles.header}>
-        <Pressable style={ntStyles.backBtn} onPress={() => go("mode")}>
+        <Pressable style={ntStyles.backBtn} onPress={() => go("settings")}>
           <Text style={ntStyles.backIcon}>‹</Text>
         </Pressable>
         <Text style={ntStyles.headerTitle}>공지사항</Text>
@@ -4903,6 +4888,75 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
   const [withdrawPassword, setWithdrawPassword] = useState("");
   const [withdrawing, setWithdrawing] = useState(false);
 
+  // ⭐️ 서버에서 받아올 사용자 정보를 담을 상태(State)
+  const [userInfo, setUserInfo] = useState({ nickname: "회원", email: "" });
+
+  // 📸 내 프로필 사진 (백엔드 업로드 API가 아직 없어 기기에만 로컬로 저장)
+  const [profilePhotoUri, setProfilePhotoUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem("profilePhotoUri").then((uri) => {
+      if (uri) setProfilePhotoUri(uri);
+    });
+  }, []);
+
+  const pickProfilePhoto = async () => {
+    if (Platform.OS !== "web") {
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("권한 필요", "갤러리 접근 권한이 필요합니다.");
+        return;
+      }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setProfilePhotoUri(uri);
+      await AsyncStorage.setItem("profilePhotoUri", uri);
+    }
+  };
+
+  useEffect(() => {
+    const fetchMyProfile = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        if (!accessToken) return;
+
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+
+        const res = await axios.get(`${API_URL}/api/users/me`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "true",
+          },
+        });
+
+        const fetchedName =
+          res.data?.data?.nickname ||
+          res.data?.nickname ||
+          res.data?.data?.name ||
+          res.data?.name ||
+          "회원";
+        const fetchedEmail = res.data?.data?.email || res.data?.email || "";
+
+        setUserInfo({ nickname: fetchedName, email: fetchedEmail });
+      } catch (error: any) {
+        console.error(
+          "🚨 설정 화면 유저 정보 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+
+    fetchMyProfile();
+  }, []);
+
   const logout = () => {
     Alert.alert("로그아웃", "로그아웃 하시겠습니까?", [
       { text: "취소", style: "cancel" },
@@ -4990,9 +5044,6 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
     >
       {/* 헤더 */}
       <View style={stStyles.header}>
-        <Pressable style={stStyles.backBtn} onPress={() => go("mode")}>
-          <Text style={stStyles.backIcon}>‹</Text>
-        </Pressable>
         <Text style={stStyles.headerTitle}>설정</Text>
       </View>
 
@@ -5004,17 +5055,35 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
         <Text style={stStyles.sectionLabel}>계정</Text>
         <View style={stStyles.card}>
           <View style={[stStyles.row, stStyles.rowBorder]}>
-            <View>
-              <Text style={stStyles.rowTitle}>이메일</Text>
-              <Text style={stStyles.rowSub}>user@example.com</Text>
+            <Pressable onPress={pickProfilePhoto} style={stStyles.profilePhoto}>
+              {profilePhotoUri ? (
+                <Image
+                  source={{ uri: profilePhotoUri }}
+                  style={stStyles.profilePhotoImage}
+                />
+              ) : (
+                <Ionicons
+                  name="person-circle-outline"
+                  size={40}
+                  color="#C7CBD1"
+                />
+              )}
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              <Text style={stStyles.rowTitle}>{userInfo.nickname}</Text>
+              <Text style={stStyles.rowSub}>{userInfo.email}</Text>
             </View>
           </View>
-          <View style={stStyles.row}>
+          <View style={[stStyles.row, stStyles.rowBorder]}>
             <Text style={stStyles.rowTitle}>회원 등급</Text>
             <View style={stStyles.premiumBadge}>
               <Text style={stStyles.premiumBadgeText}>프리미엄</Text>
             </View>
           </View>
+          <Pressable style={stStyles.row} onPress={() => go("payment")}>
+            <Text style={[stStyles.rowTitle, { flex: 1 }]}>결제 및 구독</Text>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
         </View>
 
         {/* 알림 */}
@@ -5038,6 +5107,26 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
         {/* 기타 */}
         <Text style={stStyles.sectionLabel}>기타</Text>
         <View style={stStyles.card}>
+          <Pressable
+            style={[stStyles.row, stStyles.rowBorder]}
+            onPress={() => go("notice")}
+          >
+            <View style={stStyles.iconWrapBlue}>
+              <Ionicons name="megaphone-outline" size={16} color="#2563EB" />
+            </View>
+            <Text style={[stStyles.rowTitle, { flex: 1 }]}>공지사항</Text>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
+          <Pressable
+            style={[stStyles.row, stStyles.rowBorder]}
+            onPress={() => go("trash")}
+          >
+            <View style={stStyles.iconWrapGray}>
+              <Ionicons name="trash-bin-outline" size={16} color="#6B7280" />
+            </View>
+            <Text style={[stStyles.rowTitle, { flex: 1 }]}>휴지통</Text>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
           <Pressable style={stStyles.row} onPress={() => go("faq")}>
             <View style={stStyles.iconWrapPurple}>
               <Ionicons name="help-circle-outline" size={16} color="#7C3AED" />
@@ -5355,7 +5444,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
     >
       {/* 헤더 */}
       <View style={pyStyles.header}>
-        <Pressable style={pyStyles.backBtn} onPress={() => go("mypage")}>
+        <Pressable style={pyStyles.backBtn} onPress={() => go("settings")}>
           <Text style={pyStyles.backIcon}>‹</Text>
         </Pressable>
         <Text style={pyStyles.headerTitle}>결제 및 구독</Text>
@@ -6125,17 +6214,18 @@ const stStyles = StyleSheet.create({
     paddingVertical: 10,
     gap: 10,
   },
-  backBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F9FAFB",
-  },
-  backIcon: { fontSize: 30, color: "#4B5563", lineHeight: 32 },
   headerTitle: { color: "#111827", fontSize: 16, fontWeight: "800" },
   content: { padding: 20, gap: 10, paddingBottom: 32 },
+  profilePhoto: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  profilePhotoImage: { width: 48, height: 48, borderRadius: 24 },
   sectionLabel: {
     color: "#9CA3AF",
     fontSize: 11,
@@ -6510,7 +6600,7 @@ const ntStyles = StyleSheet.create({
   detailBody: { color: "#374151", fontSize: 14, lineHeight: 22 },
 });
 
-function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
+function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
   type Level = "초급" | "중급" | "고급";
 
   const levels: {
@@ -6564,40 +6654,6 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
   const [levelConfirmed, setLevelConfirmed] = useState(true);
   const [isAnimated, setIsAnimated] = useState(false);
 
-  // ⭐️ 1. 서버에서 받아올 사용자 정보를 담을 상태(State) 생성
-  const [userInfo, setUserInfo] = useState({ nickname: "회원", email: "" });
-
-  // 📸 내 프로필 사진 (백엔드 업로드 API가 아직 없어 기기에만 로컬로 저장)
-  const [profilePhotoUri, setProfilePhotoUri] = useState<string | null>(null);
-
-  useEffect(() => {
-    AsyncStorage.getItem("profilePhotoUri").then((uri) => {
-      if (uri) setProfilePhotoUri(uri);
-    });
-  }, []);
-
-  const pickProfilePhoto = async () => {
-    if (Platform.OS !== "web") {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("권한 필요", "갤러리 접근 권한이 필요합니다.");
-        return;
-      }
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled) {
-      const uri = result.assets[0].uri;
-      setProfilePhotoUri(uri);
-      await AsyncStorage.setItem("profilePhotoUri", uri);
-    }
-  };
-
   // ⭐️ 1. weekly 데이터가 어떻게 생겼는지 TypeScript에게 알려주는 타입 정의
   type WeeklyStat = {
     day: string;
@@ -6618,44 +6674,6 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
       : 100;
 
   const currentLevel = levels.find((l) => l.id === userLevel)!;
-
-  useEffect(() => {
-    const fetchMyProfile = async () => {
-      try {
-        const accessToken = await AsyncStorage.getItem("accessToken");
-        if (!accessToken) return;
-
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
-
-        // 홈 화면에서 성공하셨던 그 주소 그대로 호출합니다!
-        const res = await axios.get(`${API_URL}/api/users/me`, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "ngrok-skip-browser-warning": "true",
-          },
-        });
-
-        // 이름과 이메일 추출 (백엔드 응답 형태에 맞춰 유연하게)
-        const fetchedName =
-          res.data?.data?.nickname ||
-          res.data?.nickname ||
-          res.data?.data?.name ||
-          res.data?.name ||
-          "회원";
-        const fetchedEmail = res.data?.data?.email || res.data?.email || "";
-
-        // 가져온 정보를 상태에 업데이트
-        setUserInfo({ nickname: fetchedName, email: fetchedEmail });
-      } catch (error: any) {
-        console.error(
-          "🚨 마이페이지 유저 정보 불러오기 실패:",
-          error.response?.data || error.message,
-        );
-      }
-    };
-
-    fetchMyProfile();
-  }, []); // 빈 배열을 넣어 화면이 처음 렌더링될 때 딱 한 번만 실행되게 합니다.
 
   // ⭐️ 3. 방금 백엔드에서 만든 학습 통계 API 호출하기!
   useEffect(() => {
@@ -6780,13 +6798,6 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
     }
   };
 
-  const logout = () => {
-    Alert.alert("로그아웃", "정말 로그아웃 하시겠습니까?", [
-      { text: "취소", style: "cancel" },
-      { text: "로그아웃", style: "destructive", onPress: () => go("login") },
-    ]);
-  };
-
   const CHART_HEIGHT = 128;
 
   return (
@@ -6804,44 +6815,13 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
     >
       {/* 헤더 */}
       <View style={mpStyles.header}>
-        <Pressable style={mpStyles.backBtn} onPress={() => go("mode")}>
-          <Text style={mpStyles.backIcon}>‹</Text>
-        </Pressable>
-        <Text style={mpStyles.headerTitle}>마이 페이지</Text>
+        <Text style={mpStyles.headerTitle}>학습 데이터</Text>
       </View>
 
       <ScrollView
         style={{ backgroundColor: "#F9FAFB" }}
         contentContainerStyle={mpStyles.content}
       >
-        {/* 프로필 카드 */}
-        <View style={mpStyles.card}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-            <Pressable onPress={pickProfilePhoto} style={mpStyles.profilePhoto}>
-              {profilePhotoUri ? (
-                <Image
-                  source={{ uri: profilePhotoUri }}
-                  style={mpStyles.profilePhotoImage}
-                />
-              ) : (
-                <Ionicons
-                  name="person-circle-outline"
-                  size={52}
-                  color="#C7CBD1"
-                />
-              )}
-            </Pressable>
-
-            <View style={{ flex: 1 }}>
-              <Text style={mpStyles.nickname}>{userInfo.nickname}</Text>
-              <Text style={mpStyles.email}>{userInfo.email}</Text>
-            </View>
-            <Pressable onPress={logout} style={mpStyles.logoutBtn}>
-              <Text style={mpStyles.logoutText}>로그아웃</Text>
-            </Pressable>
-          </View>
-        </View>
-
         {/* ⭐️ 2. 학습 통계 부분 수정 */}
         <View style={{ flexDirection: "row", gap: 10 }}>
           {/* 이번 주 학습 시간 */}
@@ -7177,28 +7157,13 @@ function MyPageScreen({ go }: { go: (screen: Screen) => void }) {
           )}
         </View>
 
-        {/* 결제 및 구독 */}
-        <View style={mpStyles.card}>
-          <Pressable
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-            onPress={() => go("payment")}
-          >
-            <Text style={mpStyles.menuText}>결제 및 구독</Text>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
-        </View>
-
         <View style={{ height: 8 }} />
       </ScrollView>
     </View>
   );
 }
 
-// MyPageScreen 전용 스타일 (기존 styles에 추가하거나 별도 선언)
+// LearningDataScreen 전용 스타일 (기존 styles에 추가하거나 별도 선언)
 const mpStyles = StyleSheet.create({
   header: {
     backgroundColor: "#FFFFFF",
@@ -7210,15 +7175,6 @@ const mpStyles = StyleSheet.create({
     paddingVertical: 10,
     gap: 10,
   },
-  backBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F9FAFB",
-  },
-  backIcon: { fontSize: 30, color: "#4B5563", lineHeight: 32 },
   headerTitle: { color: "#111827", fontSize: 16, fontWeight: "800" },
   content: { padding: 20, gap: 14, paddingBottom: 32 },
   card: {
@@ -7228,31 +7184,6 @@ const mpStyles = StyleSheet.create({
     borderColor: "#F3F4F6",
     padding: 20,
   },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-    backgroundColor: "#EEF2FF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: { color: primary, fontSize: 22, fontWeight: "900" },
-  profilePhoto: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#F3F4F6",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  profilePhotoImage: { width: 56, height: 56, borderRadius: 28 },
-  nickname: { color: "#111827", fontSize: 14, fontWeight: "700" },
-  email: { color: "#9CA3AF", fontSize: 12, marginTop: 2 },
-  dot: { width: 6, height: 6, borderRadius: 3 },
-  levelSmall: { color: "#6B7280", fontSize: 12 },
-  logoutBtn: { padding: 4 },
-  logoutText: { color: "#F87171", fontSize: 12 },
   statBox: {
     flex: 1,
     backgroundColor: "#FFFFFF",
@@ -7305,7 +7236,6 @@ const mpStyles = StyleSheet.create({
     flexShrink: 0,
   },
   radioInner: { width: 10, height: 10, borderRadius: 5 },
-  menuText: { color: "#374151", fontSize: 14 },
 });
 
 function InfoScreen({
@@ -7354,12 +7284,10 @@ function Header({
   title,
   go,
   backTo,
-  actions,
 }: {
   title: string;
   go: (screen: Screen) => void;
   backTo?: Screen;
-  actions?: boolean;
 }) {
   return (
     <View style={styles.header}>
@@ -7371,30 +7299,105 @@ function Header({
       <Text style={[styles.headerTitle, !backTo && styles.logoSmall]}>
         {title}
       </Text>
-      {actions ? (
-        <View style={styles.headerActions}>
-          <Pressable onPress={() => go("notice")} style={styles.headerAction}>
-            <Ionicons name="megaphone-outline" size={20} color="#4B5563" />
-          </Pressable>
-          <Pressable onPress={() => go("trash")} style={styles.headerAction}>
-            <Ionicons name="trash-bin-outline" size={20} color="#4B5563" />
-          </Pressable>
+      {!backTo && <View style={styles.headerSpacer} />}
+    </View>
+  );
+}
+
+function BottomTabBar({
+  screen,
+  go,
+}: {
+  screen: Screen;
+  go: (screen: Screen) => void;
+}) {
+  const tabs: {
+    key: Screen;
+    label: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    activeIcon: keyof typeof Ionicons.glyphMap;
+  }[] = [
+    { key: "mode", label: "홈", icon: "home-outline", activeIcon: "home" },
+    {
+      key: "learningData",
+      label: "학습데이터",
+      icon: "bar-chart-outline",
+      activeIcon: "bar-chart",
+    },
+    { key: "league", label: "리그", icon: "trophy-outline", activeIcon: "trophy" },
+    {
+      key: "settings",
+      label: "설정",
+      icon: "settings-outline",
+      activeIcon: "settings",
+    },
+  ];
+
+  return (
+    <View style={styles.bottomTabBar}>
+      {tabs.map((tab) => {
+        const active = screen === tab.key;
+        return (
           <Pressable
-            onPress={() => go("bookmarks")}
-            style={styles.headerAction}
+            key={tab.key}
+            style={styles.bottomTabItem}
+            onPress={() => go(tab.key)}
           >
-            <Ionicons name="bookmark-outline" size={20} color="#4B5563" />
+            <Ionicons
+              name={active ? tab.activeIcon : tab.icon}
+              size={22}
+              color={active ? primary : "#9CA3AF"}
+            />
+            <Text
+              style={[styles.bottomTabLabel, active && { color: primary }]}
+            >
+              {tab.label}
+            </Text>
           </Pressable>
-          <Pressable onPress={() => go("mypage")} style={styles.headerAction}>
-            <Ionicons name="person-outline" size={20} color="#4B5563" />
+        );
+      })}
+    </View>
+  );
+}
+
+function ComingSoonScreen({
+  title,
+  go,
+  backTo,
+}: {
+  title: string;
+  go: (screen: Screen) => void;
+  backTo?: Screen;
+}) {
+  return (
+    <View
+      style={[
+        styles.screenSoft,
+        {
+          flex: 1,
+          backgroundColor: "#fff",
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        },
+      ]}
+    >
+      <View style={styles.header}>
+        {backTo && (
+          <Pressable style={styles.headerButton} onPress={() => go(backTo)}>
+            <Text style={styles.headerIcon}>‹</Text>
           </Pressable>
-          <Pressable onPress={() => go("settings")} style={styles.headerAction}>
-            <Ionicons name="settings-outline" size={20} color="#4B5563" />
-          </Pressable>
-        </View>
-      ) : (
-        <View style={styles.headerSpacer} />
-      )}
+        )}
+        <Text style={styles.headerTitle}>{title}</Text>
+        {!backTo && <View style={styles.headerSpacer} />}
+      </View>
+      <View style={styles.comingSoonBody}>
+        <Ionicons name="construct-outline" size={48} color="#C7CBD1" />
+        <Text style={styles.comingSoonTitle}>준비 중이에요</Text>
+        <Text style={styles.comingSoonDesc}>
+          {title} 기능은 곧 만나보실 수 있어요.
+        </Text>
+      </View>
     </View>
   );
 }
@@ -7429,12 +7432,31 @@ function ModeCard({
   return (
     <Pressable style={styles.modeCard} onPress={onPress}>
       <View style={[styles.modeIcon, { backgroundColor: `${color}18` }]}>
-        <Ionicons name={icon} size={25} color={color} />
+        <Ionicons name={icon} size={26} color={color} />
       </View>
-      <View style={styles.flex}>
-        <Text style={styles.cardTitle}>{title}</Text>
-        <Text style={styles.mutedSmall}>{desc}</Text>
+      <Text style={styles.modeCardTitle}>{title}</Text>
+      <Text style={styles.modeCardDesc}>{desc}</Text>
+    </Pressable>
+  );
+}
+
+function ShortcutBanner({
+  icon,
+  color,
+  title,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  title: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={styles.shortcutBanner} onPress={onPress}>
+      <View style={[styles.shortcutIcon, { backgroundColor: `${color}18` }]}>
+        <Ionicons name={icon} size={18} color={color} />
       </View>
+      <Text style={styles.shortcutTitle}>{title}</Text>
       <Text style={styles.chevron}>›</Text>
     </Pressable>
   );
@@ -8026,15 +8048,6 @@ const styles = StyleSheet.create({
   },
   headerIcon: { fontSize: 32, color: "#4B5563", lineHeight: 34 },
   headerTitle: { flex: 1, color: "#111827", fontSize: 16, fontWeight: "800" },
-  headerActions: { flexDirection: "row", gap: 4 },
-  headerAction: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F9FAFB",
-  },
   headerSpacer: { width: 36 },
   content: { padding: 20, gap: 14 },
   roomListHeader: {
@@ -8095,24 +8108,29 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   streakText: { color: "#EA580C", fontSize: 12, fontWeight: "800" },
+  modeCardRow: { flexDirection: "row", gap: 12 },
   modeCard: {
+    flex: 1,
+    aspectRatio: 1,
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: "#F3F4F6",
     padding: 16,
-    flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    justifyContent: "center",
+    gap: 8,
   },
-  savedExprCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    padding: 16,
-    gap: 12,
-    marginBottom: 8,
+  modeCardTitle: {
+    color: "#111827",
+    fontSize: 15,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  modeCardDesc: {
+    color: "#9CA3AF",
+    fontSize: 11,
+    textAlign: "center",
   },
   modeIcon: {
     width: 52,
@@ -8121,6 +8139,49 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  shortcutBanner: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  shortcutIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shortcutTitle: { flex: 1, color: "#111827", fontSize: 14, fontWeight: "800" },
+  bottomTabBar: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
+    backgroundColor: "#FFFFFF",
+    paddingTop: 8,
+    paddingBottom: Platform.OS === "ios" ? 20 : 10,
+  },
+  bottomTabItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+  },
+  bottomTabLabel: { color: "#9CA3AF", fontSize: 11, fontWeight: "700" },
+  comingSoonBody: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingHorizontal: 40,
+  },
+  comingSoonTitle: { color: "#111827", fontSize: 16, fontWeight: "800" },
+  comingSoonDesc: { color: "#9CA3AF", fontSize: 13, textAlign: "center" },
   profileCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
