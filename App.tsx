@@ -21,6 +21,11 @@ import {
   Linking,
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  useFonts,
+  LilyScriptOne_400Regular,
+} from "@expo-google-fonts/lily-script-one";
 import * as ImagePicker from "expo-image-picker";
 import { WebView } from "react-native-webview";
 // ⭐️ 음성 재생을 위해 expo-av에서 Audio를 꼭 불러와야 합니다!
@@ -187,6 +192,8 @@ const TEST_CHAT_MESSAGES = [
 ];
 
 export default function App() {
+  const [fontsLoaded] = useFonts({ LilyScriptOne_400Regular });
+
   // ⭐️ 현재 앱 상태를 저장할 변수
   const appState = useRef(AppState.currentState);
 
@@ -394,6 +401,16 @@ export default function App() {
       setKakaoLoggingIn(false);
     }
   };
+
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaView
+        style={[styles.safe, { alignItems: "center", justifyContent: "center" }]}
+      >
+        <ActivityIndicator size="large" color={primary} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -823,7 +840,8 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
         )}
         {usernameChecked === "available" && (
           <Text style={styles.signupSuccessText}>
-            ✓ 사용 가능한 아이디입니다
+            <Ionicons name="checkmark" size={12} color="#16A34A" />{" "}
+            사용 가능한 아이디입니다
           </Text>
         )}
 
@@ -1010,14 +1028,14 @@ function ModeScreen({
         </View>
         <Text style={styles.sectionTitle}>학습 모드</Text>
         <ModeCard
-          icon="🎙"
+          icon="mic-outline"
           title="음성 대화"
           desc="AI와 실시간 영어 회화 연습"
           color={primary}
           onPress={() => go("voiceRooms")}
         />
         <ModeCard
-          icon="💬"
+          icon="chatbubbles-outline"
           title="채팅 대화"
           desc="텍스트로 편하게 영어 채팅"
           color="#16A34A"
@@ -1072,8 +1090,7 @@ export function RoomListScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL =
-                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+              const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
               await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
@@ -1420,7 +1437,7 @@ function SituationScreen({
                   <Image source={{ uri: char.photoUri }} style={styles.photo} />
                 ) : (
                   <View style={styles.photoSlot}>
-                    <Text style={styles.cameraText}>📷</Text>
+                    <Ionicons name="camera-outline" size={22} color="#9CA3AF" />
                   </View>
                 )}
               </Pressable>
@@ -2105,7 +2122,11 @@ export function VoiceChatScreen({
           </View>
           <View style={styles.avatarRingOuter}>
             <View style={[styles.avatarLarge, inCall && styles.avatarActive]}>
-              <Text style={styles.avatarEmoji}>{isPlaying ? "🎵" : "🤖"}</Text>
+              {isPlaying ? (
+                <Ionicons name="musical-notes" size={44} color={primary} />
+              ) : (
+                <MaterialCommunityIcons name="robot-outline" size={44} color={primary} />
+              )}
             </View>
           </View>
           <Text style={styles.h2}>AI 파트너</Text>
@@ -2473,7 +2494,7 @@ const renderFeedbackSection = (
                 >
                   {errorItem.original}
                 </Text>{" "}
-                ➡️{" "}
+                <Ionicons name="arrow-forward" size={13} color="#4caf50" />{" "}
                 <Text style={{ color: "#4caf50", fontWeight: "bold" }}>
                   {errorItem.suggested || errorItem.corrected}
                 </Text>
@@ -3465,7 +3486,8 @@ function FindAccountScreen({ go }: { go: (screen: Screen) => void }) {
             />
             {foundLoginId && (
               <Text style={styles.signupSuccessText}>
-                ✓ 가입된 아이디: {foundLoginId}
+                <Ionicons name="checkmark" size={12} color="#16A34A" />{" "}
+                가입된 아이디: {foundLoginId}
               </Text>
             )}
             <Pressable
@@ -3529,7 +3551,10 @@ function FindAccountScreen({ go }: { go: (screen: Screen) => void }) {
               </Pressable>
             </View>
             {rpVerified && (
-              <Text style={styles.signupSuccessText}>✓ 인증 완료</Text>
+              <Text style={styles.signupSuccessText}>
+                <Ionicons name="checkmark" size={12} color="#16A34A" /> 인증
+                완료
+              </Text>
             )}
             {rpCodeSent && !rpVerified && (
               <View style={[styles.signupInlineRow, { marginTop: 10 }]}>
@@ -3690,7 +3715,9 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
         >
           {selectedNotice.pinned && (
             <View style={ntStyles.importantBadge}>
-              <Text style={ntStyles.importantBadgeText}>📌 중요 공지</Text>
+              <Text style={ntStyles.importantBadgeText}>
+                <Ionicons name="pin" size={11} color="#EF4444" /> 중요 공지
+              </Text>
             </View>
           )}
           <Text style={ntStyles.detailTitle}>{selectedNotice.title}</Text>
@@ -3739,7 +3766,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
                 marginBottom: 10,
               }}
             >
-              <Text style={ntStyles.sectionIcon}>📌</Text>
+              <Ionicons name="pin" size={12} color="#EF4444" />
               <Text style={ntStyles.sectionLabelImportant}>중요 공지</Text>
             </View>
             <View style={{ gap: 8 }}>
@@ -4052,17 +4079,26 @@ function BookmarksScreen({
             onPress={() => deleteExpression(expr)}
             style={bkStyles.deleteBtn}
           >
-            <Text style={bkStyles.deleteBtnText}>🗑</Text>
+            <Ionicons name="trash-outline" size={16} color="#9CA3AF" />
           </Pressable>
         </View>
-        {expr.source === "ai" && (
-          <Text style={bkStyles.exprSourceTag}>AI 답변에서 저장됨</Text>
-        )}
-        <Text style={bkStyles.exprSourceLabel}>
-          {expr.roomType === "voice"
-            ? "음성대화에서 저장"
-            : "채팅대화에서 저장"}
-        </Text>
+        <View style={bkStyles.exprSourceRow}>
+          <Text style={bkStyles.exprSourceLabel}>
+            {expr.roomType === "voice"
+              ? "음성대화에서 저장"
+              : "채팅대화에서 저장"}
+          </Text>
+          {expr.source === "ai" && (
+            <View style={bkStyles.aiSourceBadge}>
+              <MaterialCommunityIcons
+                name="robot-outline"
+                size={10}
+                color={primary}
+              />
+              <Text style={bkStyles.aiSourceBadgeText}>AI 답변</Text>
+            </View>
+          )}
+        </View>
       </Pressable>
     );
   };
@@ -4103,27 +4139,31 @@ function BookmarksScreen({
       {/* 헤더 */}
       {isInsideDetail ? (
         <View style={bkStyles.header}>
-          <Pressable
-            style={bkStyles.backBtn}
-            onPress={() => {
-              setSelectedCategory(null);
-              setSelectedRoom(null);
-            }}
+          <View
+            style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
           >
-            <Text style={bkStyles.backIcon}>‹</Text>
-          </Pressable>
-          <View>
-            <Text style={bkStyles.headerTitle}>
-              {selectedCategory ??
-                (selectedRoom
-                  ? (groupByRoom()[selectedRoom]?.[0]?.roomName ?? "")
-                  : "")}
-            </Text>
-            <Text style={bkStyles.headerSub}>
-              {selectedCategory
-                ? `${expressions.filter((e) => e.category === selectedCategory).length}개 저장됨`
-                : `${groupByRoom()[selectedRoom!]?.length ?? 0}개 저장됨`}
-            </Text>
+            <Pressable
+              style={bkStyles.backBtn}
+              onPress={() => {
+                setSelectedCategory(null);
+                setSelectedRoom(null);
+              }}
+            >
+              <Text style={bkStyles.backIcon}>‹</Text>
+            </Pressable>
+            <View>
+              <Text style={bkStyles.headerTitle}>
+                {selectedCategory ??
+                  (selectedRoom
+                    ? (groupByRoom()[selectedRoom]?.[0]?.roomName ?? "")
+                    : "")}
+              </Text>
+              <Text style={bkStyles.headerSub}>
+                {selectedCategory
+                  ? `${expressions.filter((e) => e.category === selectedCategory).length}개 저장됨`
+                  : `${groupByRoom()[selectedRoom!]?.length ?? 0}개 저장됨`}
+              </Text>
+            </View>
           </View>
         </View>
       ) : (
@@ -4272,10 +4312,7 @@ function BookmarksScreen({
                       style={[bkStyles.catIcon, { backgroundColor: config.bg }]}
                     >
                       <View
-                        style={[
-                          bkStyles.catDot,
-                          { backgroundColor: config.dot },
-                        ]}
+                        style={[bkStyles.catDot, { backgroundColor: config.dot }]}
                       />
                     </View>
                     <View style={{ flex: 1 }}>
@@ -4299,7 +4336,7 @@ function BookmarksScreen({
                   onPress={() => setSelectedRoom(roomKey)}
                 >
                   <View style={bkStyles.roomIcon}>
-                    <Text style={{ fontSize: 18 }}>📁</Text>
+                    <Ionicons name="folder-outline" size={18} color="#9CA3AF" />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={bkStyles.listCardTitle}>
@@ -4461,7 +4498,7 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
         <View style={stStyles.card}>
           <View style={stStyles.row}>
             <View style={stStyles.iconWrapBlue}>
-              <Text style={{ fontSize: 15 }}>🔔</Text>
+              <Ionicons name="notifications-outline" size={16} color="#2563EB" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={stStyles.rowTitle}>푸시 알림</Text>
@@ -4479,7 +4516,7 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
         <View style={stStyles.card}>
           <Pressable style={stStyles.row} onPress={() => go("faq")}>
             <View style={stStyles.iconWrapPurple}>
-              <Text style={{ fontSize: 15 }}>❓</Text>
+              <Ionicons name="help-circle-outline" size={16} color="#7C3AED" />
             </View>
             <Text style={[stStyles.rowTitle, { flex: 1 }]}>자주 묻는 질문</Text>
             <Text style={styles.chevron}>›</Text>
@@ -4489,7 +4526,7 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
         {/* 로그아웃 */}
         <Pressable style={stStyles.logoutBtn} onPress={logout}>
           <View style={stStyles.iconWrapRed}>
-            <Text style={{ fontSize: 15 }}>🚪</Text>
+            <Ionicons name="log-out-outline" size={16} color="#EF4444" />
           </View>
           <Text style={stStyles.logoutText}>로그아웃</Text>
         </Pressable>
@@ -4500,7 +4537,7 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
           onPress={openWithdrawModal}
         >
           <View style={stStyles.iconWrapGray}>
-            <Text style={{ fontSize: 15 }}>🚫</Text>
+            <Ionicons name="person-remove-outline" size={16} color="#6B7280" />
           </View>
           <Text style={stStyles.withdrawText}>회원탈퇴</Text>
         </Pressable>
@@ -4816,7 +4853,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
               }}
             >
               <View style={pyStyles.crownWrap}>
-                <Text style={{ fontSize: 20 }}>👑</Text>
+                <MaterialCommunityIcons name="crown" size={20} color="#FFFFFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={pyStyles.bannerSub}>현재 구독 중</Text>
@@ -4830,13 +4867,19 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
             </View>
             <View style={{ flexDirection: "row", gap: 10 }}>
               <View style={pyStyles.bannerInfoBox}>
-                <Text style={pyStyles.bannerInfoLabel}>⏱ 남은 기간</Text>
+                <Text style={pyStyles.bannerInfoLabel}>
+                  <Ionicons name="time-outline" size={10} color="#C7D2FE" />{" "}
+                  남은 기간
+                </Text>
                 <Text style={pyStyles.bannerInfoValue}>
                   D-{currentSubscription.daysLeft}
                 </Text>
               </View>
               <View style={pyStyles.bannerInfoBox}>
-                <Text style={pyStyles.bannerInfoLabel}>📅 다음 결제일</Text>
+                <Text style={pyStyles.bannerInfoLabel}>
+                  <Ionicons name="calendar-outline" size={10} color="#C7D2FE" />{" "}
+                  다음 결제일
+                </Text>
                 <Text style={pyStyles.bannerInfoValue}>
                   {currentSubscription.nextBillingDate}
                 </Text>
@@ -4846,7 +4889,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
         ) : (
           <View style={[pyStyles.banner, { alignItems: "center" }]}>
             <View style={[pyStyles.crownWrap, { marginBottom: 12 }]}>
-              <Text style={{ fontSize: 20 }}>👑</Text>
+              <MaterialCommunityIcons name="crown" size={20} color="#FFFFFF" />
             </View>
             <Text style={pyStyles.bannerTitle}>
               무제한 학습으로 영어 실력 향상
@@ -4983,7 +5026,8 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
         {selectedPlan === "yearly" && (
           <View style={pyStyles.savingBox}>
             <Text style={pyStyles.savingText}>
-              💰 월간 대비{" "}
+              <Ionicons name="cash-outline" size={12} color="#15803D" /> 월간
+              대비{" "}
               <Text style={{ fontWeight: "800" }}>약 31,700원 절약</Text>됩니다
               (연 기준)
             </Text>
@@ -5214,7 +5258,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const FULL_URL =
-          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/faq";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -5821,6 +5865,22 @@ const bkStyles = StyleSheet.create({
     marginTop: 6,
     alignSelf: "flex-end",
   },
+  exprSourceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 6,
+  },
+  aiSourceBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#EEF2FF",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  aiSourceBadgeText: { fontSize: 10, fontWeight: "700", color: primary },
   exprSourceLabel: {
     color: "#9CA3AF",
     fontSize: 10,
@@ -6739,7 +6799,7 @@ function Header({
       {actions ? (
         <View style={styles.headerActions}>
           <Pressable onPress={() => go("notice")} style={styles.headerAction}>
-            <Text>📣</Text>
+            <Ionicons name="megaphone-outline" size={20} color="#4B5563" />
           </Pressable>
           <Pressable
             onPress={() => go("bookmarks")}
@@ -6748,10 +6808,10 @@ function Header({
             <Text>🔖</Text>
           </Pressable>
           <Pressable onPress={() => go("mypage")} style={styles.headerAction}>
-            <Text>👤</Text>
+            <Ionicons name="person-outline" size={20} color="#4B5563" />
           </Pressable>
           <Pressable onPress={() => go("settings")} style={styles.headerAction}>
-            <Text>⚙️</Text>
+            <Ionicons name="settings-outline" size={20} color="#4B5563" />
           </Pressable>
         </View>
       ) : (
@@ -6782,7 +6842,7 @@ function ModeCard({
   color,
   onPress,
 }: {
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   title: string;
   desc: string;
   color: string;
@@ -6791,7 +6851,7 @@ function ModeCard({
   return (
     <Pressable style={styles.modeCard} onPress={onPress}>
       <View style={[styles.modeIcon, { backgroundColor: `${color}18` }]}>
-        <Text style={styles.modeIconText}>{icon}</Text>
+        <Ionicons name={icon} size={25} color={color} />
       </View>
       <View style={styles.flex}>
         <Text style={styles.cardTitle}>{title}</Text>
@@ -6876,7 +6936,8 @@ const renderMessageFeedbackSection = (
                 {errorItem.original}
               </Text>
               <Text style={styles.msgFeedbackCorrected}>
-                ➡️ {errorItem.suggested || errorItem.corrected}
+                <Ionicons name="arrow-forward" size={14} color="#4caf50" />{" "}
+                {errorItem.suggested || errorItem.corrected}
               </Text>
               {errorItem.explanation ? (
                 <Text style={styles.msgFeedbackExplanation}>
@@ -7460,7 +7521,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  modeIconText: { fontSize: 25 },
   profileCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
