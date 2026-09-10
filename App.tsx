@@ -188,6 +188,255 @@ async function permanentlyDeleteRoom(roomId: string | number) {
   await AsyncStorage.setItem(TRASH_STORAGE_KEY, JSON.stringify(next));
 }
 
+// 🏆 리그(League) — 아직 백엔드에 랭킹 API가 없어서 AsyncStorage로만 동작합니다.
+// 나중에 리그 API가 생기면 아래 함수들 내부만 axios 호출로 바꾸면 되도록,
+// 사용하는 화면 쪽에서는 이 함수들만 부르게 설계했습니다.
+
+type LeagueTier = "bronze" | "silver" | "gold" | "sapphire" | "diamond";
+
+const LEAGUE_TIER_ORDER: LeagueTier[] = [
+  "bronze",
+  "silver",
+  "gold",
+  "sapphire",
+  "diamond",
+];
+
+const LEAGUE_TIER_META: Record<
+  LeagueTier,
+  { label: string; color: string; bg: string; maxWeeklyScore: number }
+> = {
+  bronze: { label: "브론즈", color: "#B45309", bg: "#FEF3C7", maxWeeklyScore: 50 },
+  silver: { label: "실버", color: "#6B7280", bg: "#F3F4F6", maxWeeklyScore: 80 },
+  gold: { label: "골드", color: "#D97706", bg: "#FFFBEB", maxWeeklyScore: 120 },
+  sapphire: {
+    label: "사파이어",
+    color: "#2563EB",
+    bg: "#EFF6FF",
+    maxWeeklyScore: 170,
+  },
+  diamond: {
+    label: "다이아몬드",
+    color: "#0EA5E9",
+    bg: "#ECFEFF",
+    maxWeeklyScore: 230,
+  },
+};
+
+// 실제 유저가 아닌, 로컬에서만 시뮬레이션되는 더미 경쟁자 29명 (고정 명단).
+const LEAGUE_BOTS: { id: string; name: string; avatar: string }[] = [
+  { id: "bot-1", name: "부지런한다람쥐", avatar: "🐿️" },
+  { id: "bot-2", name: "영어고수", avatar: "🦉" },
+  { id: "bot-3", name: "새벽형인간", avatar: "🌅" },
+  { id: "bot-4", name: "카페인충전중", avatar: "☕" },
+  { id: "bot-5", name: "문법마스터", avatar: "📚" },
+  { id: "bot-6", name: "발음장인", avatar: "🎤" },
+  { id: "bot-7", name: "열공하는고양이", avatar: "🐱" },
+  { id: "bot-8", name: "야근탈출러", avatar: "🏃" },
+  { id: "bot-9", name: "여행영어러버", avatar: "✈️" },
+  { id: "bot-10", name: "매일한줄", avatar: "📝" },
+  { id: "bot-11", name: "리스닝귀신", avatar: "👂" },
+  { id: "bot-12", name: "왕초보탈출", avatar: "🐣" },
+  { id: "bot-13", name: "오늘도한걸음", avatar: "👣" },
+  { id: "bot-14", name: "영단어수집가", avatar: "🗂️" },
+  { id: "bot-15", name: "밤샘공부러", avatar: "🌙" },
+  { id: "bot-16", name: "프리토킹도전", avatar: "💬" },
+  { id: "bot-17", name: "문장암기왕", avatar: "🧠" },
+  { id: "bot-18", name: "습관의힘", avatar: "🔁" },
+  { id: "bot-19", name: "늦잠러", avatar: "😴" },
+  { id: "bot-20", name: "꾸준함의승리", avatar: "🏅" },
+  { id: "bot-21", name: "스몰토크장인", avatar: "🗣️" },
+  { id: "bot-22", name: "원어민흉내쟁이", avatar: "🎭" },
+  { id: "bot-23", name: "단어장요정", avatar: "🧚" },
+  { id: "bot-24", name: "아침엔영어", avatar: "🐓" },
+  { id: "bot-25", name: "주말특훈러", avatar: "🎯" },
+  { id: "bot-26", name: "두번째외국어", avatar: "🌏" },
+  { id: "bot-27", name: "회화벌레", avatar: "🐛" },
+  { id: "bot-28", name: "오답노트왕", avatar: "📓" },
+  { id: "bot-29", name: "완주기원자", avatar: "🙏" },
+];
+
+// 🚧 퀴즈 정답 1개당 포인트. 퀴즈 화면 자체가 아직 "준비중"이라 지금은 상수만 정의해두고,
+// 나중에 퀴즈 기능을 만들 때 정답 처리 지점에서 awardLeaguePoints(QUIZ_CORRECT_POINT)를 부르면 됩니다.
+const QUIZ_CORRECT_POINT = 1;
+
+const LEAGUE_STORAGE_KEY = "leagueState";
+
+type LeagueOutcome = "promoted" | "demoted" | "stayed";
+
+type PendingLeagueResult = {
+  fromTier: LeagueTier;
+  toTier: LeagueTier;
+  rank: number; // 지난주 최종 순위 (1~30)
+  outcome: LeagueOutcome;
+};
+
+type LeagueState = {
+  tier: LeagueTier;
+  weekStartISO: string; // 이번 리그 주차 월요일 00:00(로컬 기준)
+  myPoints: number;
+  pendingResult: PendingLeagueResult | null;
+};
+
+// 월요일을 한 주의 시작으로 삼습니다.
+function getLeagueWeekStartISO(date: Date): string {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0=일 ... 6=토
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diffToMonday);
+  return d.toISOString();
+}
+
+function getLeagueDaysElapsed(weekStartISO: string): number {
+  const start = new Date(weekStartISO).getTime();
+  const diffDays = Math.floor((Date.now() - start) / (24 * 60 * 60 * 1000));
+  return Math.min(6, Math.max(0, diffDays));
+}
+
+// "3일 6시간 26분" 형태로 리그 종료까지 남은 시간을 표시합니다.
+function getLeagueCountdownText(weekStartISO: string): string {
+  const weekEnd = new Date(weekStartISO).getTime() + 7 * 24 * 60 * 60 * 1000;
+  const remainMs = Math.max(0, weekEnd - Date.now());
+  const days = Math.floor(remainMs / (24 * 60 * 60 * 1000));
+  const hours = Math.floor((remainMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+  const minutes = Math.floor((remainMs % (60 * 60 * 1000)) / (60 * 1000));
+  if (remainMs <= 0) return "오늘 마감";
+  return days > 0
+    ? `${days}일 ${hours}시간 ${minutes}분`
+    : `${hours}시간 ${minutes}분`;
+}
+
+function leagueHashSeed(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+  }
+  return h >>> 0;
+}
+
+// 시드 기반 의사난수 생성기 — 같은 시드면 항상 같은 순서의 값이 나옵니다.
+function mulberry32(seed: number) {
+  let a = seed;
+  return function random() {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// 더미 경쟁자 한 명의 "오늘까지" 누적 점수를 계산합니다.
+// weekStartISO + botId로 시드를 고정하기 때문에, 같은 날 여러 번 불러도 값이 흔들리지 않고
+// 날짜가 지날수록 자연스럽게 늘어납니다.
+function computeLeagueBotScore(
+  botId: string,
+  weekStartISO: string,
+  tier: LeagueTier,
+  daysElapsed: number,
+): number {
+  const rng = mulberry32(leagueHashSeed(`${weekStartISO}-${botId}`));
+  const maxScore = LEAGUE_TIER_META[tier].maxWeeklyScore;
+  // 봇마다 이번 주 "목표 총점"을 다르게 뽑아둡니다(0.3~1.0배 범위).
+  // 이게 없으면 daysElapsed=6(주 완주 시점)에 모든 봇이 똑같이 maxScore로 수렴해버려서
+  // 순위 경쟁이 사라지는 버그가 생깁니다.
+  const weeklyTarget = maxScore * (0.3 + rng() * 0.7);
+  const dailyShares = Array.from({ length: 7 }, () => 0.4 + rng() * 0.6);
+  const weekTotal = dailyShares.reduce((sum, share) => sum + share, 0);
+  let accumulated = 0;
+  for (let i = 0; i <= daysElapsed; i++) {
+    accumulated += dailyShares[i];
+  }
+  return Math.round((accumulated / weekTotal) * weeklyTarget);
+}
+
+async function getLeagueState(): Promise<LeagueState> {
+  try {
+    const raw = await AsyncStorage.getItem(LEAGUE_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn("🚨 리그 상태 불러오기 실패:", e);
+  }
+  const initial: LeagueState = {
+    tier: "bronze",
+    weekStartISO: getLeagueWeekStartISO(new Date()),
+    myPoints: 0,
+    pendingResult: null,
+  };
+  await AsyncStorage.setItem(LEAGUE_STORAGE_KEY, JSON.stringify(initial));
+  return initial;
+}
+
+async function saveLeagueState(state: LeagueState) {
+  try {
+    await AsyncStorage.setItem(LEAGUE_STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.warn("🚨 리그 상태 저장 실패:", e);
+  }
+}
+
+// 화면 진입/포그라운드 복귀 시 호출 — 리그 주가 바뀌어 있으면 지난주 순위로
+// 승급/강등을 계산해서 반영하고 새 주로 리셋합니다.
+async function ensureLeagueWeekFresh(): Promise<LeagueState> {
+  const state = await getLeagueState();
+  const currentWeekStart = getLeagueWeekStartISO(new Date());
+  if (state.weekStartISO === currentWeekStart) {
+    return state;
+  }
+
+  // 지난주가 이미 끝났으므로 봇들의 "지난주 최종" 점수(7일 전부)로 순위를 매깁니다.
+  const lastWeekBotScores = LEAGUE_BOTS.map((bot) =>
+    computeLeagueBotScore(bot.id, state.weekStartISO, state.tier, 6),
+  );
+  const allScores = [state.myPoints, ...lastWeekBotScores].sort(
+    (a, b) => b - a,
+  );
+  const myRank = allScores.indexOf(state.myPoints) + 1;
+
+  const tierIndex = LEAGUE_TIER_ORDER.indexOf(state.tier);
+  let nextTier = state.tier;
+  let outcome: LeagueOutcome = "stayed";
+  if (myRank <= 5 && tierIndex < LEAGUE_TIER_ORDER.length - 1) {
+    nextTier = LEAGUE_TIER_ORDER[tierIndex + 1];
+    outcome = "promoted";
+  } else if (myRank >= 26 && tierIndex > 0) {
+    nextTier = LEAGUE_TIER_ORDER[tierIndex - 1];
+    outcome = "demoted";
+  }
+
+  const nextState: LeagueState = {
+    tier: nextTier,
+    weekStartISO: currentWeekStart,
+    myPoints: 0,
+    pendingResult: {
+      fromTier: state.tier,
+      toTier: nextTier,
+      rank: myRank,
+      outcome,
+    },
+  };
+  await saveLeagueState(nextState);
+  return nextState;
+}
+
+// 대화 중 AI 응답을 1번 받을 때마다(음성/채팅 공통) 호출합니다.
+async function awardLeaguePoints(amount: number) {
+  try {
+    const state = await ensureLeagueWeekFresh();
+    await saveLeagueState({ ...state, myPoints: state.myPoints + amount });
+  } catch (e) {
+    console.warn("🚨 리그 포인트 적립 실패:", e);
+  }
+}
+
+async function dismissLeagueResult(): Promise<LeagueState> {
+  const state = await getLeagueState();
+  const next = { ...state, pendingResult: null };
+  await saveLeagueState(next);
+  return next;
+}
+
 const TEST_VOICE_MESSAGES: Message[] = [
   {
     id: "tv-1",
@@ -521,7 +770,7 @@ export default function App() {
 
       {screen === "mode" && <ModeScreen go={go} />}
       {screen === "learningData" && <LearningDataScreen go={go} />}
-      {screen === "league" && <ComingSoonScreen title="리그" go={go} />}
+      {screen === "league" && <LeagueScreen go={go} />}
       {screen === "quiz" && (
         <ComingSoonScreen title="퀴즈" go={go} backTo="mode" />
       )}
@@ -2253,6 +2502,7 @@ export function VoiceChatScreen({
 
         setMessages((prev) => [...prev, aiMessage]);
         setLatestAiText(aiText);
+        awardLeaguePoints(2);
       }
 
       if (audioUrl) {
@@ -2397,6 +2647,10 @@ export function VoiceChatScreen({
 
       if (newMessages.length > 0) {
         setMessages((prev) => [...prev, ...newMessages]);
+      }
+
+      if (aiText) {
+        awardLeaguePoints(2);
       }
 
       if (audioUrl) {
@@ -3079,6 +3333,7 @@ export function TextChatScreen({
           }),
         };
         setMessages([aiMessage]);
+        awardLeaguePoints(2);
       }
     } catch (error) {
       console.error("🚨 AI 첫인사 로딩 실패:", error);
@@ -3373,6 +3628,7 @@ export function TextChatScreen({
           }),
         };
         setMessages((prev) => [...prev, aiMessage]);
+        awardLeaguePoints(2);
       }
     } catch (error: any) {
       console.error(
@@ -7401,6 +7657,346 @@ function ComingSoonScreen({
     </View>
   );
 }
+
+function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
+  const [state, setState] = useState<LeagueState | null>(null);
+
+  const load = useCallback(async () => {
+    const fresh = await ensureLeagueWeekFresh();
+    setState(fresh);
+  }, []);
+
+  useEffect(() => {
+    load();
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active") load();
+    });
+    return () => subscription.remove();
+  }, [load]);
+
+  const handleDismissResult = async () => {
+    const next = await dismissLeagueResult();
+    setState(next);
+  };
+
+  if (!state) {
+    return (
+      <View
+        style={[
+          styles.screenSoft,
+          {
+            flex: 1,
+            backgroundColor: "#fff",
+            alignItems: "center",
+            justifyContent: "center",
+          },
+        ]}
+      >
+        <ActivityIndicator size="small" color={primary} />
+      </View>
+    );
+  }
+
+  const daysElapsed = getLeagueDaysElapsed(state.weekStartISO);
+  const tierMeta = LEAGUE_TIER_META[state.tier];
+  const tierIndex = LEAGUE_TIER_ORDER.indexOf(state.tier);
+
+  const entries = [
+    { id: "me", name: "나", avatar: "🙂", score: state.myPoints, isMe: true },
+    ...LEAGUE_BOTS.map((bot) => ({
+      id: bot.id,
+      name: bot.name,
+      avatar: bot.avatar,
+      score: computeLeagueBotScore(
+        bot.id,
+        state.weekStartISO,
+        state.tier,
+        daysElapsed,
+      ),
+      isMe: false,
+    })),
+  ].sort((a, b) => b.score - a.score);
+
+  const pending = state.pendingResult;
+  const showPromotionLine = tierIndex < LEAGUE_TIER_ORDER.length - 1;
+  const showDemotionLine = tierIndex > 0;
+  const MEDAL_COLORS = ["#F4B400", "#9CA3AF", "#C2703A"];
+
+  const handleShowRule = () => {
+    Alert.alert(
+      "리그 안내",
+      "매주 상위 5명은 다음 리그로 승급하고, 하위 5명은 이전 리그로 강등돼요.",
+    );
+  };
+
+  return (
+    <View style={[styles.screenSoft, { flex: 1, backgroundColor: "#fff" }]}>
+      <View
+        style={{
+          paddingTop: StatusBar.currentHeight
+            ? StatusBar.currentHeight + 10
+            : 24,
+        }}
+      >
+        <Header title="리그" go={go} />
+      </View>
+
+      <ScrollView
+        style={{ backgroundColor: "#fff" }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 36 }}
+      >
+        <View style={lgStyles.carouselRow}>
+          {LEAGUE_TIER_ORDER.map((t, i) => {
+            const meta = LEAGUE_TIER_META[t];
+            const isCurrent = i === tierIndex;
+            const isLocked = i > tierIndex;
+            return (
+              <View key={t} style={lgStyles.carouselItem}>
+                <View
+                  style={[
+                    lgStyles.carouselBadge,
+                    {
+                      backgroundColor: isLocked ? "#F3F4F6" : meta.bg,
+                    },
+                    isCurrent && lgStyles.carouselBadgeCurrent,
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="shield"
+                    size={isCurrent ? 30 : 20}
+                    color={isLocked ? "#D1D5DB" : meta.color}
+                  />
+                  {isLocked && (
+                    <View style={lgStyles.carouselLock}>
+                      <Ionicons name="lock-closed" size={10} color="#9CA3AF" />
+                    </View>
+                  )}
+                </View>
+                <Text
+                  style={[
+                    lgStyles.carouselLabel,
+                    isCurrent && { color: meta.color, fontWeight: "800" },
+                  ]}
+                >
+                  {meta.label}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+
+        <View style={lgStyles.titleRow}>
+          <Text style={lgStyles.title}>{tierMeta.label} 리그</Text>
+          <Pressable onPress={handleShowRule} hitSlop={8}>
+            <Ionicons name="help-circle-outline" size={16} color="#9CA3AF" />
+          </Pressable>
+        </View>
+        <Text style={lgStyles.countdown}>
+          {getLeagueCountdownText(state.weekStartISO)} 남음
+        </Text>
+
+        {pending && pending.outcome !== "stayed" && (
+          <View
+            style={[
+              lgStyles.resultBanner,
+              pending.outcome === "promoted"
+                ? lgStyles.resultBannerUp
+                : lgStyles.resultBannerDown,
+            ]}
+          >
+            <Text style={lgStyles.resultText}>
+              {pending.outcome === "promoted"
+                ? `지난주 ${LEAGUE_TIER_META[pending.fromTier].label} 리그 ${pending.rank}위로 ${LEAGUE_TIER_META[pending.toTier].label} 리그 승급했어요! 🎉`
+                : `지난주 ${LEAGUE_TIER_META[pending.fromTier].label} 리그 ${pending.rank}위로 ${LEAGUE_TIER_META[pending.toTier].label} 리그로 내려갔어요.`}
+            </Text>
+            <Pressable onPress={handleDismissResult} hitSlop={8}>
+              <Ionicons name="close" size={16} color="#6B7280" />
+            </Pressable>
+          </View>
+        )}
+
+        <View style={{ marginTop: 8 }}>
+          {entries.map((entry, index) => {
+            const rank = index + 1;
+            const medalColor = rank <= 3 ? MEDAL_COLORS[rank - 1] : undefined;
+            return (
+              <View key={entry.id}>
+                {rank === 6 && showPromotionLine && (
+                  <View style={lgStyles.cutLine}>
+                    <View
+                      style={[lgStyles.cutLineRule, lgStyles.cutLineRuleUp]}
+                    />
+                    <Text style={[lgStyles.cutLineText, { color: "#059669" }]}>
+                      🔺 승급 컷라인
+                    </Text>
+                    <View
+                      style={[lgStyles.cutLineRule, lgStyles.cutLineRuleUp]}
+                    />
+                  </View>
+                )}
+                {rank === entries.length - 4 && showDemotionLine && (
+                  <View style={lgStyles.cutLine}>
+                    <View
+                      style={[lgStyles.cutLineRule, lgStyles.cutLineRuleDown]}
+                    />
+                    <Text style={[lgStyles.cutLineText, { color: "#DC2626" }]}>
+                      🔻 강등 컷라인
+                    </Text>
+                    <View
+                      style={[lgStyles.cutLineRule, lgStyles.cutLineRuleDown]}
+                    />
+                  </View>
+                )}
+                <View
+                  style={[lgStyles.row, entry.isMe && lgStyles.rowMe]}
+                >
+                  <View style={lgStyles.rankSlot}>
+                    {medalColor && (
+                      <Ionicons name="trophy" size={16} color={medalColor} />
+                    )}
+                    <Text
+                      style={[
+                        lgStyles.rankText,
+                        medalColor && { color: medalColor },
+                      ]}
+                    >
+                      {rank}
+                    </Text>
+                  </View>
+                  <View style={lgStyles.avatarCircle}>
+                    <Text style={lgStyles.avatar}>{entry.avatar}</Text>
+                  </View>
+                  <Text style={lgStyles.name} numberOfLines={1}>
+                    {entry.name}
+                  </Text>
+                  {entry.isMe && (
+                    <View style={lgStyles.meBadge}>
+                      <Text style={lgStyles.meBadgeText}>나</Text>
+                    </View>
+                  )}
+                  <Text style={lgStyles.score}>{entry.score} PT</Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const lgStyles = StyleSheet.create({
+  carouselRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 18,
+  },
+  carouselItem: { alignItems: "center", flex: 1, gap: 6 },
+  carouselBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  carouselBadgeCurrent: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  carouselLock: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  carouselLabel: { fontSize: 10, color: "#9CA3AF", fontWeight: "600" },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  title: { fontSize: 18, fontWeight: "800", color: "#111827" },
+  countdown: {
+    textAlign: "center",
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#DC2626",
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  resultBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  resultBannerUp: { backgroundColor: "#ECFDF5", borderColor: "#34D399" },
+  resultBannerDown: { backgroundColor: "#FEF2F2", borderColor: "#FCA5A5" },
+  resultText: { flex: 1, fontSize: 12, color: "#374151", fontWeight: "600" },
+  cutLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginVertical: 10,
+  },
+  cutLineRule: { flex: 1, height: 1 },
+  cutLineRuleUp: { backgroundColor: "#A7F3D0" },
+  cutLineRuleDown: { backgroundColor: "#FECACA" },
+  cutLineText: { fontSize: 11, fontWeight: "800" },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+    gap: 10,
+  },
+  rowMe: { backgroundColor: "#EEF2FF", borderRadius: 12, paddingHorizontal: 8 },
+  rankSlot: {
+    width: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 1,
+  },
+  rankText: { fontSize: 12, fontWeight: "800", color: "#9CA3AF" },
+  avatarCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatar: { fontSize: 15 },
+  name: { flex: 1, fontSize: 13, fontWeight: "600", color: "#111827" },
+  meBadge: {
+    backgroundColor: primary,
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  meBadgeText: { fontSize: 10, fontWeight: "800", color: "#fff" },
+  score: { fontSize: 13, fontWeight: "800", color: "#EA580C" },
+});
 
 function PrimaryButton({
   label,
