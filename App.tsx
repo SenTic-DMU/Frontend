@@ -26,6 +26,7 @@ import {
   TextInput,
   View,
   Linking,
+  TouchableOpacity,
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -51,6 +52,7 @@ type Screen =
   | "learningData"
   | "league"
   | "quiz"
+  | "quizResult"
   | "voiceRooms"
   | "chatRooms"
   | "situation"
@@ -150,10 +152,7 @@ async function getTrashedRooms(): Promise<TrashedRoom[]> {
   return raw ? JSON.parse(raw) : [];
 }
 
-async function moveRoomToTrash(
-  room: PracticeRoom,
-  roomType: "voice" | "chat",
-) {
+async function moveRoomToTrash(room: PracticeRoom, roomType: "voice" | "chat") {
   const trashed = await getTrashedRooms();
   const next = [
     ...trashed.filter((r) => String(r.id) !== String(room.id)),
@@ -172,7 +171,7 @@ async function restoreRoomFromTrash(roomId: string | number) {
 async function permanentlyDeleteRoom(roomId: string | number) {
   try {
     const accessToken = await AsyncStorage.getItem("accessToken");
-    const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+    const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
     await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -281,7 +280,7 @@ export default function App() {
         const token = await AsyncStorage.getItem("accessToken");
         if (!token) return;
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         // POST 방식으로 /start 또는 /end 주소로 찌릅니다 (바디 데이터는 없음)
         await axios.post(
@@ -354,7 +353,7 @@ export default function App() {
           return;
         }
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         // ⭐️ 기존 헤더 코드에 백엔드가 알려준 옵션을 추가해 줍니다!
         const headers = {
           Authorization: `Bearer ${accessToken}`,
@@ -482,7 +481,10 @@ export default function App() {
   if (!fontsLoaded) {
     return (
       <SafeAreaView
-        style={[styles.safe, { alignItems: "center", justifyContent: "center" }]}
+        style={[
+          styles.safe,
+          { alignItems: "center", justifyContent: "center" },
+        ]}
       >
         <ActivityIndicator size="large" color={primary} />
       </SafeAreaView>
@@ -522,9 +524,15 @@ export default function App() {
       {screen === "mode" && <ModeScreen go={go} />}
       {screen === "learningData" && <LearningDataScreen go={go} />}
       {screen === "league" && <ComingSoonScreen title="리그" go={go} />}
-      {screen === "quiz" && (
-        <ComingSoonScreen title="퀴즈" go={go} backTo="mode" />
+
+      {/* ⭐️ 수정한 부분: 우리가 만든 진짜 퀴즈 화면으로 연결! */}
+      {screen === "quiz" && <QuizScreen go={go} />}
+
+      {/* ⭐️ 수정한 부분: 퀴즈 결과 화면 (나중에 QuizResultScreen을 만들면 교체) */}
+      {screen === "quizResult" && (
+        <ComingSoonScreen title="퀴즈 결과" go={go} backTo="mode" />
       )}
+
       {screen === "voiceRooms" && (
         <RoomListScreen
           title="음성 대화"
@@ -553,9 +561,7 @@ export default function App() {
           }}
         />
       )}
-      {screen === "trash" && (
-        <TrashScreen onBack={() => go("settings")} />
-      )}
+      {screen === "trash" && <TrashScreen onBack={() => go("settings")} />}
       {screen === "situation" && (
         <SituationScreen
           mode={selectedMode}
@@ -596,6 +602,364 @@ export default function App() {
     </SafeAreaView>
   );
 }
+
+// ⭐️ 테스트를 위한 임시 퀴즈 데이터
+const DUMMY_QUESTIONS = [
+  {
+    id: 1,
+    type: "FILL_BLANK",
+    text: "I am looking forward ___ seeing you.",
+    options: ["to", "for", "at", "in"],
+    answer: "to",
+    isScraped: true,
+  },
+  {
+    id: 2,
+    type: "MATCH_EXPRESSION",
+    korean: "그건 내 권한 밖의 일이야.",
+    options: [
+      "It's out of my hands.",
+      "It's on my mind.",
+      "It's right in my hands.",
+      "It's out of my mind.",
+    ],
+    answer: "It's out of my hands.",
+    isScraped: true,
+  },
+  {
+    id: 3,
+    type: "ORDERING",
+    korean: "제가 처리하고 있습니다.",
+    chunks: ["taking", "I", "of", "am", "care", "it"],
+    answer: "I am taking care of it.",
+    isScraped: false,
+  },
+];
+
+function QuizScreen({ go }: { go: (screen: Screen) => void }) {
+  const [questions, setQuestions] = useState(DUMMY_QUESTIONS);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [score, setScore] = useState(0);
+  const [wrongAnswers, setWrongAnswers] = useState<any[]>([]);
+
+  const [isLocked, setIsLocked] = useState(false);
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+
+  const [availableChunks, setAvailableChunks] = useState<string[]>([]);
+  const [selectedChunks, setSelectedChunks] = useState<string[]>([]);
+
+  const currentQ = questions[currentIndex];
+
+  useEffect(() => {
+    setIsLocked(false);
+    setSelectedOption(null);
+    if (currentQ?.type === "ORDERING") {
+      setAvailableChunks(
+        [...(currentQ.chunks || [])].sort(() => Math.random() - 0.5),
+      );
+      setSelectedChunks([]);
+    }
+  }, [currentIndex, currentQ]);
+
+  const processAnswer = (isCorrect: boolean, userAnswer: string) => {
+    if (isLocked) return;
+    setIsLocked(true);
+
+    if (isCorrect) {
+      setScore((prev) => prev + 10);
+    } else {
+      setWrongAnswers((prev) => [...prev, { ...currentQ, userAnswer }]);
+    }
+
+    setTimeout(() => {
+      if (currentIndex + 1 < questions.length) {
+        setCurrentIndex((prev) => prev + 1);
+      } else {
+        go("quizResult");
+      }
+    }, 1200);
+  };
+
+  const handleOptionSelect = (option: string) => {
+    setSelectedOption(option);
+    const isCorrect = option === currentQ.answer;
+    processAnswer(isCorrect, option);
+  };
+
+  const handleChunkSelect = (chunk: string, index: number) => {
+    if (isLocked) return;
+    setAvailableChunks((prev) => prev.filter((_, i) => i !== index));
+    setSelectedChunks((prev) => [...prev, chunk]);
+  };
+
+  const handleChunkRemove = (chunk: string, index: number) => {
+    if (isLocked) return;
+    setSelectedChunks((prev) => prev.filter((_, i) => i !== index));
+    setAvailableChunks((prev) => [...prev, chunk]);
+  };
+
+  const handleOrderingSubmit = () => {
+    const userAnswer = selectedChunks.join(" ");
+    const isCorrect = userAnswer === currentQ.answer;
+    processAnswer(isCorrect, userAnswer);
+  };
+
+  // ⭐️ 여기서부터 quizStyles로 참조합니다!
+  const getOptionStyle = (option: string) => {
+    if (!isLocked) return quizStyles.optionButton;
+    if (option === currentQ.answer)
+      return [quizStyles.optionButton, quizStyles.correctOption];
+    if (option === selectedOption)
+      return [quizStyles.optionButton, quizStyles.wrongOption];
+    return quizStyles.optionButton;
+  };
+
+  return (
+    <SafeAreaView style={quizStyles.container}>
+      <View style={quizStyles.header}>
+        <TouchableOpacity
+          onPress={() => go("mode")}
+          style={quizStyles.backButton}
+        >
+          <Ionicons name="chevron-back" size={28} color="#111827" />
+        </TouchableOpacity>
+        <Text style={quizStyles.headerTitle}>복습 퀴즈</Text>
+        <View style={{ width: 28 }} />
+      </View>
+
+      <View style={quizStyles.progressContainer}>
+        <Text style={quizStyles.progressText}>
+          문제 {currentIndex + 1} / {questions.length}
+        </Text>
+        <View
+          style={[
+            quizStyles.badge,
+            { backgroundColor: currentQ.isScraped ? "#10B981" : "#F59E0B" },
+          ]}
+        >
+          <Text style={quizStyles.badgeText}>
+            {currentQ.isScraped ? "💡 내 스크랩" : "✨ AI 추천"}
+          </Text>
+        </View>
+      </View>
+
+      <View style={quizStyles.contentContainer}>
+        {currentQ.type === "FILL_BLANK" && (
+          <View>
+            <Text style={quizStyles.questionText}>{currentQ.text}</Text>
+            {currentQ.options?.map((option, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={getOptionStyle(option)}
+                disabled={isLocked}
+                onPress={() => handleOptionSelect(option)}
+              >
+                <Text style={quizStyles.optionText}>{option}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {currentQ.type === "MATCH_EXPRESSION" && (
+          <View>
+            <Text style={quizStyles.koreanText}>"{currentQ.korean}"</Text>
+            {currentQ.options?.map((option, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={getOptionStyle(option)}
+                disabled={isLocked}
+                onPress={() => handleOptionSelect(option)}
+              >
+                <Text style={quizStyles.optionText}>{option}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {currentQ.type === "ORDERING" && (
+          <View>
+            <Text style={quizStyles.koreanText}>"{currentQ.korean}"</Text>
+
+            <View style={quizStyles.dropZone}>
+              {selectedChunks.map((chunk, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => handleChunkRemove(chunk, idx)}
+                  disabled={isLocked}
+                >
+                  <View style={quizStyles.chunkSelected}>
+                    <Text style={[quizStyles.chunkText, { color: "#fff" }]}>
+                      {chunk}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={quizStyles.chunksContainer}>
+              {availableChunks.map((chunk, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => handleChunkSelect(chunk, idx)}
+                  disabled={isLocked}
+                >
+                  <View style={quizStyles.chunkAvailable}>
+                    <Text style={quizStyles.chunkText}>{chunk}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={[
+                quizStyles.submitButton,
+                (selectedChunks.length === 0 || isLocked) &&
+                  quizStyles.submitButtonDisabled,
+              ]}
+              disabled={selectedChunks.length === 0 || isLocked}
+              onPress={handleOrderingSubmit}
+            >
+              <Text style={quizStyles.submitButtonText}>제출하기</Text>
+            </TouchableOpacity>
+
+            {isLocked && (
+              <Text
+                style={[
+                  quizStyles.feedbackText,
+                  selectedChunks.join(" ") === currentQ.answer
+                    ? quizStyles.textCorrect
+                    : quizStyles.textWrong,
+                ]}
+              >
+                {selectedChunks.join(" ") === currentQ.answer
+                  ? "정답입니다!"
+                  : `정답: ${currentQ.answer}`}
+              </Text>
+            )}
+          </View>
+        )}
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const quizStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#F9FAFB",
+    paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 24,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  backButton: { padding: 4, marginLeft: -4 },
+  headerTitle: { fontSize: 18, fontWeight: "bold", color: "#111827" },
+
+  progressContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    marginBottom: 24,
+  },
+  progressText: { fontSize: 16, fontWeight: "bold", color: "#4B5563" },
+  badge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
+  badgeText: { color: "white", fontSize: 13, fontWeight: "bold" },
+
+  contentContainer: { flex: 1, paddingHorizontal: 24 },
+
+  questionText: {
+    fontSize: 24,
+    fontWeight: "bold",
+    marginBottom: 32,
+    color: "#111827",
+    lineHeight: 34,
+  },
+  koreanText: {
+    fontSize: 22,
+    fontWeight: "bold",
+    marginBottom: 32,
+    color: "#3B82F6",
+    textAlign: "center",
+    lineHeight: 32,
+  },
+
+  optionButton: {
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  correctOption: { backgroundColor: "#D1FAE5", borderColor: "#10B981" },
+  wrongOption: { backgroundColor: "#FEE2E2", borderColor: "#EF4444" },
+  optionText: { fontSize: 16, color: "#374151", fontWeight: "600" },
+
+  dropZone: {
+    minHeight: 120,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 2,
+    borderColor: "#D1D5DB",
+    borderStyle: "dashed",
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: 24,
+  },
+  chunksContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    marginBottom: 32,
+  },
+  chunkAvailable: {
+    backgroundColor: "#F3F4F6",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 24,
+    margin: 6,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  chunkSelected: {
+    backgroundColor: "#3B82F6",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 24,
+    margin: 6,
+  },
+  chunkText: { fontSize: 16, fontWeight: "bold", color: "#111827" },
+
+  submitButton: {
+    backgroundColor: "#111827",
+    paddingVertical: 18,
+    borderRadius: 16,
+    alignItems: "center",
+  },
+  submitButtonDisabled: { backgroundColor: "#9CA3AF" },
+  submitButtonText: { color: "white", fontSize: 16, fontWeight: "bold" },
+
+  feedbackText: {
+    textAlign: "center",
+    marginTop: 24,
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  textCorrect: { color: "#10B981" },
+  textWrong: { color: "#EF4444" },
+});
 
 const TAB_SCREENS: Screen[] = ["mode", "learningData", "league", "settings"];
 
@@ -920,8 +1284,8 @@ function SignupScreen({ go }: { go: (screen: Screen) => void }) {
         )}
         {usernameChecked === "available" && (
           <Text style={styles.signupSuccessText}>
-            <Ionicons name="checkmark" size={12} color="#16A34A" />{" "}
-            사용 가능한 아이디입니다
+            <Ionicons name="checkmark" size={12} color="#16A34A" /> 사용 가능한
+            아이디입니다
           </Text>
         )}
 
@@ -1029,7 +1393,7 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         // ⭐️ 백엔드에서 알려준 정확한 주소(/api/users/me)로 수정!
         const res = await axios.get(`${API_URL}/api/users/me`, {
@@ -1486,7 +1850,11 @@ function SituationScreen({
       title: "카페에서 주문하기",
       desc: "처음 방문한 카페에서 원하는 메뉴를 묻고 추천을 받는 상황",
       characters: [
-        { name: "바리스타", trait: "친절하고 빠르게 주문을 도와주는 직원", avatar: "👩" },
+        {
+          name: "바리스타",
+          trait: "친절하고 빠르게 주문을 도와주는 직원",
+          avatar: "👩",
+        },
       ],
     },
     {
@@ -1500,7 +1868,11 @@ function SituationScreen({
       title: "여행 계획 세우기",
       desc: "여름 여행지를 고르고 일정과 예산을 영어로 상의하는 상황",
       characters: [
-        { name: "여행 친구", trait: "호기심이 많고 새로운 장소를 좋아함", avatar: "🧑" },
+        {
+          name: "여행 친구",
+          trait: "호기심이 많고 새로운 장소를 좋아함",
+          avatar: "🧑",
+        },
       ],
     },
     {
@@ -1516,7 +1888,10 @@ function SituationScreen({
   const [title, setTitle] = useState(room.title || "");
   const [desc, setDesc] = useState(room.desc || "");
   const [characters, setCharacters] = useState(
-    presets[0].characters.map((c) => ({ ...c, photoUri: null as string | null })),
+    presets[0].characters.map((c) => ({
+      ...c,
+      photoUri: null as string | null,
+    })),
   );
 
   // 💡 통신 중 버튼을 비활성화하기 위한 로딩 상태 추가
@@ -1865,7 +2240,7 @@ export function VoiceChatScreen({
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
       // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
       if (scrapedKeys.has(key)) {
@@ -1997,7 +2372,7 @@ export function VoiceChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const currentRoomId = room.id;
 
         // ⭐️ 스크랩 내역과 메시지 내역 동시 호출!
@@ -2220,7 +2595,7 @@ export function VoiceChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const currentRoomId = room.id;
 
       // 통화 시작 상태로 변경
@@ -2333,7 +2708,7 @@ export function VoiceChatScreen({
   const sendVoiceToServer = async (fileUri: string) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
       const formData = new FormData();
       formData.append("file", {
@@ -2465,7 +2840,11 @@ export function VoiceChatScreen({
               {isPlaying ? (
                 <Ionicons name="musical-notes" size={44} color={primary} />
               ) : (
-                <MaterialCommunityIcons name="robot-outline" size={44} color={primary} />
+                <MaterialCommunityIcons
+                  name="robot-outline"
+                  size={44}
+                  color={primary}
+                />
               )}
             </View>
           </View>
@@ -2602,7 +2981,10 @@ export function VoiceChatScreen({
                       }}
                     >
                       <Text
-                        style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}
+                        style={{
+                          color: isUser ? "#fff" : "#333",
+                          fontSize: 16,
+                        }}
                       >
                         {msg.text}
                       </Text>
@@ -2974,7 +3356,7 @@ export function TextChatScreen({
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
       // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
       if (scrapedKeys.has(key)) {
@@ -3051,7 +3433,7 @@ export function TextChatScreen({
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const payload = {
         content:
           "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
@@ -3095,7 +3477,7 @@ export function TextChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         // ⭐️ 1. Promise.all을 사용하여 두 API를 동시에(병렬로) 호출합니다! (속도 2배 향상)
         const [messagesRes, scrapsRes] = await Promise.all([
@@ -3334,7 +3716,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const response = await axios.post(
         `${API_URL}/api/rooms/${room.id}/messages/chat`,
         { content: text },
@@ -3929,8 +4311,8 @@ function FindAccountScreen({ go }: { go: (screen: Screen) => void }) {
             />
             {foundLoginId && (
               <Text style={styles.signupSuccessText}>
-                <Ionicons name="checkmark" size={12} color="#16A34A" />{" "}
-                가입된 아이디: {foundLoginId}
+                <Ionicons name="checkmark" size={12} color="#16A34A" /> 가입된
+                아이디: {foundLoginId}
               </Text>
             )}
             <Pressable
@@ -4095,7 +4477,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
         // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
         const FULL_URL =
-          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/announcements";
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
 
         console.log("🚀 최종 요청 주소:", FULL_URL);
 
@@ -4411,7 +4793,7 @@ function BookmarksScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "ngrok-skip-browser-warning": "true",
@@ -4502,8 +4884,7 @@ function BookmarksScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL =
-                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
               await axios.delete(`${API_URL}/api/scraps/${expr.scrapId}`, {
                 headers: {
                   Authorization: `Bearer ${accessToken}`,
@@ -4648,9 +5029,7 @@ function BookmarksScreen({
       {/* 헤더 */}
       {isInsideDetail ? (
         <View style={bkStyles.header}>
-          <View
-            style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
-          >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Pressable
               style={bkStyles.backBtn}
               onPress={() => {
@@ -4821,7 +5200,10 @@ function BookmarksScreen({
                       style={[bkStyles.catIcon, { backgroundColor: config.bg }]}
                     >
                       <View
-                        style={[bkStyles.catDot, { backgroundColor: config.dot }]}
+                        style={[
+                          bkStyles.catDot,
+                          { backgroundColor: config.dot },
+                        ]}
                       />
                     </View>
                     <View style={{ flex: 1 }}>
@@ -4928,7 +5310,7 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         const res = await axios.get(`${API_URL}/api/users/me`, {
           headers: {
@@ -5091,7 +5473,11 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
         <View style={stStyles.card}>
           <View style={stStyles.row}>
             <View style={stStyles.iconWrapBlue}>
-              <Ionicons name="notifications-outline" size={16} color="#2563EB" />
+              <Ionicons
+                name="notifications-outline"
+                size={16}
+                color="#2563EB"
+              />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={stStyles.rowTitle}>푸시 알림</Text>
@@ -5273,7 +5659,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
 
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
       // 1. 백엔드에서 알려준 새 주소로 변경 완료!
       const res = await axios.get(`${API_URL}/api/payments/my`, {
@@ -5345,8 +5731,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
 
             try {
               const token = await AsyncStorage.getItem("accessToken");
-              const API_URL =
-                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
               const headers = {
                 Authorization: `Bearer ${token}`,
                 "ngrok-skip-browser-warning": "true",
@@ -5466,7 +5851,11 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
               }}
             >
               <View style={pyStyles.crownWrap}>
-                <MaterialCommunityIcons name="crown" size={20} color="#FFFFFF" />
+                <MaterialCommunityIcons
+                  name="crown"
+                  size={20}
+                  color="#FFFFFF"
+                />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={pyStyles.bannerSub}>현재 구독 중</Text>
@@ -5637,9 +6026,8 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
           <View style={pyStyles.savingBox}>
             <Text style={pyStyles.savingText}>
               <Ionicons name="cash-outline" size={12} color="#15803D" /> 월간
-              대비{" "}
-              <Text style={{ fontWeight: "800" }}>약 31,700원 절약</Text>됩니다
-              (연 기준)
+              대비 <Text style={{ fontWeight: "800" }}>약 31,700원 절약</Text>
+              됩니다 (연 기준)
             </Text>
           </View>
         )}
@@ -5774,7 +6162,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
                     try {
                       const token = await AsyncStorage.getItem("accessToken");
                       const API_URL =
-                        "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+                        "https://rundown-irrigate-majesty.ngrok-free.dev";
 
                       await axios.post(
                         `${API_URL}/api/payments/toss/confirm`,
@@ -5867,8 +6255,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
     const fetchFaqs = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const FULL_URL =
-          "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const FULL_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -6684,7 +7071,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const res = await axios.get(`${API_URL}/api/users/study-stats`, {
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -6757,7 +7144,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
       // '결정' 버튼을 눌렀을 때 -> 서버로 변경된 레벨 전송
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         // ⭐️ 1. 저장된 토큰이 아예 없거나 null인지 확인!
         console.log("📌 현재 저장된 토큰:", accessToken);
@@ -7324,7 +7711,12 @@ function BottomTabBar({
       icon: "bar-chart-outline",
       activeIcon: "bar-chart",
     },
-    { key: "league", label: "리그", icon: "trophy-outline", activeIcon: "trophy" },
+    {
+      key: "league",
+      label: "리그",
+      icon: "trophy-outline",
+      activeIcon: "trophy",
+    },
     {
       key: "settings",
       label: "설정",
@@ -7348,9 +7740,7 @@ function BottomTabBar({
               size={22}
               color={active ? primary : "#9CA3AF"}
             />
-            <Text
-              style={[styles.bottomTabLabel, active && { color: primary }]}
-            >
+            <Text style={[styles.bottomTabLabel, active && { color: primary }]}>
               {tab.label}
             </Text>
           </Pressable>
