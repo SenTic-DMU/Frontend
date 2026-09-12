@@ -332,6 +332,15 @@ export default function App() {
 
   const [screen, setScreen] = useState<Screen>("login");
 
+  // ⭐️ 1번 코드: 결과 데이터를 담을 State 추가
+  const [quizResultData, setQuizResultData] = useState<any>(null);
+
+  // ⭐️ 2번 코드: go 함수 수정 (두 번째 인자로 데이터를 받을 수 있게 확장)
+  const go = (next: Screen, data?: any) => {
+    if (data) setQuizResultData(data);
+    setScreen(next);
+  };
+
   // ⭐️ 1. 더미 데이터를 지우고, 상태(State)로 음성방을 관리하도록 추가합니다!
   const [chatRooms, setChatRooms] = useState<any[]>([]);
   const [voiceRooms, setVoiceRooms] = useState<any[]>([]); // 👈 새로 추가!
@@ -414,8 +423,6 @@ export default function App() {
     feedbackId: number | null;
     expression: string;
   } | null>(null);
-
-  const go = (next: Screen) => setScreen(next);
 
   const onOpenScrap = (expr: {
     roomId: string;
@@ -530,7 +537,7 @@ export default function App() {
 
       {/* ⭐️ 수정한 부분: 퀴즈 결과 화면 (나중에 QuizResultScreen을 만들면 교체) */}
       {screen === "quizResult" && (
-        <ComingSoonScreen title="퀴즈 결과" go={go} backTo="mode" />
+        <QuizResultScreen go={go} resultData={quizResultData} />
       )}
 
       {screen === "voiceRooms" && (
@@ -603,119 +610,151 @@ export default function App() {
   );
 }
 
-// ⭐️ 테스트를 위한 임시 퀴즈 데이터
-const DUMMY_QUESTIONS = [
-  {
-    id: 1,
-    type: "FILL_BLANK",
-    text: "I am looking forward ___ seeing you.",
-    options: ["to", "for", "at", "in"],
-    answer: "to",
-    isScraped: true,
-  },
-  {
-    id: 2,
-    type: "MATCH_EXPRESSION",
-    korean: "그건 내 권한 밖의 일이야.",
-    options: [
-      "It's out of my hands.",
-      "It's on my mind.",
-      "It's right in my hands.",
-      "It's out of my mind.",
-    ],
-    answer: "It's out of my hands.",
-    isScraped: true,
-  },
-  {
-    id: 3,
-    type: "ORDERING",
-    korean: "제가 처리하고 있습니다.",
-    chunks: ["taking", "I", "of", "am", "care", "it"],
-    answer: "I am taking care of it.",
-    isScraped: false,
-  },
-];
+// 백엔드 API 주소 (필요시 변경하세요)
+const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
-function QuizScreen({ go }: { go: (screen: Screen) => void }) {
-  const [questions, setQuestions] = useState(DUMMY_QUESTIONS);
+function QuizScreen({ go }: { go: (screen: any, data?: any) => void }) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [quizId, setQuizId] = useState<number | null>(null);
+  const [questions, setQuestions] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [wrongAnswers, setWrongAnswers] = useState<any[]>([]);
 
-  const [isLocked, setIsLocked] = useState(false);
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  // 사용자가 입력/선택한 답안들을 모아두는 배열
+  const [userAnswers, setUserAnswers] = useState<
+    { questionNo: number; userAnswer: string }[]
+  >([]);
 
+  // 1. FILL_BLANK용 주관식 입력 상태
+  const [inputText, setInputText] = useState("");
+
+  // 2. ARRANGE(배열)용 상태
   const [availableChunks, setAvailableChunks] = useState<string[]>([]);
   const [selectedChunks, setSelectedChunks] = useState<string[]>([]);
 
+  // ⭐️ 퀴즈 시작 (API 호출)
+  useEffect(() => {
+    const startQuiz = async () => {
+      try {
+        setIsLoading(true);
+        const token = await AsyncStorage.getItem("accessToken");
+
+        // 3가지 유형을 모두 테스트하기 위해 PREMIUM 플랜으로 요청합니다.
+        const response = await axios.post(
+          `${API_URL}/api/quiz/start?plan=PREMIUM`,
+          {},
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+
+        if (response.data.success) {
+          setQuizId(response.data.data.quizId);
+          setQuestions(response.data.data.questions);
+        }
+      } catch (error) {
+        console.error("퀴즈 시작 오류:", error);
+        Alert.alert("오류", "퀴즈를 불러오지 못했습니다.");
+        go("mode");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    startQuiz();
+  }, []);
+
   const currentQ = questions[currentIndex];
 
+  // 문제 유형(ARRANGE)에 따라 단어 조각 세팅 및 입력창 초기화
   useEffect(() => {
-    setIsLocked(false);
-    setSelectedOption(null);
-    if (currentQ?.type === "ORDERING") {
-      setAvailableChunks(
-        [...(currentQ.chunks || [])].sort(() => Math.random() - 0.5),
-      );
+    if (!currentQ) return;
+
+    setInputText(""); // 주관식 입력창 초기화
+
+    if (currentQ.questionType === "ARRANGE") {
+      // "please / a / I'd" 형태의 문자열을 잘라서 섞어줍니다.
+      const chunks = currentQ.sentence.split(" / ");
+      setAvailableChunks([...chunks].sort(() => Math.random() - 0.5));
       setSelectedChunks([]);
     }
   }, [currentIndex, currentQ]);
 
-  const processAnswer = (isCorrect: boolean, userAnswer: string) => {
-    if (isLocked) return;
-    setIsLocked(true);
+  // ⭐️ 답안 기록 및 다음 문제로 이동 (또는 최종 제출)
+  const handleNextQuestion = (answer: string) => {
+    const newAnswers = [
+      ...userAnswers,
+      { questionNo: currentQ.questionNo, userAnswer: answer },
+    ];
+    setUserAnswers(newAnswers);
 
-    if (isCorrect) {
-      setScore((prev) => prev + 10);
+    if (currentIndex + 1 < questions.length) {
+      setCurrentIndex((prev) => prev + 1);
     } else {
-      setWrongAnswers((prev) => [...prev, { ...currentQ, userAnswer }]);
+      // 마지막 문제면 서버로 최종 답안 제출
+      submitFinalQuiz(newAnswers);
     }
+  };
 
-    setTimeout(() => {
-      if (currentIndex + 1 < questions.length) {
-        setCurrentIndex((prev) => prev + 1);
-      } else {
-        go("quizResult");
+  // ⭐️ 최종 답안 제출 및 결과 화면으로 데이터 전달
+  const submitFinalQuiz = async (finalAnswers: any[]) => {
+    try {
+      setIsSubmitting(true);
+      const token = await AsyncStorage.getItem("accessToken");
+
+      const response = await axios.post(
+        `${API_URL}/api/quiz/${quizId}/submit`,
+        { answers: finalAnswers },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      if (response.data.success) {
+        const resultData = response.data.data;
+
+        // ⭐️ Alert 대신 결과 화면으로 이동하며 데이터 전달 (go 함수 확장 필요)
+        go("quizResult", resultData);
       }
-    }, 1200);
+    } catch (error) {
+      console.error("퀴즈 제출 오류:", error);
+      Alert.alert("오류", "퀴즈 결과를 제출하지 못했습니다.");
+      go("mode");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleOptionSelect = (option: string) => {
-    setSelectedOption(option);
-    const isCorrect = option === currentQ.answer;
-    processAnswer(isCorrect, option);
-  };
-
+  // ARRANGE용 단어 조각 클릭 핸들러
   const handleChunkSelect = (chunk: string, index: number) => {
-    if (isLocked) return;
     setAvailableChunks((prev) => prev.filter((_, i) => i !== index));
     setSelectedChunks((prev) => [...prev, chunk]);
   };
 
   const handleChunkRemove = (chunk: string, index: number) => {
-    if (isLocked) return;
     setSelectedChunks((prev) => prev.filter((_, i) => i !== index));
     setAvailableChunks((prev) => [...prev, chunk]);
   };
 
-  const handleOrderingSubmit = () => {
-    const userAnswer = selectedChunks.join(" ");
-    const isCorrect = userAnswer === currentQ.answer;
-    processAnswer(isCorrect, userAnswer);
-  };
+  // 로딩 화면
+  if (isLoading || isSubmitting) {
+    return (
+      <SafeAreaView
+        style={[
+          quizStyles.container,
+          { justifyContent: "center", alignItems: "center" },
+        ]}
+      >
+        <ActivityIndicator size="large" color="#111827" />
+        <Text style={{ marginTop: 16, fontSize: 16, color: "#6B7280" }}>
+          {isSubmitting ? "채점 중입니다..." : "퀴즈를 불러오는 중..."}
+        </Text>
+      </SafeAreaView>
+    );
+  }
 
-  // ⭐️ 여기서부터 quizStyles로 참조합니다!
-  const getOptionStyle = (option: string) => {
-    if (!isLocked) return quizStyles.optionButton;
-    if (option === currentQ.answer)
-      return [quizStyles.optionButton, quizStyles.correctOption];
-    if (option === selectedOption)
-      return [quizStyles.optionButton, quizStyles.wrongOption];
-    return quizStyles.optionButton;
-  };
+  if (!currentQ) return null;
 
   return (
     <SafeAreaView style={quizStyles.container}>
+      {/* 헤더 */}
       <View style={quizStyles.header}>
         <TouchableOpacity
           onPress={() => go("mode")}
@@ -727,32 +766,56 @@ function QuizScreen({ go }: { go: (screen: Screen) => void }) {
         <View style={{ width: 28 }} />
       </View>
 
+      {/* 진행 상태 바 */}
       <View style={quizStyles.progressContainer}>
         <Text style={quizStyles.progressText}>
           문제 {currentIndex + 1} / {questions.length}
         </Text>
-        <View
-          style={[
-            quizStyles.badge,
-            { backgroundColor: currentQ.isScraped ? "#10B981" : "#F59E0B" },
-          ]}
-        >
-          <Text style={quizStyles.badgeText}>
-            {currentQ.isScraped ? "💡 내 스크랩" : "✨ AI 추천"}
-          </Text>
+        <View style={[quizStyles.badge, { backgroundColor: "#10B981" }]}>
+          <Text style={quizStyles.badgeText}>{currentQ.questionType}</Text>
         </View>
       </View>
 
       <View style={quizStyles.contentContainer}>
-        {currentQ.type === "FILL_BLANK" && (
+        {/* 번역(뜻) 텍스트 공통 노출 */}
+        <Text style={quizStyles.koreanText}>"{currentQ.translation}"</Text>
+
+        {/* 1. FILL_BLANK (빈칸 채우기 - 주관식) */}
+        {currentQ.questionType === "FILL_BLANK" && (
           <View>
-            <Text style={quizStyles.questionText}>{currentQ.text}</Text>
-            {currentQ.options?.map((option, idx) => (
+            <Text style={quizStyles.questionText}>{currentQ.sentence}</Text>
+            <TextInput
+              style={quizStyles.textInput}
+              placeholder="빈칸에 들어갈 단어를 입력하세요"
+              value={inputText}
+              onChangeText={setInputText}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              style={[
+                quizStyles.submitButton,
+                !inputText.trim() && quizStyles.submitButtonDisabled,
+              ]}
+              disabled={!inputText.trim()}
+              onPress={() => handleNextQuestion(inputText.trim())}
+            >
+              <Text style={quizStyles.submitButtonText}>다음</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* 2. MULTIPLE_CHOICE (객관식) */}
+        {currentQ.questionType === "MULTIPLE_CHOICE" && (
+          <View>
+            <Text style={quizStyles.questionText}>
+              가장 알맞은 문장을 고르세요.
+            </Text>
+            {currentQ.options?.map((option: string, idx: number) => (
               <TouchableOpacity
                 key={idx}
-                style={getOptionStyle(option)}
-                disabled={isLocked}
-                onPress={() => handleOptionSelect(option)}
+                style={quizStyles.optionButton}
+                onPress={() => handleNextQuestion(option)}
               >
                 <Text style={quizStyles.optionText}>{option}</Text>
               </TouchableOpacity>
@@ -760,39 +823,35 @@ function QuizScreen({ go }: { go: (screen: Screen) => void }) {
           </View>
         )}
 
-        {currentQ.type === "MATCH_EXPRESSION" && (
+        {/* 3. ARRANGE (순서 배열) */}
+        {currentQ.questionType === "ARRANGE" && (
           <View>
-            <Text style={quizStyles.koreanText}>"{currentQ.korean}"</Text>
-            {currentQ.options?.map((option, idx) => (
-              <TouchableOpacity
-                key={idx}
-                style={getOptionStyle(option)}
-                disabled={isLocked}
-                onPress={() => handleOptionSelect(option)}
-              >
-                <Text style={quizStyles.optionText}>{option}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {currentQ.type === "ORDERING" && (
-          <View>
-            <Text style={quizStyles.koreanText}>"{currentQ.korean}"</Text>
-
             <View style={quizStyles.dropZone}>
+              {/* 1. 사용자가 고른 단어들을 먼저 보여줌 */}
               {selectedChunks.map((chunk, idx) => (
                 <TouchableOpacity
                   key={idx}
                   onPress={() => handleChunkRemove(chunk, idx)}
-                  disabled={isLocked}
                 >
                   <View style={quizStyles.chunkSelected}>
-                    <Text style={[quizStyles.chunkText, { color: "#fff" }]}>
+                    <Text
+                      style={[
+                        quizStyles.chunkText,
+                        { color: "#fff", fontSize: 14 },
+                      ]}
+                    >
                       {chunk}
                     </Text>
                   </View>
                 </TouchableOpacity>
+              ))}
+
+              {/* 2. 남은 빈자리만큼 일정한 길이의 점선 박스를 미리 채워줌 */}
+              {Array.from({
+                length:
+                  currentQ.sentence.split(" / ").length - selectedChunks.length,
+              }).map((_, idx) => (
+                <View key={idx} style={quizStyles.slotPlaceholder} />
               ))}
             </View>
 
@@ -801,7 +860,6 @@ function QuizScreen({ go }: { go: (screen: Screen) => void }) {
                 <TouchableOpacity
                   key={idx}
                   onPress={() => handleChunkSelect(chunk, idx)}
-                  disabled={isLocked}
                 >
                   <View style={quizStyles.chunkAvailable}>
                     <Text style={quizStyles.chunkText}>{chunk}</Text>
@@ -813,29 +871,13 @@ function QuizScreen({ go }: { go: (screen: Screen) => void }) {
             <TouchableOpacity
               style={[
                 quizStyles.submitButton,
-                (selectedChunks.length === 0 || isLocked) &&
-                  quizStyles.submitButtonDisabled,
+                selectedChunks.length === 0 && quizStyles.submitButtonDisabled,
               ]}
-              disabled={selectedChunks.length === 0 || isLocked}
-              onPress={handleOrderingSubmit}
+              disabled={selectedChunks.length === 0}
+              onPress={() => handleNextQuestion(selectedChunks.join(" "))}
             >
-              <Text style={quizStyles.submitButtonText}>제출하기</Text>
+              <Text style={quizStyles.submitButtonText}>다음</Text>
             </TouchableOpacity>
-
-            {isLocked && (
-              <Text
-                style={[
-                  quizStyles.feedbackText,
-                  selectedChunks.join(" ") === currentQ.answer
-                    ? quizStyles.textCorrect
-                    : quizStyles.textWrong,
-                ]}
-              >
-                {selectedChunks.join(" ") === currentQ.answer
-                  ? "정답입니다!"
-                  : `정답: ${currentQ.answer}`}
-              </Text>
-            )}
           </View>
         )}
       </View>
@@ -843,6 +885,7 @@ function QuizScreen({ go }: { go: (screen: Screen) => void }) {
   );
 }
 
+// ⭐️ 기존 스타일에 textInput 디자인만 하나 추가되었습니다.
 const quizStyles = StyleSheet.create({
   container: {
     flex: 1,
@@ -858,7 +901,6 @@ const quizStyles = StyleSheet.create({
   },
   backButton: { padding: 4, marginLeft: -4 },
   headerTitle: { fontSize: 18, fontWeight: "bold", color: "#111827" },
-
   progressContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -869,9 +911,7 @@ const quizStyles = StyleSheet.create({
   progressText: { fontSize: 16, fontWeight: "bold", color: "#4B5563" },
   badge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
   badgeText: { color: "white", fontSize: 13, fontWeight: "bold" },
-
   contentContainer: { flex: 1, paddingHorizontal: 24 },
-
   questionText: {
     fontSize: 24,
     fontWeight: "bold",
@@ -888,6 +928,18 @@ const quizStyles = StyleSheet.create({
     lineHeight: 32,
   },
 
+  /* 주관식 입력창 스타일 */
+  textInput: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 16,
+    padding: 16,
+    fontSize: 18,
+    marginBottom: 24,
+    color: "#111827",
+  },
+
   optionButton: {
     backgroundColor: "#FFFFFF",
     paddingVertical: 18,
@@ -902,21 +954,45 @@ const quizStyles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-  correctOption: { backgroundColor: "#D1FAE5", borderColor: "#10B981" },
-  wrongOption: { backgroundColor: "#FEE2E2", borderColor: "#EF4444" },
   optionText: { fontSize: 16, color: "#374151", fontWeight: "600" },
-
+  // ⭐️ 1. 바깥 테두리를 점선이 아닌 깔끔한 일반 박스로 변경
   dropZone: {
     minHeight: 120,
     backgroundColor: "#FFFFFF",
-    borderWidth: 2,
-    borderColor: "#D1D5DB",
-    borderStyle: "dashed",
+    borderWidth: 1,
+    borderColor: "#E5E7EB", // 일반적인 연한 회색 테두리
     borderRadius: 16,
     padding: 16,
     flexDirection: "row",
     flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 8,
     marginBottom: 24,
+  },
+
+  // ⭐️ 2. 내부 빈칸 슬롯만 일정한 길이의 점선으로 유지
+  slotPlaceholder: {
+    width: 80,
+    height: 48,
+    borderWidth: 2,
+    borderColor: "#D1D5DB",
+    borderStyle: "dashed",
+    borderRadius: 12,
+    backgroundColor: "#F9FAFB",
+    justifyContent: "center",
+    alignItems: "center",
+    margin: 4,
+  },
+
+  // ⭐️ 3. 선택된 단어가 들어가는 박스
+  chunkSelected: {
+    width: 80, // slotPlaceholder와 동일한 너비로 고정
+    height: 48,
+    backgroundColor: "#3B82F6",
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    margin: 4,
   },
   chunksContainer: {
     flexDirection: "row",
@@ -933,15 +1009,7 @@ const quizStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
-  chunkSelected: {
-    backgroundColor: "#3B82F6",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 24,
-    margin: 6,
-  },
   chunkText: { fontSize: 16, fontWeight: "bold", color: "#111827" },
-
   submitButton: {
     backgroundColor: "#111827",
     paddingVertical: 18,
@@ -950,15 +1018,238 @@ const quizStyles = StyleSheet.create({
   },
   submitButtonDisabled: { backgroundColor: "#9CA3AF" },
   submitButtonText: { color: "white", fontSize: 16, fontWeight: "bold" },
+});
 
-  feedbackText: {
-    textAlign: "center",
-    marginTop: 24,
+// ----------------------------------------------------
+// ⭐️ 퀴즈 결과 화면 컴포넌트 및 스타일
+// ----------------------------------------------------
+function QuizResultScreen({
+  go,
+  resultData,
+}: {
+  go: (screen: Screen, data?: any) => void;
+  resultData: any;
+}) {
+  // 데이터가 없을 경우 방어 코드
+  if (!resultData) {
+    return (
+      <SafeAreaView
+        style={[
+          resultStyles.container,
+          { justifyContent: "center", alignItems: "center" },
+        ]}
+      >
+        <Text style={{ fontSize: 16, color: "#6B7280", marginBottom: 20 }}>
+          결과 데이터가 없습니다.
+        </Text>
+        <TouchableOpacity
+          style={resultStyles.homeButton}
+          onPress={() => go("mode")}
+        >
+          <Text style={resultStyles.homeButtonText}>홈으로 돌아가기</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  const { score, total, results } = resultData;
+  const isPerfect = score === total;
+
+  return (
+    <SafeAreaView style={resultStyles.container}>
+      {/* 헤더 */}
+      <View style={resultStyles.header}>
+        <Text style={resultStyles.headerTitle}>퀴즈 결과</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={resultStyles.scrollContent}>
+        {/* 점수 요약 카드 */}
+        <View style={resultStyles.scoreCard}>
+          <Text style={resultStyles.scoreEmoji}>{isPerfect ? "🎉" : "👏"}</Text>
+          <Text style={resultStyles.scoreTitle}>
+            {isPerfect ? "완벽합니다!" : "수고하셨습니다!"}
+          </Text>
+          <Text style={resultStyles.scoreText}>
+            총 <Text style={{ color: "#3B82F6" }}>{total}</Text>문제 중{" "}
+            <Text style={{ color: "#10B981" }}>{score}</Text>문제를 맞췄어요!
+          </Text>
+        </View>
+
+        {/* 문제별 상세 피드백 리스트 */}
+        <Text style={resultStyles.sectionTitle}>문항별 정오답 확인</Text>
+        {results.map((item: any, idx: number) => (
+          <View
+            key={idx}
+            style={[
+              resultStyles.itemCard,
+              { borderLeftColor: item.correct ? "#10B981" : "#EF4444" },
+            ]}
+          >
+            <View style={resultStyles.itemHeader}>
+              <Text style={resultStyles.itemNo}>문제 {item.questionNo}</Text>
+              <View
+                style={[
+                  resultStyles.oxBadge,
+                  { backgroundColor: item.correct ? "#D1FAE5" : "#FEE2E2" },
+                ]}
+              >
+                <Text
+                  style={[
+                    resultStyles.oxText,
+                    { color: item.correct ? "#047857" : "#B91C1C" },
+                  ]}
+                >
+                  {item.correct ? "정답" : "오답"}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={resultStyles.itemSentence}>{item.sentence}</Text>
+            <Text style={resultStyles.itemTranslation}>
+              뜻: {item.translation}
+            </Text>
+
+            <View style={resultStyles.answerBox}>
+              <Text style={resultStyles.answerLabel}>
+                내가 쓴 답:{" "}
+                <Text
+                  style={{
+                    color: item.correct ? "#047857" : "#B91C1C",
+                    fontWeight: "bold",
+                  }}
+                >
+                  {item.userAnswer}
+                </Text>
+              </Text>
+              {!item.correct && (
+                <Text style={resultStyles.answerLabel}>
+                  정답:{" "}
+                  <Text style={{ color: "#047857", fontWeight: "bold" }}>
+                    {item.answer}
+                  </Text>
+                </Text>
+              )}
+            </View>
+
+            {/* 백엔드에서 제공하는 해설이 있다면 노출 */}
+            {item.explanation && (
+              <View style={resultStyles.explanationBox}>
+                <Text style={resultStyles.explanationText}>
+                  💡 {item.explanation}
+                </Text>
+              </View>
+            )}
+          </View>
+        ))}
+
+        {/* 홈으로 돌아가기 버튼 */}
+        <TouchableOpacity
+          style={resultStyles.homeButton}
+          onPress={() => go("mode")}
+        >
+          <Text style={resultStyles.homeButtonText}>확인 완료 (홈으로)</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const resultStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#F9FAFB",
+    paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 24,
+  },
+  header: {
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  headerTitle: { fontSize: 18, fontWeight: "bold", color: "#111827" },
+  scrollContent: { padding: 24 },
+  scoreCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  scoreEmoji: { fontSize: 40, marginBottom: 8 },
+  scoreTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#111827",
+    marginBottom: 8,
+  },
+  scoreText: { fontSize: 16, color: "#4B5563" },
+  sectionTitle: {
     fontSize: 18,
     fontWeight: "bold",
+    color: "#111827",
+    marginBottom: 16,
   },
-  textCorrect: { color: "#10B981" },
-  textWrong: { color: "#EF4444" },
+  itemCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderLeftWidth: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  itemHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  itemNo: { fontSize: 14, fontWeight: "bold", color: "#6B7280" },
+  oxBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  oxText: { fontSize: 12, fontWeight: "bold" },
+  itemSentence: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#111827",
+    marginBottom: 4,
+  },
+  itemTranslation: { fontSize: 14, color: "#6B7280", marginBottom: 12 },
+  answerBox: {
+    backgroundColor: "#F3F4F6",
+    padding: 10,
+    borderRadius: 8,
+    gap: 4,
+  },
+  answerLabel: { fontSize: 14, color: "#374151" },
+  explanationBox: {
+    marginTop: 10,
+    backgroundColor: "#EFF6FF",
+    padding: 10,
+    borderRadius: 8,
+  },
+  explanationText: { fontSize: 13, color: "#1E40AF", lineHeight: 18 },
+  homeButton: {
+    backgroundColor: "#111827",
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: "center",
+    marginTop: 8,
+    marginBottom: 32,
+  },
+  homeButtonText: { color: "white", fontSize: 16, fontWeight: "bold" },
 });
 
 const TAB_SCREENS: Screen[] = ["mode", "learningData", "league", "settings"];
