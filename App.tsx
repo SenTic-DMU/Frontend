@@ -222,7 +222,7 @@ const LEAGUE_TIER_META: Record<
   },
 };
 
-// 실제 유저가 아닌, 로컬에서만 시뮬레이션되는 더미 경쟁자 29명 (고정 명단).
+// 실제 유저가 아닌, 로컬에서만 시뮬레이션되는 더미 경쟁자 19명 (고정 명단).
 const LEAGUE_BOTS: { id: string; name: string; avatar: string }[] = [
   { id: "bot-1", name: "부지런한다람쥐", avatar: "🐿️" },
   { id: "bot-2", name: "영어고수", avatar: "🦉" },
@@ -243,16 +243,6 @@ const LEAGUE_BOTS: { id: string; name: string; avatar: string }[] = [
   { id: "bot-17", name: "문장암기왕", avatar: "🧠" },
   { id: "bot-18", name: "습관의힘", avatar: "🔁" },
   { id: "bot-19", name: "늦잠러", avatar: "😴" },
-  { id: "bot-20", name: "꾸준함의승리", avatar: "🏅" },
-  { id: "bot-21", name: "스몰토크장인", avatar: "🗣️" },
-  { id: "bot-22", name: "원어민흉내쟁이", avatar: "🎭" },
-  { id: "bot-23", name: "단어장요정", avatar: "🧚" },
-  { id: "bot-24", name: "아침엔영어", avatar: "🐓" },
-  { id: "bot-25", name: "주말특훈러", avatar: "🎯" },
-  { id: "bot-26", name: "두번째외국어", avatar: "🌏" },
-  { id: "bot-27", name: "회화벌레", avatar: "🐛" },
-  { id: "bot-28", name: "오답노트왕", avatar: "📓" },
-  { id: "bot-29", name: "완주기원자", avatar: "🙏" },
 ];
 
 // 🚧 퀴즈 정답 1개당 포인트. 퀴즈 화면 자체가 아직 "준비중"이라 지금은 상수만 정의해두고,
@@ -266,7 +256,7 @@ type LeagueOutcome = "promoted" | "demoted" | "stayed";
 type PendingLeagueResult = {
   fromTier: LeagueTier;
   toTier: LeagueTier;
-  rank: number; // 지난주 최종 순위 (1~30)
+  rank: number; // 지난주 최종 순위 (1~20)
   outcome: LeagueOutcome;
 };
 
@@ -399,7 +389,7 @@ async function ensureLeagueWeekFresh(): Promise<LeagueState> {
   if (myRank <= 5 && tierIndex < LEAGUE_TIER_ORDER.length - 1) {
     nextTier = LEAGUE_TIER_ORDER[tierIndex + 1];
     outcome = "promoted";
-  } else if (myRank >= 26 && tierIndex > 0) {
+  } else if (myRank >= 11 && tierIndex > 0) {
     nextTier = LEAGUE_TIER_ORDER[tierIndex - 1];
     outcome = "demoted";
   }
@@ -8091,6 +8081,108 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
           )}
         </View>
 
+        {/* 🚧 퀴즈 정답률 (더미 데이터 — 백엔드 연동 전까지 임시 표시) */}
+        <View style={mpStyles.card}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 14,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={mpStyles.cardIconBadge}>
+                <Ionicons name="help-buoy-outline" size={16} color={primary} />
+              </View>
+              <Text style={mpStyles.cardTitle}>퀴즈 정답률</Text>
+            </View>
+            <Text style={mpStyles.cardSub}>12 / 15문제</Text>
+          </View>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "flex-end",
+              gap: 8,
+              marginBottom: 10,
+            }}
+          >
+            <Text style={{ fontSize: 28, fontWeight: "800", color: "#111827" }}>
+              78%
+            </Text>
+            <Text style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 4 }}>
+              최근 퀴즈 기준
+            </Text>
+          </View>
+          <View style={mpStyles.progressTrack}>
+            <View
+              style={[
+                mpStyles.progressFill,
+                { width: "78%", backgroundColor: primary },
+              ]}
+            />
+          </View>
+        </View>
+
+        {/* 🚧 리그 랭킹 요약 (더미 데이터 — 백엔드 연동 전까지 임시 표시) */}
+        <View style={mpStyles.card}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 14,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View
+                style={[mpStyles.cardIconBadge, { backgroundColor: "#FFFBEB" }]}
+              >
+                <MaterialCommunityIcons name="shield" size={16} color="#D97706" />
+              </View>
+              <Text style={mpStyles.cardTitle}>이번 주 리그</Text>
+            </View>
+            <Pressable onPress={() => go("league")} hitSlop={8}>
+              <Text style={{ fontSize: 12, color: primary, fontWeight: "700" }}>
+                자세히 보기 &gt;
+              </Text>
+            </Pressable>
+          </View>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <View>
+              <Text style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 2 }}>
+                골드 리그
+              </Text>
+              <Text style={{ fontSize: 22, fontWeight: "800", color: "#111827" }}>
+                5위{" "}
+                <Text style={{ fontSize: 13, color: "#9CA3AF", fontWeight: "600" }}>
+                  / 20명
+                </Text>
+              </Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 2 }}>
+                이번 주 포인트
+              </Text>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: "#EA580C" }}>
+                68 PT
+              </Text>
+            </View>
+          </View>
+          <View style={mpStyles.leagueHintBox}>
+            <Ionicons name="flame-outline" size={14} color="#D97706" />
+            <Text style={mpStyles.leagueHintText}>
+              승급 컷라인 턱걸이 중이에요! 순위를 지켜내면 승급이에요.
+            </Text>
+          </View>
+        </View>
+
         <View style={{ height: 8 }} />
       </ScrollView>
     </View>
@@ -8170,6 +8262,31 @@ const mpStyles = StyleSheet.create({
     flexShrink: 0,
   },
   radioInner: { width: 10, height: 10, borderRadius: 5 },
+  cardIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "#F3F4F6",
+    overflow: "hidden",
+  },
+  progressFill: { height: 8, borderRadius: 999 },
+  leagueHintBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 12,
+    backgroundColor: "#FFFBEB",
+    borderRadius: 10,
+    padding: 10,
+  },
+  leagueHintText: { fontSize: 12, color: "#92400E", fontWeight: "600", flex: 1 },
 });
 
 function InfoScreen({
@@ -8406,7 +8523,7 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
   const handleShowRule = () => {
     Alert.alert(
       "리그 안내",
-      "매주 상위 5명은 다음 리그로 승급하고, 하위 5명은 이전 리그로 강등돼요.",
+      "매주 상위 5명은 다음 리그로 승급하고, 하위 10명은 이전 리그로 강등돼요.",
     );
   };
 
@@ -8507,22 +8624,32 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
                     <View
                       style={[lgStyles.cutLineRule, lgStyles.cutLineRuleUp]}
                     />
-                    <Text style={[lgStyles.cutLineText, { color: "#059669" }]}>
-                      🔺 승급 컷라인
-                    </Text>
+                    <View style={lgStyles.cutLineLabel}>
+                      <Ionicons name="caret-up" size={12} color="#059669" />
+                      <Text
+                        style={[lgStyles.cutLineText, { color: "#059669" }]}
+                      >
+                        승급 컷라인
+                      </Text>
+                    </View>
                     <View
                       style={[lgStyles.cutLineRule, lgStyles.cutLineRuleUp]}
                     />
                   </View>
                 )}
-                {rank === entries.length - 4 && showDemotionLine && (
+                {rank === entries.length - 9 && showDemotionLine && (
                   <View style={lgStyles.cutLine}>
                     <View
                       style={[lgStyles.cutLineRule, lgStyles.cutLineRuleDown]}
                     />
-                    <Text style={[lgStyles.cutLineText, { color: "#DC2626" }]}>
-                      🔻 강등 컷라인
-                    </Text>
+                    <View style={lgStyles.cutLineLabel}>
+                      <Ionicons name="caret-down" size={12} color="#DC2626" />
+                      <Text
+                        style={[lgStyles.cutLineText, { color: "#DC2626" }]}
+                      >
+                        강등 컷라인
+                      </Text>
+                    </View>
                     <View
                       style={[lgStyles.cutLineRule, lgStyles.cutLineRuleDown]}
                     />
@@ -8641,12 +8768,13 @@ const lgStyles = StyleSheet.create({
   cutLineRule: { flex: 1, height: 1 },
   cutLineRuleUp: { backgroundColor: "#A7F3D0" },
   cutLineRuleDown: { backgroundColor: "#FECACA" },
+  cutLineLabel: { flexDirection: "row", alignItems: "center", gap: 4 },
   cutLineText: { fontSize: 11, fontWeight: "800" },
   row: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
-    paddingVertical: 10,
+    paddingVertical: 18,
     borderBottomWidth: 1,
     borderBottomColor: "#F3F4F6",
     gap: 10,
@@ -8660,14 +8788,14 @@ const lgStyles = StyleSheet.create({
   },
   rankText: { fontSize: 12, fontWeight: "800", color: "#9CA3AF" },
   avatarCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: "#F3F4F6",
     alignItems: "center",
     justifyContent: "center",
   },
-  avatar: { fontSize: 15 },
+  avatar: { fontSize: 18 },
   name: { flex: 1, fontSize: 13, fontWeight: "600", color: "#111827" },
   meBadge: {
     backgroundColor: primary,
