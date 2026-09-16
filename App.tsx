@@ -265,7 +265,9 @@ function getLeagueResetCountdownText(): string {
 
   const remainMs = next.getTime() - now.getTime();
   const days = Math.floor(remainMs / (24 * 60 * 60 * 1000));
-  const hours = Math.floor((remainMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+  const hours = Math.floor(
+    (remainMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000),
+  );
   const minutes = Math.floor((remainMs % (60 * 60 * 1000)) / (60 * 1000));
   return days > 0
     ? `${days}일 ${hours}시간 ${minutes}분`
@@ -352,11 +354,84 @@ const TEST_CHAT_MESSAGES = [
   },
 ];
 
+// 1. 뱃지판 전체 조회
+export const fetchBadgesApi = async (token: string) => {
+  const response = await axios.get(`${API_URL}/api/badges`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  return response.data.data;
+};
+
+// 2. 대표 뱃지 설정 (최대 3개)
+export const updateFeaturedBadgesApi = async (
+  token: string,
+  badgeIds: number[],
+) => {
+  const response = await axios.put(
+    `${API_URL}/api/badges/featured`,
+    { badgeIds },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
+      },
+    },
+  );
+  return response.data.data;
+};
+
+// 3. 뱃지 조건 수동 체크
+export const checkNewBadgesApi = async (token: string) => {
+  const response = await axios.post(
+    `${API_URL}/api/badges/check`,
+    {},
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "ngrok-skip-browser-warning": "true",
+      },
+    },
+  );
+  return response.data.data;
+};
+
 export default function App() {
   const [fontsLoaded] = useFonts({ LilyScriptOne_400Regular });
 
   // ⭐️ 현재 앱 상태를 저장할 변수
   const appState = useRef(AppState.currentState);
+
+  // ⭐️ [추가] 앱 전역에서 쓸 뱃지 목록 상태와 로딩 상태
+  const [badges, setBadges] = useState<any[]>([]);
+
+  // ⭐️ 1. 현재 선택된(말풍선이 열린) 뱃지의 ID를 저장하는 상태
+  const [selectedBadgeId, setSelectedBadgeId] = useState<number | null>(null);
+
+  const handleBadgePress = (id: number) => {
+    // 이미 눌려있는 걸 또 누르면 닫히고, 다른 걸 누르면 그 뱃지로 바뀜 (토글 기능)
+    if (selectedBadgeId === id) {
+      setSelectedBadgeId(null);
+    } else {
+      setSelectedBadgeId(id);
+    }
+  };
+
+  // ⭐️ [추가] 뱃지 데이터를 불러오는 공통 함수
+  const loadUserBadges = async () => {
+    try {
+      const token = await AsyncStorage.getItem("accessToken");
+      if (!token) return;
+
+      const badgeData = await fetchBadgesApi(token);
+      setBadges(badgeData);
+    } catch (err) {
+      console.error("🚨 뱃지 목록 불러오기 실패:", err);
+    }
+  };
 
   useEffect(() => {
     // ⭐️ 시작/종료 API를 호출해주는 공통 함수
@@ -5695,20 +5770,105 @@ type Achievement = {
 
 // ⭐️ 도전 과제 목록 — 목데이터 (달성 조건/연동은 이후 별도 작업)
 const ACHIEVEMENTS_MOCK: Achievement[] = [
-  { key: "vocabMaster", title: "어휘 마스터", level: 2, unlocked: true, icon: "book-outline" },
-  { key: "grammarMaster", title: "문법 마스터", level: 1, unlocked: false, icon: "book-outline" },
-  { key: "conversationMaster", title: "실전 회화 마스터", level: 2, unlocked: true, icon: "chatbox-ellipses-outline" },
-  { key: "listeningMaster", title: "리스닝 마스터", level: 1, unlocked: false, icon: "headset-outline" },
-  { key: "paceUp", title: "페이스 업", level: 3, unlocked: true, icon: "flash-outline" },
-  { key: "hardWorker", title: "열심히 열심히", level: 2, unlocked: true, icon: "barbell-outline" },
-  { key: "burningVocab", title: "불타는 어휘력", level: 3, unlocked: true, icon: "flame-outline" },
-  { key: "grammarWizard", title: "문법의 마법사", level: 1, unlocked: false, icon: "sparkles-outline" },
-  { key: "conversationChamp", title: "실전 회화 최강자", level: 3, unlocked: true, icon: "hand-back-fist", iconSet: "mc" },
-  { key: "listeningKing", title: "리스닝의 제왕", level: 1, unlocked: false, icon: "headset-outline" },
-  { key: "studyChamp", title: "학습 대장", level: 2, unlocked: true, icon: "thumbs-up-outline" },
-  { key: "pronunciationChallenger", title: "발음 도전자", level: 1, unlocked: true, icon: "mic-outline" },
-  { key: "locked1", title: "비공개 도전과제", level: 1, unlocked: false, icon: "lock-closed-outline" },
-  { key: "locked2", title: "비공개 도전과제", level: 1, unlocked: false, icon: "lock-closed-outline" },
+  {
+    key: "vocabMaster",
+    title: "어휘 마스터",
+    level: 2,
+    unlocked: true,
+    icon: "book-outline",
+  },
+  {
+    key: "grammarMaster",
+    title: "문법 마스터",
+    level: 1,
+    unlocked: false,
+    icon: "book-outline",
+  },
+  {
+    key: "conversationMaster",
+    title: "실전 회화 마스터",
+    level: 2,
+    unlocked: true,
+    icon: "chatbox-ellipses-outline",
+  },
+  {
+    key: "listeningMaster",
+    title: "리스닝 마스터",
+    level: 1,
+    unlocked: false,
+    icon: "headset-outline",
+  },
+  {
+    key: "paceUp",
+    title: "페이스 업",
+    level: 3,
+    unlocked: true,
+    icon: "flash-outline",
+  },
+  {
+    key: "hardWorker",
+    title: "열심히 열심히",
+    level: 2,
+    unlocked: true,
+    icon: "barbell-outline",
+  },
+  {
+    key: "burningVocab",
+    title: "불타는 어휘력",
+    level: 3,
+    unlocked: true,
+    icon: "flame-outline",
+  },
+  {
+    key: "grammarWizard",
+    title: "문법의 마법사",
+    level: 1,
+    unlocked: false,
+    icon: "sparkles-outline",
+  },
+  {
+    key: "conversationChamp",
+    title: "실전 회화 최강자",
+    level: 3,
+    unlocked: true,
+    icon: "hand-back-fist",
+    iconSet: "mc",
+  },
+  {
+    key: "listeningKing",
+    title: "리스닝의 제왕",
+    level: 1,
+    unlocked: false,
+    icon: "headset-outline",
+  },
+  {
+    key: "studyChamp",
+    title: "학습 대장",
+    level: 2,
+    unlocked: true,
+    icon: "thumbs-up-outline",
+  },
+  {
+    key: "pronunciationChallenger",
+    title: "발음 도전자",
+    level: 1,
+    unlocked: true,
+    icon: "mic-outline",
+  },
+  {
+    key: "locked1",
+    title: "비공개 도전과제",
+    level: 1,
+    unlocked: false,
+    icon: "lock-closed-outline",
+  },
+  {
+    key: "locked2",
+    title: "비공개 도전과제",
+    level: 1,
+    unlocked: false,
+    icon: "lock-closed-outline",
+  },
 ];
 
 function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
@@ -5736,6 +5896,27 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
 
   // ⭐️ 리그 포인트(Total Point / 현재 리그 티어) — 실데이터
   const [myLeague, setMyLeague] = useState<MyLeague | null>(null);
+
+  const [badges, setBadges] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const getBadges = async () => {
+      try {
+        const token = await AsyncStorage.getItem("accessToken");
+        if (!token) return;
+
+        const data = await fetchBadgesApi(token); // 👈 백에서 뱃지 목록 가져오기
+        setBadges(data);
+      } catch (err) {
+        console.error("뱃지 로드 실패:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    getBadges();
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem("profilePhotoUri").then((uri) => {
@@ -5770,7 +5951,9 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
         );
         const calcAvg = Math.round(calcTotal / 7);
 
-        setTotalMinutes(stats.totalMinutes > 0 ? stats.totalMinutes : calcTotal);
+        setTotalMinutes(
+          stats.totalMinutes > 0 ? stats.totalMinutes : calcTotal,
+        );
         setAvgMinutes(stats.avgMinutes > 0 ? stats.avgMinutes : calcAvg);
         setContinuousDays(stats.continuousDays || 0);
       } catch (error: any) {
@@ -5806,9 +5989,24 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
   }, []);
 
   const profileStats: ProfileStat[] = [
-    { key: "totalTime", label: "총 학습 시간", value: formatStudyMinutes(totalMinutes), icon: "time-outline" },
-    { key: "streak", label: "연속 학습일", value: `${continuousDays}d`, icon: "flame-outline" },
-    { key: "avgTime", label: "일평균 학습", value: formatStudyMinutes(avgMinutes), icon: "trending-up-outline" },
+    {
+      key: "totalTime",
+      label: "총 학습 시간",
+      value: formatStudyMinutes(totalMinutes),
+      icon: "time-outline",
+    },
+    {
+      key: "streak",
+      label: "연속 학습일",
+      value: `${continuousDays}d`,
+      icon: "flame-outline",
+    },
+    {
+      key: "avgTime",
+      label: "일평균 학습",
+      value: formatStudyMinutes(avgMinutes),
+      icon: "trending-up-outline",
+    },
   ];
 
   const leagueTierMeta = myLeague ? LEAGUE_TIER_META[myLeague.league] : null;
@@ -6039,55 +6237,69 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
         <View style={pfStyles.card}>
           <View style={pfStyles.totalPointBlock}>
             <Text style={pfStyles.totalPointLabel}>Total Point</Text>
-            <Text style={pfStyles.totalPointValue}>{myLeague?.myScore ?? 0}</Text>
+            <Text style={pfStyles.totalPointValue}>
+              {myLeague?.myScore ?? 0}
+            </Text>
           </View>
         </View>
 
         {/* 도전 과제 */}
         <View style={pfStyles.sectionHeaderRow}>
-          <Text style={pfStyles.sectionTitle}>도전 과제</Text>
+          <Text style={pfStyles.sectionTitle}>업적</Text>
           <Text style={pfStyles.sectionArrow}>›</Text>
         </View>
         <View style={pfStyles.achievementsGrid}>
-          {ACHIEVEMENTS_MOCK.map((item) => (
-            <View key={item.key} style={pfStyles.achievementItem}>
+          {/* ⭐️ 1. ACHIEVEMENTS_MOCK 대신 App.tsx에서 받아온 badges 상태를 map으로 돕니다 */}
+          {badges.map((item) => (
+            <Pressable
+              key={item.id}
+              style={pfStyles.achievementItem}
+              // ⭐️ 뱃지를 터치했을 때 실행되는 함수
+              onPress={() => {
+                // 획득한 뱃지인지, 미획득 뱃지인지에 따라 메시지를 다르게 보여줄 수 있습니다.
+                const statusTitle = item.earned
+                  ? `🎉 ${item.badgeName} (획득 완료)`
+                  : `🔒 ${item.badgeName} (미획득)`;
+                const message = `${item.description}\n\n[달성 조건]\n${item.conditionText}`;
+
+                Alert.alert(statusTitle, message);
+              }}
+            >
               <View style={pfStyles.medalWrap}>
                 <View
                   style={[
                     pfStyles.medalRibbon,
-                    { backgroundColor: item.unlocked ? "#D97706" : "#CBD5E1" },
+                    { backgroundColor: item.earned ? "#D97706" : "#CBD5E1" },
                   ]}
                 />
                 <View
                   style={[
                     pfStyles.medalCircle,
-                    item.unlocked
+                    item.earned
                       ? pfStyles.medalCircleUnlocked
                       : pfStyles.medalCircleLocked,
                   ]}
                 >
-                  {item.unlocked ? (
-                    item.iconSet === "mc" ? (
-                      <MaterialCommunityIcons
-                        name={item.icon as any}
-                        size={22}
-                        color="#FFFFFF"
-                      />
-                    ) : (
-                      <Ionicons name={item.icon as any} size={22} color="#FFFFFF" />
-                    )
+                  {item.earned ? (
+                    <Text style={{ fontSize: 20 }}>{item.badgeIcon}</Text>
                   ) : (
                     <Ionicons name="lock-closed" size={20} color="#94A3B8" />
                   )}
                 </View>
               </View>
               <View style={pfStyles.levelBadge}>
-                <Text style={pfStyles.levelBadgeText}>Lv {item.level}</Text>
+                <Text style={pfStyles.levelBadgeText}>
+                  {item.difficulty === "EASY"
+                    ? "초급"
+                    : item.difficulty === "MEDIUM"
+                      ? "중급"
+                      : "고급"}
+                </Text>
               </View>
               <Text style={pfStyles.achievementTitle} numberOfLines={2}>
-                {item.title}
+                {item.badgeName}
               </Text>
-            </View>
+            </Pressable>
           ))}
         </View>
 
@@ -7262,7 +7474,12 @@ const pfStyles = StyleSheet.create({
     marginBottom: 16,
     maxWidth: "100%",
   },
-  speechBubbleText: { color: "#374151", fontSize: 13, textAlign: "center", paddingRight: 14 },
+  speechBubbleText: {
+    color: "#374151",
+    fontSize: 13,
+    textAlign: "center",
+    paddingRight: 14,
+  },
   speechBubbleEditBtn: {
     position: "absolute",
     top: 8,
@@ -7344,7 +7561,12 @@ const pfStyles = StyleSheet.create({
   totalPointLabel: { color: "#9CA3AF", fontSize: 12, fontWeight: "600" },
   totalPointValue: { color: primary, fontSize: 28, fontWeight: "800" },
   achievementsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  achievementItem: { width: "31%", alignItems: "center", gap: 6, paddingVertical: 10 },
+  achievementItem: {
+    width: "31%",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 10,
+  },
   medalWrap: { alignItems: "center", justifyContent: "flex-end", marginTop: 8 },
   medalRibbon: {
     width: 26,
@@ -7372,7 +7594,12 @@ const pfStyles = StyleSheet.create({
     marginTop: 2,
   },
   levelBadgeText: { color: "#FFFFFF", fontSize: 10, fontWeight: "700" },
-  achievementTitle: { color: "#374151", fontSize: 11, textAlign: "center", fontWeight: "600" },
+  achievementTitle: {
+    color: "#374151",
+    fontSize: 11,
+    textAlign: "center",
+    fontWeight: "600",
+  },
   sectionLabel: {
     color: "#9CA3AF",
     fontSize: 11,
@@ -8305,7 +8532,9 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
               marginBottom: 14,
             }}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
               <View style={mpStyles.cardIconBadge}>
                 <Ionicons name="help-buoy-outline" size={16} color={primary} />
               </View>
@@ -8349,16 +8578,27 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
                 marginBottom: 14,
               }}
             >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              >
                 <View
-                  style={[mpStyles.cardIconBadge, { backgroundColor: "#FFFBEB" }]}
+                  style={[
+                    mpStyles.cardIconBadge,
+                    { backgroundColor: "#FFFBEB" },
+                  ]}
                 >
-                  <MaterialCommunityIcons name="shield" size={16} color="#D97706" />
+                  <MaterialCommunityIcons
+                    name="shield"
+                    size={16}
+                    color="#D97706"
+                  />
                 </View>
                 <Text style={mpStyles.cardTitle}>이번 주 리그</Text>
               </View>
               <Pressable onPress={() => go("league")} hitSlop={8}>
-                <Text style={{ fontSize: 12, color: primary, fontWeight: "700" }}>
+                <Text
+                  style={{ fontSize: 12, color: primary, fontWeight: "700" }}
+                >
                   자세히 보기 &gt;
                 </Text>
               </Pressable>
@@ -8371,21 +8611,35 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
               }}
             >
               <View>
-                <Text style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 2 }}>
+                <Text
+                  style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 2 }}
+                >
                   {LEAGUE_TIER_META[myLeague.league].label} 리그
                 </Text>
-                <Text style={{ fontSize: 22, fontWeight: "800", color: "#111827" }}>
+                <Text
+                  style={{ fontSize: 22, fontWeight: "800", color: "#111827" }}
+                >
                   {myLeague.myRank}위{" "}
-                  <Text style={{ fontSize: 13, color: "#9CA3AF", fontWeight: "600" }}>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      color: "#9CA3AF",
+                      fontWeight: "600",
+                    }}
+                  >
                     / {myLeague.totalMembers}명
                   </Text>
                 </Text>
               </View>
               <View style={{ alignItems: "flex-end" }}>
-                <Text style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 2 }}>
+                <Text
+                  style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 2 }}
+                >
                   이번 주 포인트
                 </Text>
-                <Text style={{ fontSize: 16, fontWeight: "800", color: "#EA580C" }}>
+                <Text
+                  style={{ fontSize: 16, fontWeight: "800", color: "#EA580C" }}
+                >
                   {myLeague.myScore} PT
                 </Text>
               </View>
@@ -8527,7 +8781,12 @@ const mpStyles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
   },
-  leagueHintText: { fontSize: 12, color: "#92400E", fontWeight: "600", flex: 1 },
+  leagueHintText: {
+    fontSize: 12,
+    color: "#92400E",
+    fontWeight: "600",
+    flex: 1,
+  },
 });
 
 function InfoScreen({
@@ -8593,8 +8852,7 @@ function Header({
       <Text style={[styles.headerTitle, !backTo && styles.logoSmall]}>
         {title}
       </Text>
-      {!backTo &&
-        (rightActions ?? <View style={styles.headerSpacer} />)}
+      {!backTo && (rightActions ?? <View style={styles.headerSpacer} />)}
     </View>
   );
 }
@@ -8891,17 +9149,10 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
                   showDemotionLine && (
                     <View style={lgStyles.cutLine}>
                       <View
-                        style={[
-                          lgStyles.cutLineRule,
-                          lgStyles.cutLineRuleDown,
-                        ]}
+                        style={[lgStyles.cutLineRule, lgStyles.cutLineRuleDown]}
                       />
                       <View style={lgStyles.cutLineLabel}>
-                        <Ionicons
-                          name="caret-down"
-                          size={12}
-                          color="#DC2626"
-                        />
+                        <Ionicons name="caret-down" size={12} color="#DC2626" />
                         <Text
                           style={[lgStyles.cutLineText, { color: "#DC2626" }]}
                         >
@@ -8909,10 +9160,7 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
                         </Text>
                       </View>
                       <View
-                        style={[
-                          lgStyles.cutLineRule,
-                          lgStyles.cutLineRuleDown,
-                        ]}
+                        style={[lgStyles.cutLineRule, lgStyles.cutLineRuleDown]}
                       />
                     </View>
                   )}
