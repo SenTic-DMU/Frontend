@@ -187,243 +187,89 @@ async function permanentlyDeleteRoom(roomId: string | number) {
   await AsyncStorage.setItem(TRASH_STORAGE_KEY, JSON.stringify(next));
 }
 
-// 🏆 리그(League) — 아직 백엔드에 랭킹 API가 없어서 AsyncStorage로만 동작합니다.
-// 나중에 리그 API가 생기면 아래 함수들 내부만 axios 호출로 바꾸면 되도록,
-// 사용하는 화면 쪽에서는 이 함수들만 부르게 설계했습니다.
+// 🏆 리그(League) — GET /api/users/league 로 내 리그/순위/랭킹을 그대로 받아옵니다.
+// 승급·강등·주간 점수 초기화는 매주 월요일 새벽 3시에 백엔드가 처리합니다.
 
-type LeagueTier = "bronze" | "silver" | "gold" | "sapphire" | "diamond";
+type LeagueTier =
+  | "BRONZE"
+  | "SILVER"
+  | "GOLD"
+  | "SAPPHIRE"
+  | "DIAMOND"
+  | "MASTER";
 
 const LEAGUE_TIER_ORDER: LeagueTier[] = [
-  "bronze",
-  "silver",
-  "gold",
-  "sapphire",
-  "diamond",
+  "BRONZE",
+  "SILVER",
+  "GOLD",
+  "SAPPHIRE",
+  "DIAMOND",
+  "MASTER",
 ];
 
 const LEAGUE_TIER_META: Record<
   LeagueTier,
-  { label: string; color: string; bg: string; maxWeeklyScore: number }
+  { label: string; color: string; bg: string }
 > = {
-  bronze: { label: "브론즈", color: "#B45309", bg: "#FEF3C7", maxWeeklyScore: 50 },
-  silver: { label: "실버", color: "#6B7280", bg: "#F3F4F6", maxWeeklyScore: 80 },
-  gold: { label: "골드", color: "#D97706", bg: "#FFFBEB", maxWeeklyScore: 120 },
-  sapphire: {
-    label: "사파이어",
-    color: "#2563EB",
-    bg: "#EFF6FF",
-    maxWeeklyScore: 170,
-  },
-  diamond: {
-    label: "다이아몬드",
-    color: "#0EA5E9",
-    bg: "#ECFEFF",
-    maxWeeklyScore: 230,
-  },
+  BRONZE: { label: "브론즈", color: "#B45309", bg: "#FEF3C7" },
+  SILVER: { label: "실버", color: "#6B7280", bg: "#F3F4F6" },
+  GOLD: { label: "골드", color: "#D97706", bg: "#FFFBEB" },
+  SAPPHIRE: { label: "사파이어", color: "#2563EB", bg: "#EFF6FF" },
+  DIAMOND: { label: "다이아몬드", color: "#0EA5E9", bg: "#ECFEFF" },
+  MASTER: { label: "마스터", color: "#7C3AED", bg: "#F5F3FF" },
 };
 
-// 실제 유저가 아닌, 로컬에서만 시뮬레이션되는 더미 경쟁자 19명 (고정 명단).
-const LEAGUE_BOTS: { id: string; name: string; avatar: string }[] = [
-  { id: "bot-1", name: "부지런한다람쥐", avatar: "🐿️" },
-  { id: "bot-2", name: "영어고수", avatar: "🦉" },
-  { id: "bot-3", name: "새벽형인간", avatar: "🌅" },
-  { id: "bot-4", name: "카페인충전중", avatar: "☕" },
-  { id: "bot-5", name: "문법마스터", avatar: "📚" },
-  { id: "bot-6", name: "발음장인", avatar: "🎤" },
-  { id: "bot-7", name: "열공하는고양이", avatar: "🐱" },
-  { id: "bot-8", name: "야근탈출러", avatar: "🏃" },
-  { id: "bot-9", name: "여행영어러버", avatar: "✈️" },
-  { id: "bot-10", name: "매일한줄", avatar: "📝" },
-  { id: "bot-11", name: "리스닝귀신", avatar: "👂" },
-  { id: "bot-12", name: "왕초보탈출", avatar: "🐣" },
-  { id: "bot-13", name: "오늘도한걸음", avatar: "👣" },
-  { id: "bot-14", name: "영단어수집가", avatar: "🗂️" },
-  { id: "bot-15", name: "밤샘공부러", avatar: "🌙" },
-  { id: "bot-16", name: "프리토킹도전", avatar: "💬" },
-  { id: "bot-17", name: "문장암기왕", avatar: "🧠" },
-  { id: "bot-18", name: "습관의힘", avatar: "🔁" },
-  { id: "bot-19", name: "늦잠러", avatar: "😴" },
-];
-
-// 🚧 퀴즈 정답 1개당 포인트. 퀴즈 화면 자체가 아직 "준비중"이라 지금은 상수만 정의해두고,
-// 나중에 퀴즈 기능을 만들 때 정답 처리 지점에서 awardLeaguePoints(QUIZ_CORRECT_POINT)를 부르면 됩니다.
-const QUIZ_CORRECT_POINT = 1;
-
-const LEAGUE_STORAGE_KEY = "leagueState";
-
-type LeagueOutcome = "promoted" | "demoted" | "stayed";
-
-type PendingLeagueResult = {
-  fromTier: LeagueTier;
-  toTier: LeagueTier;
-  rank: number; // 지난주 최종 순위 (1~20)
-  outcome: LeagueOutcome;
+type LeagueMember = {
+  rank: number;
+  userId: number;
+  nickname: string;
+  weeklyScore: number;
 };
 
-type LeagueState = {
-  tier: LeagueTier;
-  weekStartISO: string; // 이번 리그 주차 월요일 00:00(로컬 기준)
-  myPoints: number;
-  pendingResult: PendingLeagueResult | null;
+type MyLeague = {
+  league: LeagueTier;
+  myRank: number;
+  myScore: number;
+  totalMembers: number;
+  members: LeagueMember[];
 };
 
-// 월요일을 한 주의 시작으로 삼습니다.
-function getLeagueWeekStartISO(date: Date): string {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  const day = d.getDay(); // 0=일 ... 6=토
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diffToMonday);
-  return d.toISOString();
+async function fetchMyLeague(): Promise<MyLeague> {
+  const accessToken = await AsyncStorage.getItem("accessToken");
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const res = await axios.get(`${API_URL}/api/users/league`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  return res.data.data;
 }
 
-function getLeagueDaysElapsed(weekStartISO: string): number {
-  const start = new Date(weekStartISO).getTime();
-  const diffDays = Math.floor((Date.now() - start) / (24 * 60 * 60 * 1000));
-  return Math.min(6, Math.max(0, diffDays));
+// 상위/하위 몇 명이 승급·강등 대상인지(전체 인원의 10%, 최소 1명) 근사 계산합니다.
+// 정확한 반올림 규칙은 백엔드만 알고 있으므로, 이건 어디까지나 화면에 보여줄 컷라인 힌트입니다.
+function getLeagueCutoffCount(totalMembers: number): number {
+  return Math.max(1, Math.round(totalMembers * 0.1));
 }
 
-// "3일 6시간 26분" 형태로 리그 종료까지 남은 시간을 표시합니다.
-function getLeagueCountdownText(weekStartISO: string): string {
-  const weekEnd = new Date(weekStartISO).getTime() + 7 * 24 * 60 * 60 * 1000;
-  const remainMs = Math.max(0, weekEnd - Date.now());
+// 다음 리그 초기화 시각(매주 월요일 새벽 3시)까지 "3일 6시간 26분" 형태로 남은 시간을 표시합니다.
+function getLeagueResetCountdownText(): string {
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(3, 0, 0, 0);
+  const daysUntilMonday = (1 - next.getDay() + 7) % 7;
+  next.setDate(next.getDate() + daysUntilMonday);
+  if (next.getTime() <= now.getTime()) {
+    next.setDate(next.getDate() + 7);
+  }
+
+  const remainMs = next.getTime() - now.getTime();
   const days = Math.floor(remainMs / (24 * 60 * 60 * 1000));
   const hours = Math.floor((remainMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
   const minutes = Math.floor((remainMs % (60 * 60 * 1000)) / (60 * 1000));
-  if (remainMs <= 0) return "오늘 마감";
   return days > 0
     ? `${days}일 ${hours}시간 ${minutes}분`
     : `${hours}시간 ${minutes}분`;
-}
-
-function leagueHashSeed(str: string): number {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
-  }
-  return h >>> 0;
-}
-
-// 시드 기반 의사난수 생성기 — 같은 시드면 항상 같은 순서의 값이 나옵니다.
-function mulberry32(seed: number) {
-  let a = seed;
-  return function random() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// 더미 경쟁자 한 명의 "오늘까지" 누적 점수를 계산합니다.
-// weekStartISO + botId로 시드를 고정하기 때문에, 같은 날 여러 번 불러도 값이 흔들리지 않고
-// 날짜가 지날수록 자연스럽게 늘어납니다.
-function computeLeagueBotScore(
-  botId: string,
-  weekStartISO: string,
-  tier: LeagueTier,
-  daysElapsed: number,
-): number {
-  const rng = mulberry32(leagueHashSeed(`${weekStartISO}-${botId}`));
-  const maxScore = LEAGUE_TIER_META[tier].maxWeeklyScore;
-  // 봇마다 이번 주 "목표 총점"을 다르게 뽑아둡니다(0.3~1.0배 범위).
-  // 이게 없으면 daysElapsed=6(주 완주 시점)에 모든 봇이 똑같이 maxScore로 수렴해버려서
-  // 순위 경쟁이 사라지는 버그가 생깁니다.
-  const weeklyTarget = maxScore * (0.3 + rng() * 0.7);
-  const dailyShares = Array.from({ length: 7 }, () => 0.4 + rng() * 0.6);
-  const weekTotal = dailyShares.reduce((sum, share) => sum + share, 0);
-  let accumulated = 0;
-  for (let i = 0; i <= daysElapsed; i++) {
-    accumulated += dailyShares[i];
-  }
-  return Math.round((accumulated / weekTotal) * weeklyTarget);
-}
-
-async function getLeagueState(): Promise<LeagueState> {
-  try {
-    const raw = await AsyncStorage.getItem(LEAGUE_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.warn("🚨 리그 상태 불러오기 실패:", e);
-  }
-  const initial: LeagueState = {
-    tier: "bronze",
-    weekStartISO: getLeagueWeekStartISO(new Date()),
-    myPoints: 0,
-    pendingResult: null,
-  };
-  await AsyncStorage.setItem(LEAGUE_STORAGE_KEY, JSON.stringify(initial));
-  return initial;
-}
-
-async function saveLeagueState(state: LeagueState) {
-  try {
-    await AsyncStorage.setItem(LEAGUE_STORAGE_KEY, JSON.stringify(state));
-  } catch (e) {
-    console.warn("🚨 리그 상태 저장 실패:", e);
-  }
-}
-
-// 화면 진입/포그라운드 복귀 시 호출 — 리그 주가 바뀌어 있으면 지난주 순위로
-// 승급/강등을 계산해서 반영하고 새 주로 리셋합니다.
-async function ensureLeagueWeekFresh(): Promise<LeagueState> {
-  const state = await getLeagueState();
-  const currentWeekStart = getLeagueWeekStartISO(new Date());
-  if (state.weekStartISO === currentWeekStart) {
-    return state;
-  }
-
-  // 지난주가 이미 끝났으므로 봇들의 "지난주 최종" 점수(7일 전부)로 순위를 매깁니다.
-  const lastWeekBotScores = LEAGUE_BOTS.map((bot) =>
-    computeLeagueBotScore(bot.id, state.weekStartISO, state.tier, 6),
-  );
-  const allScores = [state.myPoints, ...lastWeekBotScores].sort(
-    (a, b) => b - a,
-  );
-  const myRank = allScores.indexOf(state.myPoints) + 1;
-
-  const tierIndex = LEAGUE_TIER_ORDER.indexOf(state.tier);
-  let nextTier = state.tier;
-  let outcome: LeagueOutcome = "stayed";
-  if (myRank <= 5 && tierIndex < LEAGUE_TIER_ORDER.length - 1) {
-    nextTier = LEAGUE_TIER_ORDER[tierIndex + 1];
-    outcome = "promoted";
-  } else if (myRank >= 11 && tierIndex > 0) {
-    nextTier = LEAGUE_TIER_ORDER[tierIndex - 1];
-    outcome = "demoted";
-  }
-
-  const nextState: LeagueState = {
-    tier: nextTier,
-    weekStartISO: currentWeekStart,
-    myPoints: 0,
-    pendingResult: {
-      fromTier: state.tier,
-      toTier: nextTier,
-      rank: myRank,
-      outcome,
-    },
-  };
-  await saveLeagueState(nextState);
-  return nextState;
-}
-
-// 대화 중 AI 응답을 1번 받을 때마다(음성/채팅 공통) 호출합니다.
-async function awardLeaguePoints(amount: number) {
-  try {
-    const state = await ensureLeagueWeekFresh();
-    await saveLeagueState({ ...state, myPoints: state.myPoints + amount });
-  } catch (e) {
-    console.warn("🚨 리그 포인트 적립 실패:", e);
-  }
-}
-
-async function dismissLeagueResult(): Promise<LeagueState> {
-  const state = await getLeagueState();
-  const next = { ...state, pendingResult: null };
-  await saveLeagueState(next);
-  return next;
 }
 
 const TEST_VOICE_MESSAGES: Message[] = [
@@ -832,7 +678,7 @@ export default function App() {
           onConsumeScrapNavTarget={() => setScrapNavTarget(null)}
         />
       )}
-      {screen === "settings" && <SettingsScreen go={go} />}
+      {screen === "settings" && <ProfileScreen go={go} />}
       {screen === "payment" && <PaymentScreen go={go} />}
       {screen === "bookmarks" && (
         <BookmarksScreen
@@ -1949,6 +1795,14 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
           "🚨 유저 정보 불러오기 실패:",
           error.response?.data || error.message,
         );
+
+        // 토큰이 가리키는 유저가 서버에 없는 경우 -> 만료된 토큰이므로 로그아웃 처리
+        if (error.response?.data?.message?.includes("존재하지 않는")) {
+          await AsyncStorage.removeItem("accessToken");
+          await AsyncStorage.removeItem("refreshToken");
+          Alert.alert("로그인 만료", "다시 로그인해주세요.");
+          go("login");
+        }
       }
     };
 
@@ -1968,7 +1822,26 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
         },
       ]}
     >
-      <Header title="SenTic" go={go} />
+      <Header
+        title="SenTic"
+        go={go}
+        rightActions={
+          <View style={styles.headerRightActions}>
+            <Pressable
+              style={styles.headerIconButton}
+              onPress={() => go("notice")}
+            >
+              <Ionicons name="megaphone-outline" size={18} color="#6B7280" />
+            </Pressable>
+            <Pressable
+              style={styles.headerIconButton}
+              onPress={() => go("faq")}
+            >
+              <Ionicons name="help-circle-outline" size={18} color="#6B7280" />
+            </Pressable>
+          </View>
+        }
+      />
       <ScrollView
         style={{ backgroundColor: "#F9FAFB" }}
         contentContainerStyle={[styles.content, { paddingBottom: 36 }]}
@@ -2550,7 +2423,8 @@ function SituationScreen({
   };
 
   return (
-    <View
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={[
         styles.screenSoft,
         {
@@ -2581,6 +2455,7 @@ function SituationScreen({
       <ScrollView
         style={{ backgroundColor: "#F9FAFB" }}
         contentContainerStyle={styles.setupContent}
+        keyboardShouldPersistTaps="handled"
       >
         <Label text="대화방 제목" />
         <TextInput
@@ -2673,7 +2548,7 @@ function SituationScreen({
           onPress={start}
         />
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -3158,7 +3033,6 @@ export function VoiceChatScreen({
 
         setMessages((prev) => [...prev, aiMessage]);
         setLatestAiText(aiText);
-        awardLeaguePoints(2);
       }
 
       if (audioUrl) {
@@ -3303,10 +3177,6 @@ export function VoiceChatScreen({
 
       if (newMessages.length > 0) {
         setMessages((prev) => [...prev, ...newMessages]);
-      }
-
-      if (aiText) {
-        awardLeaguePoints(2);
       }
 
       if (audioUrl) {
@@ -3996,7 +3866,6 @@ export function TextChatScreen({
           }),
         };
         setMessages([aiMessage]);
-        awardLeaguePoints(2);
       }
     } catch (error) {
       console.error("🚨 AI 첫인사 로딩 실패:", error);
@@ -4291,7 +4160,6 @@ export function TextChatScreen({
           }),
         };
         setMessages((prev) => [...prev, aiMessage]);
-        awardLeaguePoints(2);
       }
     } catch (error: any) {
       console.error(
@@ -5108,7 +4976,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
       ]}
     >
       <View style={ntStyles.header}>
-        <Pressable style={ntStyles.backBtn} onPress={() => go("settings")}>
+        <Pressable style={ntStyles.backBtn} onPress={() => go("mode")}>
           <Text style={ntStyles.backIcon}>‹</Text>
         </Pressable>
         <Text style={ntStyles.headerTitle}>공지사항</Text>
@@ -5801,8 +5669,49 @@ function BookmarksScreen({
   );
 }
 
-function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
-  const [notifications, setNotifications] = useState(true);
+type ProfileStat = {
+  key: string;
+  label: string;
+  value: string;
+  icon: keyof typeof Ionicons.glyphMap;
+};
+
+// ⭐️ "10h 14m" / "45m" 형태로 학습 시간(분)을 표시용 문자열로 바꿔줍니다.
+function formatStudyMinutes(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h}h ${m}m`;
+}
+
+type Achievement = {
+  key: string;
+  title: string;
+  level: number;
+  unlocked: boolean;
+  icon: string;
+  iconSet?: "ionicons" | "mc";
+};
+
+// ⭐️ 도전 과제 목록 — 목데이터 (달성 조건/연동은 이후 별도 작업)
+const ACHIEVEMENTS_MOCK: Achievement[] = [
+  { key: "vocabMaster", title: "어휘 마스터", level: 2, unlocked: true, icon: "book-outline" },
+  { key: "grammarMaster", title: "문법 마스터", level: 1, unlocked: false, icon: "book-outline" },
+  { key: "conversationMaster", title: "실전 회화 마스터", level: 2, unlocked: true, icon: "chatbox-ellipses-outline" },
+  { key: "listeningMaster", title: "리스닝 마스터", level: 1, unlocked: false, icon: "headset-outline" },
+  { key: "paceUp", title: "페이스 업", level: 3, unlocked: true, icon: "flash-outline" },
+  { key: "hardWorker", title: "열심히 열심히", level: 2, unlocked: true, icon: "barbell-outline" },
+  { key: "burningVocab", title: "불타는 어휘력", level: 3, unlocked: true, icon: "flame-outline" },
+  { key: "grammarWizard", title: "문법의 마법사", level: 1, unlocked: false, icon: "sparkles-outline" },
+  { key: "conversationChamp", title: "실전 회화 최강자", level: 3, unlocked: true, icon: "hand-back-fist", iconSet: "mc" },
+  { key: "listeningKing", title: "리스닝의 제왕", level: 1, unlocked: false, icon: "headset-outline" },
+  { key: "studyChamp", title: "학습 대장", level: 2, unlocked: true, icon: "thumbs-up-outline" },
+  { key: "pronunciationChallenger", title: "발음 도전자", level: 1, unlocked: true, icon: "mic-outline" },
+  { key: "locked1", title: "비공개 도전과제", level: 1, unlocked: false, icon: "lock-closed-outline" },
+  { key: "locked2", title: "비공개 도전과제", level: 1, unlocked: false, icon: "lock-closed-outline" },
+];
+
+function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
   const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
   const [withdrawPassword, setWithdrawPassword] = useState("");
   const [withdrawing, setWithdrawing] = useState(false);
@@ -5813,11 +5722,112 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
   // 📸 내 프로필 사진 (백엔드 업로드 API가 아직 없어 기기에만 로컬로 저장)
   const [profilePhotoUri, setProfilePhotoUri] = useState<string | null>(null);
 
+  // 🖊️ 좌우명 (백엔드 필드가 없어 기기에만 로컬로 저장)
+  const [motto, setMotto] = useState("");
+
+  // ✏️ 닉네임 / 좌우명 인라인 수정 모달 (닉네임은 변경 API가 없어 화면에만 즉시 반영)
+  const [editField, setEditField] = useState<"nickname" | "motto" | null>(null);
+  const [editValue, setEditValue] = useState("");
+
+  // ⭐️ 상단 통계(총 학습 시간 / 연속 학습일 / 일평균 학습) — 실데이터
+  const [totalMinutes, setTotalMinutes] = useState(0);
+  const [avgMinutes, setAvgMinutes] = useState(0);
+  const [continuousDays, setContinuousDays] = useState(0);
+
+  // ⭐️ 리그 포인트(Total Point / 현재 리그 티어) — 실데이터
+  const [myLeague, setMyLeague] = useState<MyLeague | null>(null);
+
   useEffect(() => {
     AsyncStorage.getItem("profilePhotoUri").then((uri) => {
       if (uri) setProfilePhotoUri(uri);
     });
+    AsyncStorage.getItem("profileMotto").then((saved) => {
+      if (saved) setMotto(saved);
+    });
   }, []);
+
+  useEffect(() => {
+    const fetchStudyStats = async () => {
+      try {
+        const accessToken = await AsyncStorage.getItem("accessToken");
+        if (!accessToken) return;
+
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const res = await axios.get(`${API_URL}/api/users/study-stats`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ngrok-skip-browser-warning": "69420",
+            "Bypass-Tunnel-Reminder": "true",
+            "User-Agent": "PostmanRuntime/7.28.4",
+          },
+        });
+
+        const stats = res.data?.data || {};
+        const weeklyData = stats.weekly || [];
+        const calcTotal = weeklyData.reduce(
+          (sum: number, item: any) => sum + Number(item.minute),
+          0,
+        );
+        const calcAvg = Math.round(calcTotal / 7);
+
+        setTotalMinutes(stats.totalMinutes > 0 ? stats.totalMinutes : calcTotal);
+        setAvgMinutes(stats.avgMinutes > 0 ? stats.avgMinutes : calcAvg);
+        setContinuousDays(stats.continuousDays || 0);
+      } catch (error: any) {
+        console.error(
+          "🚨 마이페이지 학습 통계 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+
+    const loadLeague = async () => {
+      try {
+        const data = await fetchMyLeague();
+        setMyLeague(data);
+      } catch (error: any) {
+        console.error(
+          "🚨 마이페이지 리그 정보 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+
+    fetchStudyStats();
+    loadLeague();
+
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active") {
+        fetchStudyStats();
+        loadLeague();
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  const profileStats: ProfileStat[] = [
+    { key: "totalTime", label: "총 학습 시간", value: formatStudyMinutes(totalMinutes), icon: "time-outline" },
+    { key: "streak", label: "연속 학습일", value: `${continuousDays}d`, icon: "flame-outline" },
+    { key: "avgTime", label: "일평균 학습", value: formatStudyMinutes(avgMinutes), icon: "trending-up-outline" },
+  ];
+
+  const leagueTierMeta = myLeague ? LEAGUE_TIER_META[myLeague.league] : null;
+
+  const openEdit = (field: "nickname" | "motto") => {
+    setEditValue(field === "nickname" ? userInfo.nickname : motto);
+    setEditField(field);
+  };
+
+  const saveEdit = async () => {
+    const value = editValue.trim();
+    if (editField === "nickname") {
+      if (value) setUserInfo((prev) => ({ ...prev, nickname: value }));
+    } else if (editField === "motto") {
+      setMotto(value);
+      await AsyncStorage.setItem("profileMotto", value);
+    }
+    setEditField(null);
+  };
 
   const pickProfilePhoto = async () => {
     if (Platform.OS !== "web") {
@@ -5870,6 +5880,14 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
           "🚨 설정 화면 유저 정보 불러오기 실패:",
           error.response?.data || error.message,
         );
+
+        // 토큰이 가리키는 유저가 서버에 없는 경우 -> 만료된 토큰이므로 로그아웃 처리
+        if (error.response?.data?.message?.includes("존재하지 않는")) {
+          await AsyncStorage.removeItem("accessToken");
+          await AsyncStorage.removeItem("refreshToken");
+          Alert.alert("로그인 만료", "다시 로그인해주세요.");
+          go("login");
+        }
       }
     };
 
@@ -5928,26 +5946,6 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
     }
   };
 
-  const Toggle = ({
-    value,
-    onChange,
-  }: {
-    value: boolean;
-    onChange: () => void;
-  }) => (
-    <Pressable
-      onPress={onChange}
-      style={[stStyles.toggle, value ? stStyles.toggleOn : stStyles.toggleOff]}
-    >
-      <View
-        style={[
-          stStyles.toggleThumb,
-          value ? stStyles.toggleThumbOn : stStyles.toggleThumbOff,
-        ]}
-      />
-    </Pressable>
-  );
-
   return (
     <View
       style={[
@@ -5962,126 +5960,233 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
       ]}
     >
       {/* 헤더 */}
-      <View style={stStyles.header}>
-        <Text style={stStyles.headerTitle}>설정</Text>
+      <View style={pfStyles.header}>
+        <Text style={pfStyles.headerTitle}>마이페이지</Text>
       </View>
 
       <ScrollView
         style={{ backgroundColor: "#F9FAFB" }}
-        contentContainerStyle={stStyles.content}
+        contentContainerStyle={pfStyles.content}
       >
-        {/* 계정 */}
-        <Text style={stStyles.sectionLabel}>계정</Text>
-        <View style={stStyles.card}>
-          <View style={[stStyles.row, stStyles.rowBorder]}>
-            <Pressable onPress={pickProfilePhoto} style={stStyles.profilePhoto}>
-              {profilePhotoUri ? (
-                <Image
-                  source={{ uri: profilePhotoUri }}
-                  style={stStyles.profilePhotoImage}
-                />
-              ) : (
-                <Ionicons
-                  name="person-circle-outline"
-                  size={40}
-                  color="#C7CBD1"
-                />
-              )}
+        {/* 프로필 히어로 카드 */}
+        <View style={pfStyles.heroCard}>
+          <View style={pfStyles.speechBubble}>
+            <Text style={pfStyles.speechBubbleText} numberOfLines={2}>
+              {motto || "영어 좌우명이 있나요?"}
+            </Text>
+            <Pressable
+              style={pfStyles.speechBubbleEditBtn}
+              onPress={() => openEdit("motto")}
+              hitSlop={8}
+            >
+              <Ionicons name="pencil" size={12} color="#6B7280" />
             </Pressable>
-            <View style={{ flex: 1 }}>
-              <Text style={stStyles.rowTitle}>{userInfo.nickname}</Text>
-              <Text style={stStyles.rowSub}>{userInfo.email}</Text>
-            </View>
+            <View style={pfStyles.speechBubbleTail} />
           </View>
-          <View style={[stStyles.row, stStyles.rowBorder]}>
-            <Text style={stStyles.rowTitle}>회원 등급</Text>
-            <View style={stStyles.premiumBadge}>
-              <Text style={stStyles.premiumBadgeText}>프리미엄</Text>
-            </View>
-          </View>
-          <Pressable style={stStyles.row} onPress={() => go("payment")}>
-            <Text style={[stStyles.rowTitle, { flex: 1 }]}>결제 및 구독</Text>
-            <Text style={styles.chevron}>›</Text>
+
+          <Pressable onPress={pickProfilePhoto} style={pfStyles.avatar}>
+            {profilePhotoUri ? (
+              <Image
+                source={{ uri: profilePhotoUri }}
+                style={pfStyles.avatarImage}
+              />
+            ) : (
+              <Ionicons name="person" size={44} color="#A5B4FC" />
+            )}
           </Pressable>
+
+          <View style={pfStyles.nicknameRow}>
+            <View style={pfStyles.nicknameEditSpacer} />
+            <Text style={pfStyles.nicknameText}>{userInfo.nickname}</Text>
+            <Pressable onPress={() => openEdit("nickname")} hitSlop={8}>
+              <Ionicons name="pencil" size={14} color="#9CA3AF" />
+            </Pressable>
+          </View>
+
+          <View style={pfStyles.statsGrid}>
+            {profileStats.map((stat, index) => (
+              <View key={stat.key} style={pfStyles.statItem}>
+                {index > 0 && <View style={pfStyles.statDivider} />}
+                <Ionicons name={stat.icon} size={16} color="#9CA3AF" />
+                <Text style={pfStyles.statLabel}>{stat.label}</Text>
+                <Text style={pfStyles.statValue}>{stat.value}</Text>
+              </View>
+            ))}
+          </View>
         </View>
 
-        {/* 알림 */}
-        <Text style={stStyles.sectionLabel}>알림</Text>
-        <View style={stStyles.card}>
-          <View style={stStyles.row}>
-            <View style={stStyles.iconWrapBlue}>
+        {/* 리그 포인트 */}
+        <View style={pfStyles.sectionHeaderRow}>
+          <Text style={pfStyles.sectionTitle}>리그 포인트</Text>
+          <View style={pfStyles.currentLeagueBadge}>
+            <Text style={pfStyles.currentLeagueLabel}>
+              {leagueTierMeta ? `${leagueTierMeta.label} 리그` : "현재 리그"}
+            </Text>
+            <View
+              style={[
+                pfStyles.leagueShield,
+                { backgroundColor: leagueTierMeta?.bg ?? "#FEF3C7" },
+              ]}
+            >
               <Ionicons
-                name="notifications-outline"
-                size={16}
-                color="#2563EB"
+                name="shield"
+                size={14}
+                color={leagueTierMeta?.color ?? "#D97706"}
               />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={stStyles.rowTitle}>푸시 알림</Text>
-              <Text style={stStyles.rowSub}>새로운 피드백 알림 받기</Text>
-            </View>
-            <Toggle
-              value={notifications}
-              onChange={() => setNotifications((v) => !v)}
-            />
           </View>
+        </View>
+        <View style={pfStyles.card}>
+          <View style={pfStyles.totalPointBlock}>
+            <Text style={pfStyles.totalPointLabel}>Total Point</Text>
+            <Text style={pfStyles.totalPointValue}>{myLeague?.myScore ?? 0}</Text>
+          </View>
+        </View>
+
+        {/* 도전 과제 */}
+        <View style={pfStyles.sectionHeaderRow}>
+          <Text style={pfStyles.sectionTitle}>도전 과제</Text>
+          <Text style={pfStyles.sectionArrow}>›</Text>
+        </View>
+        <View style={pfStyles.achievementsGrid}>
+          {ACHIEVEMENTS_MOCK.map((item) => (
+            <View key={item.key} style={pfStyles.achievementItem}>
+              <View style={pfStyles.medalWrap}>
+                <View
+                  style={[
+                    pfStyles.medalRibbon,
+                    { backgroundColor: item.unlocked ? "#D97706" : "#CBD5E1" },
+                  ]}
+                />
+                <View
+                  style={[
+                    pfStyles.medalCircle,
+                    item.unlocked
+                      ? pfStyles.medalCircleUnlocked
+                      : pfStyles.medalCircleLocked,
+                  ]}
+                >
+                  {item.unlocked ? (
+                    item.iconSet === "mc" ? (
+                      <MaterialCommunityIcons
+                        name={item.icon as any}
+                        size={22}
+                        color="#FFFFFF"
+                      />
+                    ) : (
+                      <Ionicons name={item.icon as any} size={22} color="#FFFFFF" />
+                    )
+                  ) : (
+                    <Ionicons name="lock-closed" size={20} color="#94A3B8" />
+                  )}
+                </View>
+              </View>
+              <View style={pfStyles.levelBadge}>
+                <Text style={pfStyles.levelBadgeText}>Lv {item.level}</Text>
+              </View>
+              <Text style={pfStyles.achievementTitle} numberOfLines={2}>
+                {item.title}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {/* 계정 */}
+        <Text style={pfStyles.sectionLabel}>계정</Text>
+        <View style={pfStyles.card}>
+          <View style={[pfStyles.row, pfStyles.rowBorder]}>
+            <Text style={pfStyles.rowTitle}>회원 등급</Text>
+            <View style={pfStyles.premiumBadge}>
+              <Text style={pfStyles.premiumBadgeText}>프리미엄</Text>
+            </View>
+          </View>
+          <Pressable style={pfStyles.row} onPress={() => go("payment")}>
+            <Text style={[pfStyles.rowTitle, { flex: 1 }]}>결제 및 구독</Text>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
         </View>
 
         {/* 기타 */}
-        <Text style={stStyles.sectionLabel}>기타</Text>
-        <View style={stStyles.card}>
-          <Pressable
-            style={[stStyles.row, stStyles.rowBorder]}
-            onPress={() => go("notice")}
-          >
-            <View style={stStyles.iconWrapBlue}>
-              <Ionicons name="megaphone-outline" size={16} color="#2563EB" />
-            </View>
-            <Text style={[stStyles.rowTitle, { flex: 1 }]}>공지사항</Text>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
-          <Pressable
-            style={[stStyles.row, stStyles.rowBorder]}
-            onPress={() => go("trash")}
-          >
-            <View style={stStyles.iconWrapGray}>
+        <Text style={pfStyles.sectionLabel}>기타</Text>
+        <View style={pfStyles.card}>
+          <Pressable style={pfStyles.row} onPress={() => go("trash")}>
+            <View style={pfStyles.iconWrapGray}>
               <Ionicons name="trash-bin-outline" size={16} color="#6B7280" />
             </View>
-            <Text style={[stStyles.rowTitle, { flex: 1 }]}>휴지통</Text>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
-          <Pressable style={stStyles.row} onPress={() => go("faq")}>
-            <View style={stStyles.iconWrapPurple}>
-              <Ionicons name="help-circle-outline" size={16} color="#7C3AED" />
-            </View>
-            <Text style={[stStyles.rowTitle, { flex: 1 }]}>자주 묻는 질문</Text>
+            <Text style={[pfStyles.rowTitle, { flex: 1 }]}>휴지통</Text>
             <Text style={styles.chevron}>›</Text>
           </Pressable>
         </View>
 
         {/* 로그아웃 */}
-        <Pressable style={stStyles.logoutBtn} onPress={logout}>
-          <View style={stStyles.iconWrapRed}>
+        <Pressable style={pfStyles.logoutBtn} onPress={logout}>
+          <View style={pfStyles.iconWrapRed}>
             <Ionicons name="log-out-outline" size={16} color="#EF4444" />
           </View>
-          <Text style={stStyles.logoutText}>로그아웃</Text>
+          <Text style={pfStyles.logoutText}>로그아웃</Text>
         </Pressable>
 
         {/* 회원탈퇴 */}
         <Pressable
-          style={[stStyles.logoutBtn, { marginTop: 10 }]}
+          style={[pfStyles.logoutBtn, { marginTop: 10 }]}
           onPress={openWithdrawModal}
         >
-          <View style={stStyles.iconWrapGray}>
+          <View style={pfStyles.iconWrapGray}>
             <Ionicons name="person-remove-outline" size={16} color="#6B7280" />
           </View>
-          <Text style={stStyles.withdrawText}>회원탈퇴</Text>
+          <Text style={pfStyles.withdrawText}>회원탈퇴</Text>
         </Pressable>
 
         {/* 버전 */}
-        <Text style={stStyles.version}>SenTic v1.0.0</Text>
+        <Text style={pfStyles.version}>SenTic v1.0.0</Text>
       </ScrollView>
 
+      {/* 닉네임 / 좌우명 수정 모달 */}
+      <Modal
+        visible={editField !== null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setEditField(null)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={pfStyles.withdrawModalOverlay}
+        >
+          <View style={pfStyles.withdrawModalCard}>
+            <Text style={pfStyles.withdrawModalTitle}>
+              {editField === "nickname" ? "닉네임 수정" : "좌우명 수정"}
+            </Text>
+            <TextInput
+              value={editValue}
+              onChangeText={setEditValue}
+              placeholder={
+                editField === "nickname"
+                  ? "닉네임을 입력해주세요"
+                  : "나만의 영어 좌우명을 적어보세요"
+              }
+              style={[styles.input, { marginBottom: 16 }]}
+              autoFocus
+              maxLength={editField === "nickname" ? 12 : 40}
+            />
+            <View style={pfStyles.withdrawModalActions}>
+              <Pressable
+                style={pfStyles.withdrawModalCancelBtn}
+                onPress={() => setEditField(null)}
+              >
+                <Text style={pfStyles.withdrawModalCancelText}>취소</Text>
+              </Pressable>
+              <Pressable
+                style={pfStyles.editModalConfirmBtn}
+                onPress={saveEdit}
+              >
+                <Text style={pfStyles.withdrawModalConfirmText}>저장</Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* 회원탈퇴 모달 */}
       <Modal
         visible={withdrawModalVisible}
         animationType="fade"
@@ -6090,11 +6195,11 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={stStyles.withdrawModalOverlay}
+          style={pfStyles.withdrawModalOverlay}
         >
-          <View style={stStyles.withdrawModalCard}>
-            <Text style={stStyles.withdrawModalTitle}>회원탈퇴</Text>
-            <Text style={stStyles.withdrawModalDesc}>
+          <View style={pfStyles.withdrawModalCard}>
+            <Text style={pfStyles.withdrawModalTitle}>회원탈퇴</Text>
+            <Text style={pfStyles.withdrawModalDesc}>
               탈퇴 시 모든 데이터가 삭제되며 복구할 수 없습니다.{"\n"}
               계속하려면 비밀번호를 입력해주세요.
             </Text>
@@ -6106,23 +6211,23 @@ function SettingsScreen({ go }: { go: (screen: Screen) => void }) {
               style={styles.input}
               autoFocus
             />
-            <View style={stStyles.withdrawModalActions}>
+            <View style={pfStyles.withdrawModalActions}>
               <Pressable
-                style={stStyles.withdrawModalCancelBtn}
+                style={pfStyles.withdrawModalCancelBtn}
                 onPress={() => setWithdrawModalVisible(false)}
                 disabled={withdrawing}
               >
-                <Text style={stStyles.withdrawModalCancelText}>취소</Text>
+                <Text style={pfStyles.withdrawModalCancelText}>취소</Text>
               </Pressable>
               <Pressable
                 style={[
-                  stStyles.withdrawModalConfirmBtn,
+                  pfStyles.withdrawModalConfirmBtn,
                   withdrawing && { opacity: 0.6 },
                 ]}
                 onPress={handleWithdraw}
                 disabled={withdrawing}
               >
-                <Text style={stStyles.withdrawModalConfirmText}>
+                <Text style={pfStyles.withdrawModalConfirmText}>
                   {withdrawing ? "탈퇴 중..." : "탈퇴하기"}
                 </Text>
               </Pressable>
@@ -6792,7 +6897,8 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
     const fetchFaqs = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const FULL_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const FULL_URL =
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -6837,7 +6943,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
     >
       {/* 헤더 */}
       <View style={fqStyles.header}>
-        <Pressable style={fqStyles.backBtn} onPress={() => go("settings")}>
+        <Pressable style={fqStyles.backBtn} onPress={() => go("mode")}>
           <Text style={fqStyles.backIcon}>‹</Text>
         </Pressable>
         <Text style={fqStyles.headerTitle}>자주 묻는 질문</Text>
@@ -7127,7 +7233,7 @@ const pyStyles = StyleSheet.create({
   cancelNote: { color: "#9CA3AF", fontSize: 12, textAlign: "center" },
 });
 
-const stStyles = StyleSheet.create({
+const pfStyles = StyleSheet.create({
   header: {
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
@@ -7140,16 +7246,133 @@ const stStyles = StyleSheet.create({
   },
   headerTitle: { color: "#111827", fontSize: 16, fontWeight: "800" },
   content: { padding: 20, gap: 10, paddingBottom: 32 },
-  profilePhoto: {
-    width: 48,
-    height: 48,
+  heroCard: {
+    backgroundColor: "#EEF2FF",
     borderRadius: 24,
+    paddingTop: 20,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    alignItems: "center",
+  },
+  speechBubble: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
+    maxWidth: "100%",
+  },
+  speechBubbleText: { color: "#374151", fontSize: 13, textAlign: "center", paddingRight: 14 },
+  speechBubbleEditBtn: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: "#F3F4F6",
     alignItems: "center",
     justifyContent: "center",
-    overflow: "hidden",
   },
-  profilePhotoImage: { width: 48, height: 48, borderRadius: 24 },
+  speechBubbleTail: {
+    position: "absolute",
+    bottom: -7,
+    left: 28,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderTopWidth: 8,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderTopColor: "#FFFFFF",
+  },
+  avatar: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+    overflow: "hidden",
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+  },
+  avatarImage: { width: 88, height: 88, borderRadius: 44 },
+  nicknameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginBottom: 16,
+  },
+  nicknameEditSpacer: { width: 14 },
+  nicknameText: { color: "#111827", fontSize: 17, fontWeight: "800" },
+  statsGrid: { flexDirection: "row", width: "100%" },
+  statItem: { flex: 1, alignItems: "center", gap: 4 },
+  statDivider: {
+    position: "absolute",
+    left: 0,
+    top: 2,
+    bottom: 2,
+    width: 1,
+    backgroundColor: "#E0E7FF",
+  },
+  statLabel: { color: "#6B7280", fontSize: 11, marginTop: 2 },
+  statValue: { color: "#111827", fontSize: 14, fontWeight: "800" },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  sectionTitle: { color: "#111827", fontSize: 14, fontWeight: "800" },
+  sectionArrow: { color: "#C7CBD1", fontSize: 20 },
+  currentLeagueBadge: { flexDirection: "row", alignItems: "center", gap: 6 },
+  currentLeagueLabel: { color: "#9CA3AF", fontSize: 12 },
+  leagueShield: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#FEF3C7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  totalPointBlock: { alignItems: "center", paddingVertical: 16, gap: 4 },
+  totalPointLabel: { color: "#9CA3AF", fontSize: 12, fontWeight: "600" },
+  totalPointValue: { color: primary, fontSize: 28, fontWeight: "800" },
+  achievementsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  achievementItem: { width: "31%", alignItems: "center", gap: 6, paddingVertical: 10 },
+  medalWrap: { alignItems: "center", justifyContent: "flex-end", marginTop: 8 },
+  medalRibbon: {
+    width: 26,
+    height: 12,
+    borderTopLeftRadius: 5,
+    borderTopRightRadius: 5,
+    marginBottom: -8,
+  },
+  medalCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  medalCircleUnlocked: { backgroundColor: "#D97706" },
+  medalCircleLocked: { backgroundColor: "#E2E8F0" },
+  levelBadge: {
+    backgroundColor: "#111827",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginTop: 2,
+  },
+  levelBadgeText: { color: "#FFFFFF", fontSize: 10, fontWeight: "700" },
+  achievementTitle: { color: "#374151", fontSize: 11, textAlign: "center", fontWeight: "600" },
   sectionLabel: {
     color: "#9CA3AF",
     fontSize: 11,
@@ -7183,22 +7406,6 @@ const stStyles = StyleSheet.create({
     paddingVertical: 4,
   },
   premiumBadgeText: { color: "#4F46E5", fontSize: 11, fontWeight: "700" },
-  iconWrapBlue: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: "#EFF6FF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  iconWrapPurple: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: "#F5F3FF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   iconWrapRed: {
     width: 32,
     height: 32,
@@ -7215,28 +7422,6 @@ const stStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  toggle: {
-    width: 44,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: "center",
-    paddingHorizontal: 2,
-  },
-  toggleOn: { backgroundColor: primary },
-  toggleOff: { backgroundColor: "#E5E7EB" },
-  toggleThumb: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
-  toggleThumbOn: { alignSelf: "flex-end" },
-  toggleThumbOff: { alignSelf: "flex-start" },
   logoutBtn: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -7303,6 +7488,13 @@ const stStyles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
+  },
+  editModalConfirmBtn: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: primary,
   },
   version: {
     color: "#D1D5DB",
@@ -7590,6 +7782,28 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
   const [totalMinutes, setTotalMinutes] = useState(0);
   const [avgMinutes, setAvgMinutes] = useState(0);
   const [continuousDays, setContinuousDays] = useState(0); // 앞서 말한 연속 출석일용
+
+  // ⭐️ 이번 주 리그 카드용 실데이터 (GET /api/users/league)
+  const [myLeague, setMyLeague] = useState<MyLeague | null>(null);
+
+  useEffect(() => {
+    const loadLeague = async () => {
+      try {
+        const data = await fetchMyLeague();
+        setMyLeague(data);
+      } catch (error: any) {
+        console.error(
+          "🚨 리그 정보 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+    loadLeague();
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active") loadLeague();
+    });
+    return () => subscription.remove();
+  }, []);
 
   // ⭐️ 3. TypeScript가 minute를 확실히 숫자로 인식하므로 빨간 줄이 사라집니다!
   const maxMinutes =
@@ -8124,64 +8338,91 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
           </View>
         </View>
 
-        {/* 🚧 리그 랭킹 요약 (더미 데이터 — 백엔드 연동 전까지 임시 표시) */}
-        <View style={mpStyles.card}>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 14,
-            }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <View
-                style={[mpStyles.cardIconBadge, { backgroundColor: "#FFFBEB" }]}
-              >
-                <MaterialCommunityIcons name="shield" size={16} color="#D97706" />
+        {/* 이번 주 리그 요약 — GET /api/users/league 실데이터 */}
+        {myLeague && (
+          <View style={mpStyles.card}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 14,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View
+                  style={[mpStyles.cardIconBadge, { backgroundColor: "#FFFBEB" }]}
+                >
+                  <MaterialCommunityIcons name="shield" size={16} color="#D97706" />
+                </View>
+                <Text style={mpStyles.cardTitle}>이번 주 리그</Text>
               </View>
-              <Text style={mpStyles.cardTitle}>이번 주 리그</Text>
-            </View>
-            <Pressable onPress={() => go("league")} hitSlop={8}>
-              <Text style={{ fontSize: 12, color: primary, fontWeight: "700" }}>
-                자세히 보기 &gt;
-              </Text>
-            </Pressable>
-          </View>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <View>
-              <Text style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 2 }}>
-                골드 리그
-              </Text>
-              <Text style={{ fontSize: 22, fontWeight: "800", color: "#111827" }}>
-                5위{" "}
-                <Text style={{ fontSize: 13, color: "#9CA3AF", fontWeight: "600" }}>
-                  / 20명
+              <Pressable onPress={() => go("league")} hitSlop={8}>
+                <Text style={{ fontSize: 12, color: primary, fontWeight: "700" }}>
+                  자세히 보기 &gt;
                 </Text>
-              </Text>
+              </Pressable>
             </View>
-            <View style={{ alignItems: "flex-end" }}>
-              <Text style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 2 }}>
-                이번 주 포인트
-              </Text>
-              <Text style={{ fontSize: 16, fontWeight: "800", color: "#EA580C" }}>
-                68 PT
-              </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <View>
+                <Text style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 2 }}>
+                  {LEAGUE_TIER_META[myLeague.league].label} 리그
+                </Text>
+                <Text style={{ fontSize: 22, fontWeight: "800", color: "#111827" }}>
+                  {myLeague.myRank}위{" "}
+                  <Text style={{ fontSize: 13, color: "#9CA3AF", fontWeight: "600" }}>
+                    / {myLeague.totalMembers}명
+                  </Text>
+                </Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 2 }}>
+                  이번 주 포인트
+                </Text>
+                <Text style={{ fontSize: 16, fontWeight: "800", color: "#EA580C" }}>
+                  {myLeague.myScore} PT
+                </Text>
+              </View>
             </View>
+            {(() => {
+              const tierIndex = LEAGUE_TIER_ORDER.indexOf(myLeague.league);
+              const cutoff = getLeagueCutoffCount(myLeague.totalMembers);
+              const inPromotionZone =
+                tierIndex < LEAGUE_TIER_ORDER.length - 1 &&
+                myLeague.myRank <= cutoff;
+              const inDemotionZone =
+                tierIndex > 0 &&
+                myLeague.myRank > myLeague.totalMembers - cutoff;
+              if (inPromotionZone) {
+                return (
+                  <View style={mpStyles.leagueHintBox}>
+                    <Ionicons name="flame-outline" size={14} color="#D97706" />
+                    <Text style={mpStyles.leagueHintText}>
+                      승급권에 있어요! 이 순위를 지켜내면 승급이에요.
+                    </Text>
+                  </View>
+                );
+              }
+              if (inDemotionZone) {
+                return (
+                  <View style={mpStyles.leagueHintBox}>
+                    <Ionicons name="flame-outline" size={14} color="#D97706" />
+                    <Text style={mpStyles.leagueHintText}>
+                      강등권이에요. 조금만 더 힘내볼까요?
+                    </Text>
+                  </View>
+                );
+              }
+              return null;
+            })()}
           </View>
-          <View style={mpStyles.leagueHintBox}>
-            <Ionicons name="flame-outline" size={14} color="#D97706" />
-            <Text style={mpStyles.leagueHintText}>
-              승급 컷라인 턱걸이 중이에요! 순위를 지켜내면 승급이에요.
-            </Text>
-          </View>
-        </View>
+        )}
 
         <View style={{ height: 8 }} />
       </ScrollView>
@@ -8335,10 +8576,12 @@ function Header({
   title,
   go,
   backTo,
+  rightActions,
 }: {
   title: string;
   go: (screen: Screen) => void;
   backTo?: Screen;
+  rightActions?: ReactNode;
 }) {
   return (
     <View style={styles.header}>
@@ -8350,7 +8593,8 @@ function Header({
       <Text style={[styles.headerTitle, !backTo && styles.logoSmall]}>
         {title}
       </Text>
-      {!backTo && <View style={styles.headerSpacer} />}
+      {!backTo &&
+        (rightActions ?? <View style={styles.headerSpacer} />)}
     </View>
   );
 }
@@ -8383,9 +8627,9 @@ function BottomTabBar({
     },
     {
       key: "settings",
-      label: "설정",
-      icon: "settings-outline",
-      activeIcon: "settings",
+      label: "마이페이지",
+      icon: "person-outline",
+      activeIcon: "person",
     },
   ];
 
@@ -8457,11 +8701,25 @@ function ComingSoonScreen({
 }
 
 function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
-  const [state, setState] = useState<LeagueState | null>(null);
+  const [data, setData] = useState<MyLeague | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const load = useCallback(async () => {
-    const fresh = await ensureLeagueWeekFresh();
-    setState(fresh);
+    setLoading(true);
+    setLoadError(false);
+    try {
+      const fresh = await fetchMyLeague();
+      setData(fresh);
+    } catch (error: any) {
+      console.error(
+        "🚨 리그 정보 불러오기 실패:",
+        error.response?.data || error.message,
+      );
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -8472,12 +8730,14 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
     return () => subscription.remove();
   }, [load]);
 
-  const handleDismissResult = async () => {
-    const next = await dismissLeagueResult();
-    setState(next);
+  const handleShowRule = () => {
+    Alert.alert(
+      "리그 안내",
+      "매주 상위 10%는 다음 리그로 승급하고, 하위 10%는 이전 리그로 강등돼요. 포인트는 매주 월요일 새벽 3시에 초기화돼요.",
+    );
   };
 
-  if (!state) {
+  if (loading && !data) {
     return (
       <View
         style={[
@@ -8495,37 +8755,46 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
     );
   }
 
-  const daysElapsed = getLeagueDaysElapsed(state.weekStartISO);
-  const tierMeta = LEAGUE_TIER_META[state.tier];
-  const tierIndex = LEAGUE_TIER_ORDER.indexOf(state.tier);
+  if (loadError && !data) {
+    return (
+      <View style={[styles.screenSoft, { flex: 1, backgroundColor: "#fff" }]}>
+        <View
+          style={{
+            paddingTop: StatusBar.currentHeight
+              ? StatusBar.currentHeight + 10
+              : 24,
+          }}
+        >
+          <Header title="리그" go={go} />
+        </View>
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            padding: 24,
+          }}
+        >
+          <Text style={{ color: "#9CA3AF", fontSize: 13 }}>
+            리그 정보를 불러오지 못했어요.
+          </Text>
+          <Pressable style={lgStyles.retryButton} onPress={load}>
+            <Text style={lgStyles.retryButtonText}>다시 시도</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
-  const entries = [
-    { id: "me", name: "나", avatar: "🙂", score: state.myPoints, isMe: true },
-    ...LEAGUE_BOTS.map((bot) => ({
-      id: bot.id,
-      name: bot.name,
-      avatar: bot.avatar,
-      score: computeLeagueBotScore(
-        bot.id,
-        state.weekStartISO,
-        state.tier,
-        daysElapsed,
-      ),
-      isMe: false,
-    })),
-  ].sort((a, b) => b.score - a.score);
+  if (!data) return null;
 
-  const pending = state.pendingResult;
+  const tierMeta = LEAGUE_TIER_META[data.league];
+  const tierIndex = LEAGUE_TIER_ORDER.indexOf(data.league);
   const showPromotionLine = tierIndex < LEAGUE_TIER_ORDER.length - 1;
   const showDemotionLine = tierIndex > 0;
+  const cutoff = getLeagueCutoffCount(data.totalMembers);
   const MEDAL_COLORS = ["#F4B400", "#9CA3AF", "#C2703A"];
-
-  const handleShowRule = () => {
-    Alert.alert(
-      "리그 안내",
-      "매주 상위 5명은 다음 리그로 승급하고, 하위 10명은 이전 리그로 강등돼요.",
-    );
-  };
 
   return (
     <View style={[styles.screenSoft, { flex: 1, backgroundColor: "#fff" }]}>
@@ -8590,36 +8859,17 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
           </Pressable>
         </View>
         <Text style={lgStyles.countdown}>
-          {getLeagueCountdownText(state.weekStartISO)} 남음
+          {getLeagueResetCountdownText()} 남음
         </Text>
 
-        {pending && pending.outcome !== "stayed" && (
-          <View
-            style={[
-              lgStyles.resultBanner,
-              pending.outcome === "promoted"
-                ? lgStyles.resultBannerUp
-                : lgStyles.resultBannerDown,
-            ]}
-          >
-            <Text style={lgStyles.resultText}>
-              {pending.outcome === "promoted"
-                ? `지난주 ${LEAGUE_TIER_META[pending.fromTier].label} 리그 ${pending.rank}위로 ${LEAGUE_TIER_META[pending.toTier].label} 리그 승급했어요! 🎉`
-                : `지난주 ${LEAGUE_TIER_META[pending.fromTier].label} 리그 ${pending.rank}위로 ${LEAGUE_TIER_META[pending.toTier].label} 리그로 내려갔어요.`}
-            </Text>
-            <Pressable onPress={handleDismissResult} hitSlop={8}>
-              <Ionicons name="close" size={16} color="#6B7280" />
-            </Pressable>
-          </View>
-        )}
-
         <View style={{ marginTop: 8 }}>
-          {entries.map((entry, index) => {
-            const rank = index + 1;
-            const medalColor = rank <= 3 ? MEDAL_COLORS[rank - 1] : undefined;
+          {data.members.map((member) => {
+            const isMe = member.rank === data.myRank;
+            const medalColor =
+              member.rank <= 3 ? MEDAL_COLORS[member.rank - 1] : undefined;
             return (
-              <View key={entry.id}>
-                {rank === 6 && showPromotionLine && (
+              <View key={member.userId}>
+                {member.rank === cutoff + 1 && showPromotionLine && (
                   <View style={lgStyles.cutLine}>
                     <View
                       style={[lgStyles.cutLineRule, lgStyles.cutLineRuleUp]}
@@ -8637,27 +8887,36 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
                     />
                   </View>
                 )}
-                {rank === entries.length - 9 && showDemotionLine && (
-                  <View style={lgStyles.cutLine}>
-                    <View
-                      style={[lgStyles.cutLineRule, lgStyles.cutLineRuleDown]}
-                    />
-                    <View style={lgStyles.cutLineLabel}>
-                      <Ionicons name="caret-down" size={12} color="#DC2626" />
-                      <Text
-                        style={[lgStyles.cutLineText, { color: "#DC2626" }]}
-                      >
-                        강등 컷라인
-                      </Text>
+                {member.rank === data.totalMembers - cutoff + 1 &&
+                  showDemotionLine && (
+                    <View style={lgStyles.cutLine}>
+                      <View
+                        style={[
+                          lgStyles.cutLineRule,
+                          lgStyles.cutLineRuleDown,
+                        ]}
+                      />
+                      <View style={lgStyles.cutLineLabel}>
+                        <Ionicons
+                          name="caret-down"
+                          size={12}
+                          color="#DC2626"
+                        />
+                        <Text
+                          style={[lgStyles.cutLineText, { color: "#DC2626" }]}
+                        >
+                          강등 컷라인
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          lgStyles.cutLineRule,
+                          lgStyles.cutLineRuleDown,
+                        ]}
+                      />
                     </View>
-                    <View
-                      style={[lgStyles.cutLineRule, lgStyles.cutLineRuleDown]}
-                    />
-                  </View>
-                )}
-                <View
-                  style={[lgStyles.row, entry.isMe && lgStyles.rowMe]}
-                >
+                  )}
+                <View style={[lgStyles.row, isMe && lgStyles.rowMe]}>
                   <View style={lgStyles.rankSlot}>
                     {medalColor && (
                       <Ionicons name="trophy" size={16} color={medalColor} />
@@ -8668,21 +8927,21 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
                         medalColor && { color: medalColor },
                       ]}
                     >
-                      {rank}
+                      {member.rank}
                     </Text>
                   </View>
                   <View style={lgStyles.avatarCircle}>
-                    <Text style={lgStyles.avatar}>{entry.avatar}</Text>
+                    <Text style={lgStyles.avatar}>🙂</Text>
                   </View>
                   <Text style={lgStyles.name} numberOfLines={1}>
-                    {entry.name}
+                    {member.nickname}
                   </Text>
-                  {entry.isMe && (
+                  {isMe && (
                     <View style={lgStyles.meBadge}>
                       <Text style={lgStyles.meBadgeText}>나</Text>
                     </View>
                   )}
-                  <Text style={lgStyles.score}>{entry.score} PT</Text>
+                  <Text style={lgStyles.score}>{member.weeklyScore} PT</Text>
                 </View>
               </View>
             );
@@ -8746,19 +9005,13 @@ const lgStyles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 14,
   },
-  resultBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 12,
-    marginBottom: 12,
-    gap: 8,
+  retryButton: {
+    backgroundColor: primary,
+    borderRadius: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
   },
-  resultBannerUp: { backgroundColor: "#ECFDF5", borderColor: "#34D399" },
-  resultBannerDown: { backgroundColor: "#FEF2F2", borderColor: "#FCA5A5" },
-  resultText: { flex: 1, fontSize: 12, color: "#374151", fontWeight: "600" },
+  retryButtonText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   cutLine: {
     flexDirection: "row",
     alignItems: "center",
@@ -9308,8 +9561,19 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   loginContent: { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 28 },
   brandBlock: { alignItems: "center", paddingTop: 70, paddingBottom: 48 },
-  logo: { color: primary, fontSize: 50, fontWeight: "800", letterSpacing: 0 },
-  logoSmall: { color: primary, fontSize: 26, fontWeight: "800" },
+  logo: {
+    color: primary,
+    fontSize: 50,
+    fontWeight: "800",
+    letterSpacing: 0,
+    fontFamily: "LilyScriptOne_400Regular",
+  },
+  logoSmall: {
+    color: primary,
+    fontSize: 26,
+    fontWeight: "800",
+    fontFamily: "LilyScriptOne_400Regular",
+  },
   muted: { color: "#6B7280", fontSize: 14 },
   mutedSmall: { color: "#9CA3AF", fontSize: 12, marginTop: 4 },
   mutedBlock: {
@@ -9454,6 +9718,15 @@ const styles = StyleSheet.create({
   headerIcon: { fontSize: 32, color: "#4B5563", lineHeight: 34 },
   headerTitle: { flex: 1, color: "#111827", fontSize: 16, fontWeight: "800" },
   headerSpacer: { width: 36 },
+  headerRightActions: { flexDirection: "row", alignItems: "center", gap: 6 },
+  headerIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F9FAFB",
+  },
   content: { padding: 20, gap: 14 },
   roomListHeader: {
     minHeight: 70,
