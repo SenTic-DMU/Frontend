@@ -28,7 +28,8 @@ import {
   Linking,
   TouchableOpacity,
 } from "react-native";
-import Svg, { Path } from "react-native-svg";
+import Svg, { Path, Circle, Polyline } from "react-native-svg";
+import { Calendar, DateData } from "react-native-calendars";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   useFonts,
@@ -270,6 +271,166 @@ function getLeagueResetCountdownText(): string {
   return days > 0
     ? `${days}일 ${hours}시간 ${minutes}분`
     : `${hours}시간 ${minutes}분`;
+}
+
+// 📊 학습데이터 화면 확장 카드용 타입/API — fetchMyLeague와 동일한 패턴으로 작성.
+// 아래 엔드포인트들은 백엔드 미구현 상태(docs/superpowers/specs/2026-09-16-learning-data-page-expansion-design.md
+// 참고) — 연동 전까지는 요청이 실패해도 각 카드가 조용히 빈 상태로 남는다.
+type QuizStats = {
+  totalAttempted: number;
+  totalCorrect: number;
+  accuracy: number;
+};
+
+async function fetchQuizStats(): Promise<QuizStats> {
+  const accessToken = await AsyncStorage.getItem("accessToken");
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const res = await axios.get(`${API_URL}/api/users/quiz-stats`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  return res.data.data;
+}
+
+type FeedbackStats = {
+  totalUtterances: number;
+  cleanUtterances: number;
+  cleanRatio: number;
+};
+
+async function fetchFeedbackStats(): Promise<FeedbackStats> {
+  const accessToken = await AsyncStorage.getItem("accessToken");
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const res = await axios.get(`${API_URL}/api/users/feedback-stats`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  return res.data.data;
+}
+
+type WeakPointItem = { text: string; count: number };
+type WeakPoints = {
+  words: WeakPointItem[];
+  grammar: WeakPointItem[];
+  expressions: WeakPointItem[];
+};
+
+async function fetchWeakPoints(dateISO: string): Promise<WeakPoints> {
+  const accessToken = await AsyncStorage.getItem("accessToken");
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const res = await axios.get(`${API_URL}/api/users/weak-points`, {
+    params: { date: dateISO },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  return res.data.data;
+}
+
+type GrowthTrendPoint = {
+  weekStart: string;
+  quizAccuracy: number;
+  feedbackCleanRatio: number;
+};
+
+async function fetchGrowthTrend(): Promise<GrowthTrendPoint[]> {
+  const accessToken = await AsyncStorage.getItem("accessToken");
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const res = await axios.get(`${API_URL}/api/users/growth-trend`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  return res.data.data;
+}
+
+type MonthlyReview = {
+  month: string;
+  summary: string | null;
+  generatedAt: string | null;
+};
+
+async function fetchMonthlyReview(monthISO: string): Promise<MonthlyReview> {
+  const accessToken = await AsyncStorage.getItem("accessToken");
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const res = await axios.get(`${API_URL}/api/users/monthly-review`, {
+    params: { month: monthISO },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  return res.data.data;
+}
+
+type FrequentExpression = { expression: string; count: number };
+
+async function fetchFrequentExpressions(
+  dateISO: string,
+): Promise<FrequentExpression[]> {
+  const accessToken = await AsyncStorage.getItem("accessToken");
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const res = await axios.get(`${API_URL}/api/users/frequent-expressions`, {
+    params: { date: dateISO },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  return res.data.data;
+}
+
+type ModeRatio = { voiceMinutes: number; chatMinutes: number };
+
+async function fetchModeRatio(dateISO: string): Promise<ModeRatio> {
+  const accessToken = await AsyncStorage.getItem("accessToken");
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const res = await axios.get(`${API_URL}/api/users/mode-ratio`, {
+    params: { date: dateISO },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  return res.data.data;
+}
+
+// 🌱 깃허브 잔디 스타일 학습 활동 히트맵 (최근 6개월, 캘린더 선택과 무관하게 고정)
+type StudyHeatmapDay = { date: string; minutes: number };
+
+async function fetchStudyHeatmap(): Promise<StudyHeatmapDay[]> {
+  const accessToken = await AsyncStorage.getItem("accessToken");
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const res = await axios.get(`${API_URL}/api/users/study-heatmap`, {
+    params: { months: 6 },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  return res.data.data;
+}
+
+// YYYY-MM-DD / YYYY-MM — toISOString()은 UTC라 KST 기준 날짜가 하루 밀릴 수 있어 직접 포맷한다.
+function formatDateISO(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatMonthISO(d: Date): string {
+  return formatDateISO(d).slice(0, 7);
+}
+
+function formatDateLabelKo(d: Date): string {
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
 }
 
 const TEST_VOICE_MESSAGES: Message[] = [
@@ -7716,6 +7877,225 @@ const ntStyles = StyleSheet.create({
   detailBody: { color: "#374151", fontSize: 14, lineHeight: 22 },
 });
 
+// 📈 실력 성장 그래프 — 퀴즈 정답률/피드백 비율 두 선을 그리는 듀얼 라인 차트 (react-native-svg)
+function GrowthTrendChart({ data }: { data: GrowthTrendPoint[] }) {
+  const width = 280;
+  const height = 120;
+  const padding = 8;
+
+  const toPoints = (values: number[]) =>
+    values
+      .map((value, index) => {
+        const x =
+          data.length > 1
+            ? padding + (index / (data.length - 1)) * (width - padding * 2)
+            : width / 2;
+        const y = padding + (1 - value / 100) * (height - padding * 2);
+        return `${x},${y}`;
+      })
+      .join(" ");
+
+  return (
+    <View>
+      <Svg width={width} height={height}>
+        <Polyline
+          points={toPoints(data.map((d) => d.quizAccuracy))}
+          fill="none"
+          stroke={primary}
+          strokeWidth={2}
+        />
+        <Polyline
+          points={toPoints(data.map((d) => d.feedbackCleanRatio))}
+          fill="none"
+          stroke="#059669"
+          strokeWidth={2}
+        />
+      </Svg>
+      <View style={{ flexDirection: "row", gap: 16, marginTop: 8 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View
+            style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: primary }}
+          />
+          <Text style={{ fontSize: 11, color: "#6B7280" }}>퀴즈 정답률</Text>
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View
+            style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#059669" }}
+          />
+          <Text style={{ fontSize: 11, color: "#6B7280" }}>피드백 비율</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// 🎧 음성/채팅 학습 비율 — 2분할 도넛 차트 (react-native-svg strokeDasharray 트릭)
+function ModeRatioDonut({ ratio }: { ratio: ModeRatio }) {
+  const size = 120;
+  const strokeWidth = 16;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const total = ratio.voiceMinutes + ratio.chatMinutes;
+  const voiceLength = total > 0 ? (ratio.voiceMinutes / total) * circumference : 0;
+
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 20 }}>
+      <Svg width={size} height={size}>
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="#0EA5E9"
+          strokeWidth={strokeWidth}
+          strokeDasharray={`${voiceLength} ${circumference - voiceLength}`}
+          rotation={-90}
+          originX={size / 2}
+          originY={size / 2}
+          fill="none"
+        />
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="#C7D2FE"
+          strokeWidth={strokeWidth}
+          strokeDasharray={`${circumference - voiceLength} ${voiceLength}`}
+          strokeDashoffset={-voiceLength}
+          rotation={-90}
+          originX={size / 2}
+          originY={size / 2}
+          fill="none"
+        />
+      </Svg>
+      <View style={{ gap: 8 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View
+            style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#0EA5E9" }}
+          />
+          <Text style={{ fontSize: 12, color: "#374151" }}>
+            음성 {ratio.voiceMinutes}분
+          </Text>
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View
+            style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#C7D2FE" }}
+          />
+          <Text style={{ fontSize: 12, color: "#374151" }}>
+            채팅 {ratio.chatMinutes}분
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const HEATMAP_CELL = 11;
+const HEATMAP_GAP = 3;
+const HEATMAP_ROW = HEATMAP_CELL + HEATMAP_GAP;
+const WEEKDAY_LABELS_KO = ["일", "월", "화", "수", "목", "금", "토"];
+
+// 🌱 깃허브 잔디 스타일 학습 활동 히트맵 — 최근 26주(6개월), 오늘을 마지막 칸으로 끝나는 7일씩 묶음
+function StudyHeatmap({ data }: { data: StudyHeatmapDay[] }) {
+  const WEEKS = 26;
+  const minuteByDate = new Map(data.map((d) => [d.date, d.minutes]));
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days: StudyHeatmapDay[] = [];
+  for (let i = WEEKS * 7 - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const iso = formatDateISO(d);
+    days.push({ date: iso, minutes: minuteByDate.get(iso) ?? 0 });
+  }
+  const weeks: StudyHeatmapDay[][] = [];
+  for (let i = 0; i < days.length; i += 7) {
+    weeks.push(days.slice(i, i + 7));
+  }
+
+  // 그 주에 1일이 껴 있으면(=새 달이 시작하면) 그 칸 위에 "N월" 라벨을 붙인다.
+  const monthLabelFor = (week: StudyHeatmapDay[]) => {
+    const firstOfMonth = week.find((day) => day.date.endsWith("-01"));
+    if (!firstOfMonth) return "";
+    return `${Number(firstOfMonth.date.slice(5, 7))}월`;
+  };
+
+  const colorFor = (minutes: number) => {
+    if (minutes <= 0) return "#F3F4F6";
+    if (minutes < 15) return primary + "33";
+    if (minutes < 30) return primary + "66";
+    if (minutes < 60) return primary + "99";
+    return primary;
+  };
+
+  return (
+    <View>
+      <View style={{ flexDirection: "row" }}>
+        {/* 요일 라벨 — 가로 스크롤과 무관하게 왼쪽에 고정 */}
+        <View style={{ marginRight: 4 }}>
+          <View style={{ height: 16 }} />
+          {WEEKDAY_LABELS_KO.map((label, i) => (
+            <View
+              key={label}
+              style={{ height: HEATMAP_ROW, justifyContent: "center" }}
+            >
+              <Text style={mpStyles.heatmapWeekdayLabel}>
+                {i % 2 === 1 ? label : ""}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View>
+            {/* 월 라벨 */}
+            <View style={{ flexDirection: "row", gap: HEATMAP_GAP }}>
+              {weeks.map((week, wi) => (
+                <View key={wi} style={{ width: HEATMAP_CELL }}>
+                  <Text
+                    style={mpStyles.heatmapMonthLabel}
+                    numberOfLines={1}
+                  >
+                    {monthLabelFor(week)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            {/* 날짜 칸 */}
+            <View style={{ flexDirection: "row", gap: HEATMAP_GAP }}>
+              {weeks.map((week, wi) => (
+                <View key={wi} style={{ gap: HEATMAP_GAP }}>
+                  {week.map((day) => (
+                    <View
+                      key={day.date}
+                      style={[
+                        mpStyles.heatmapCell,
+                        { backgroundColor: colorFor(day.minutes) },
+                      ]}
+                    />
+                  ))}
+                </View>
+              ))}
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8 }}>
+        <Text style={{ fontSize: 11, color: "#9CA3AF" }}>적음</Text>
+        {["#F3F4F6", primary + "33", primary + "66", primary + "99", primary].map(
+          (color, i) => (
+            <View
+              key={i}
+              style={[mpStyles.heatmapCell, { backgroundColor: color }]}
+            />
+          ),
+        )}
+        <Text style={{ fontSize: 11, color: "#9CA3AF" }}>많음</Text>
+      </View>
+    </View>
+  );
+}
+
 function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
   type Level = "초급" | "중급" | "고급";
 
@@ -7786,6 +8166,130 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
   // ⭐️ 이번 주 리그 카드용 실데이터 (GET /api/users/league)
   const [myLeague, setMyLeague] = useState<MyLeague | null>(null);
 
+  // 📅 캘린더 — 선택한 날짜가 속한 주 기준으로 대시보드를 다시 계산한다.
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [visibleMonth, setVisibleMonth] = useState(new Date());
+  const selectedDateISO = formatDateISO(selectedDate);
+  const visibleMonthISO = formatMonthISO(visibleMonth);
+  const isPastMonth = visibleMonthISO < formatMonthISO(new Date());
+
+  // 📊 전체 누적 고정 카드 (퀴즈 정답률 / 피드백 비율) — 캘린더 선택과 무관
+  const [quizStats, setQuizStats] = useState<QuizStats | null>(null);
+  const [feedbackStats, setFeedbackStats] = useState<FeedbackStats | null>(null);
+
+  // 📈 최근 8주 고정 성장 그래프
+  const [growthTrend, setGrowthTrend] = useState<GrowthTrendPoint[]>([]);
+
+  // 🌱 최근 6개월 고정 학습 활동 히트맵
+  const [studyHeatmap, setStudyHeatmap] = useState<StudyHeatmapDay[]>([]);
+
+  // 🗓️ 선택한 날짜가 속한 주 기준으로 바뀌는 카드들
+  const [weakPoints, setWeakPoints] = useState<WeakPoints | null>(null);
+  const [frequentExpressions, setFrequentExpressions] = useState<
+    FrequentExpression[]
+  >([]);
+  const [modeRatio, setModeRatio] = useState<ModeRatio | null>(null);
+
+  // 🗒️ 캘린더에 펼쳐진 달의 AI 총평 (지난 달까지만)
+  const [monthlyReview, setMonthlyReview] = useState<MonthlyReview | null>(
+    null,
+  );
+
+  useEffect(() => {
+    const loadQuizAndFeedbackStats = async () => {
+      try {
+        const [quiz, feedback] = await Promise.all([
+          fetchQuizStats(),
+          fetchFeedbackStats(),
+        ]);
+        setQuizStats(quiz);
+        setFeedbackStats(feedback);
+      } catch (error: any) {
+        console.error(
+          "🚨 퀴즈/피드백 누적 통계 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+    loadQuizAndFeedbackStats();
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active") loadQuizAndFeedbackStats();
+    });
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    const loadGrowthTrend = async () => {
+      try {
+        const data = await fetchGrowthTrend();
+        setGrowthTrend(data);
+      } catch (error: any) {
+        console.error(
+          "🚨 성장 그래프 데이터 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+    loadGrowthTrend();
+  }, []);
+
+  useEffect(() => {
+    const loadStudyHeatmap = async () => {
+      try {
+        const data = await fetchStudyHeatmap();
+        setStudyHeatmap(data);
+      } catch (error: any) {
+        console.error(
+          "🚨 학습 활동 히트맵 데이터 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+    loadStudyHeatmap();
+  }, []);
+
+  useEffect(() => {
+    const loadWeekScopedCards = async () => {
+      try {
+        const [weak, expressions, mode] = await Promise.all([
+          fetchWeakPoints(selectedDateISO),
+          fetchFrequentExpressions(selectedDateISO),
+          fetchModeRatio(selectedDateISO),
+        ]);
+        setWeakPoints(weak);
+        setFrequentExpressions(expressions);
+        setModeRatio(mode);
+      } catch (error: any) {
+        console.error(
+          "🚨 약점/표현/음성채팅비율 데이터 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+      }
+    };
+    loadWeekScopedCards();
+  }, [selectedDateISO]);
+
+  useEffect(() => {
+    if (!isPastMonth) {
+      setMonthlyReview(null);
+      return;
+    }
+    const loadMonthlyReview = async () => {
+      try {
+        const data = await fetchMonthlyReview(visibleMonthISO);
+        setMonthlyReview(data);
+      } catch (error: any) {
+        console.error(
+          "🚨 AI 월말 총평 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+        setMonthlyReview(null);
+      }
+    };
+    loadMonthlyReview();
+  }, [visibleMonthISO, isPastMonth]);
+
   useEffect(() => {
     const loadLeague = async () => {
       try {
@@ -7824,6 +8328,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
 
         const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const res = await axios.get(`${API_URL}/api/users/study-stats`, {
+          params: { date: selectedDateISO },
           headers: {
             Authorization: `Bearer ${accessToken}`,
             // ⭐️ ngrok 경고창을 무시하는 필살기 헤더 3대장!
@@ -7870,7 +8375,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
     return () => {
       subscription.remove();
     };
-  }, []);
+  }, [selectedDateISO]);
 
   // ⭐️ 2. 그래프를 0.15초 뒤에 슉! 올라오게 만드는 useEffect (이게 있어야 그래프가 보입니다!)
   useEffect(() => {
@@ -7960,6 +8465,81 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         style={{ backgroundColor: "#F9FAFB" }}
         contentContainerStyle={mpStyles.content}
       >
+        {/* 📅 오늘 날짜 → 캘린더 펼치기 */}
+        <Pressable
+          onPress={() => setCalendarOpen((v) => !v)}
+          style={mpStyles.dateRow}
+        >
+          <Ionicons name="calendar-outline" size={16} color={primary} />
+          <Text style={mpStyles.dateRowText}>
+            {formatDateLabelKo(selectedDate)}
+          </Text>
+          <Ionicons
+            name={calendarOpen ? "chevron-up" : "chevron-down"}
+            size={16}
+            color="#9CA3AF"
+          />
+        </Pressable>
+
+        {calendarOpen && (
+          <View style={mpStyles.card}>
+            <Calendar
+              current={`${visibleMonthISO}-01`}
+              onDayPress={(day: DateData) => {
+                setSelectedDate(new Date(day.year, day.month - 1, day.day));
+                setCalendarOpen(false);
+              }}
+              onMonthChange={(month: DateData) =>
+                setVisibleMonth(new Date(month.year, month.month - 1, 1))
+              }
+              markedDates={{
+                [selectedDateISO]: {
+                  selected: true,
+                  selectedColor: primary,
+                },
+              }}
+              theme={{
+                todayTextColor: primary,
+                selectedDayBackgroundColor: primary,
+                arrowColor: primary,
+              }}
+            />
+            <View style={mpStyles.monthlyReviewBox}>
+              <Text style={mpStyles.monthlyReviewTitle}>
+                AI 월간 총평 · {visibleMonthISO}
+              </Text>
+              {!isPastMonth ? (
+                <Text style={mpStyles.monthlyReviewEmpty}>
+                  이번 달이 끝나면 총평이 생성돼요.
+                </Text>
+              ) : monthlyReview?.summary ? (
+                <Text style={mpStyles.monthlyReviewText}>
+                  {monthlyReview.summary}
+                </Text>
+              ) : (
+                <Text style={mpStyles.monthlyReviewEmpty}>
+                  아직 이 달의 총평이 생성되지 않았어요.
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* 🌱 학습 활동 히트맵 (최근 6개월) — GET /api/users/study-heatmap, 기록 없으면 빈 잔디로 채워둠 */}
+        <View style={mpStyles.card}>
+          <View
+            style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}
+          >
+            <View
+              style={[mpStyles.cardIconBadge, { backgroundColor: "#EEF2FF" }]}
+            >
+              <Ionicons name="grid-outline" size={16} color={primary} />
+            </View>
+            <Text style={mpStyles.cardTitle}>최근 6개월 학습 기록</Text>
+          </View>
+          <StudyHeatmap data={studyHeatmap} />
+        </View>
+
         {/* ⭐️ 2. 학습 통계 부분 수정 */}
         <View style={{ flexDirection: "row", gap: 10 }}>
           {/* 이번 주 학습 시간 */}
@@ -7985,18 +8565,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
           {/* ⭐️ 연속 학습일 */}
           <View style={mpStyles.statBox}>
             <Text style={mpStyles.statLabel}>연속 학습</Text>
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 6,
-                marginTop: 4,
-              }}
-            >
-              <Text style={[mpStyles.statValue, { marginTop: 0 }]}>
-                {continuousDays}일
-              </Text>
-            </View>
+            <Text style={mpStyles.statValue}>{continuousDays}일</Text>
           </View>
         </View>
 
@@ -8295,7 +8864,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
           )}
         </View>
 
-        {/* 🚧 퀴즈 정답률 (더미 데이터 — 백엔드 연동 전까지 임시 표시) */}
+        {/* 퀴즈 정답률 (전체 누적) — GET /api/users/quiz-stats */}
         <View style={mpStyles.card}>
           <View
             style={{
@@ -8311,7 +8880,11 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
               </View>
               <Text style={mpStyles.cardTitle}>퀴즈 정답률</Text>
             </View>
-            <Text style={mpStyles.cardSub}>12 / 15문제</Text>
+            <Text style={mpStyles.cardSub}>
+              {quizStats
+                ? `${quizStats.totalCorrect} / ${quizStats.totalAttempted}문제`
+                : "-"}
+            </Text>
           </View>
           <View
             style={{
@@ -8322,20 +8895,191 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
             }}
           >
             <Text style={{ fontSize: 28, fontWeight: "800", color: "#111827" }}>
-              78%
+              {quizStats ? `${Math.round(quizStats.accuracy)}%` : "-"}
             </Text>
             <Text style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 4 }}>
-              최근 퀴즈 기준
+              전체 누적
             </Text>
           </View>
           <View style={mpStyles.progressTrack}>
             <View
               style={[
                 mpStyles.progressFill,
-                { width: "78%", backgroundColor: primary },
+                {
+                  width: `${quizStats?.accuracy ?? 0}%`,
+                  backgroundColor: primary,
+                },
               ]}
             />
           </View>
+        </View>
+
+        {/* 피드백 비율 (전체 누적) — GET /api/users/feedback-stats */}
+        <View style={mpStyles.card}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 14,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View
+                style={[mpStyles.cardIconBadge, { backgroundColor: "#ECFDF5" }]}
+              >
+                <Ionicons
+                  name="checkmark-done-outline"
+                  size={16}
+                  color="#059669"
+                />
+              </View>
+              <Text style={mpStyles.cardTitle}>피드백 비율</Text>
+            </View>
+            <Text style={mpStyles.cardSub}>
+              {feedbackStats
+                ? `${feedbackStats.cleanUtterances} / ${feedbackStats.totalUtterances}발화`
+                : "-"}
+            </Text>
+          </View>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "flex-end",
+              gap: 8,
+              marginBottom: 10,
+            }}
+          >
+            <Text style={{ fontSize: 28, fontWeight: "800", color: "#111827" }}>
+              {feedbackStats ? `${Math.round(feedbackStats.cleanRatio)}%` : "-"}
+            </Text>
+            <Text style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 4 }}>
+              오류 없이 넘어간 발화 · 전체 누적
+            </Text>
+          </View>
+          <View style={mpStyles.progressTrack}>
+            <View
+              style={[
+                mpStyles.progressFill,
+                {
+                  width: `${feedbackStats?.cleanRatio ?? 0}%`,
+                  backgroundColor: "#059669",
+                },
+              ]}
+            />
+          </View>
+        </View>
+
+        {/* 나의 약점 TOP3 (선택한 날짜가 속한 주 기준) — GET /api/users/weak-points */}
+        <View style={mpStyles.card}>
+          <View
+            style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}
+          >
+            <View
+              style={[mpStyles.cardIconBadge, { backgroundColor: "#FEF2F2" }]}
+            >
+              <Ionicons name="alert-circle-outline" size={16} color="#DC2626" />
+            </View>
+            <Text style={mpStyles.cardTitle}>나의 약점 TOP3</Text>
+          </View>
+          {(
+            [
+              ["단어", weakPoints?.words],
+              ["문법", weakPoints?.grammar],
+              ["표현", weakPoints?.expressions],
+            ] as [string, WeakPointItem[] | undefined][]
+          ).map(([label, items]) => (
+            <View key={label} style={{ marginBottom: 12 }}>
+              <Text style={mpStyles.weakPointGroupLabel}>{label}</Text>
+              {items && items.length > 0 ? (
+                items.map((item, index) => (
+                  <View key={item.text} style={mpStyles.weakPointRow}>
+                    <Text style={mpStyles.weakPointRank}>{index + 1}</Text>
+                    <Text style={mpStyles.weakPointText}>{item.text}</Text>
+                    <Text style={mpStyles.weakPointCount}>{item.count}회</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={mpStyles.monthlyReviewEmpty}>
+                  이 주에는 기록이 없어요.
+                </Text>
+              )}
+            </View>
+          ))}
+        </View>
+
+        {/* 실력 성장 그래프 (최근 8주) — GET /api/users/growth-trend */}
+        <View style={mpStyles.card}>
+          <View
+            style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}
+          >
+            <View
+              style={[mpStyles.cardIconBadge, { backgroundColor: "#EEF2FF" }]}
+            >
+              <Ionicons name="trending-up-outline" size={16} color={primary} />
+            </View>
+            <Text style={mpStyles.cardTitle}>실력 성장 그래프</Text>
+          </View>
+          {growthTrend.length > 0 ? (
+            <GrowthTrendChart data={growthTrend} />
+          ) : (
+            <Text style={mpStyles.monthlyReviewEmpty}>
+              아직 표시할 데이터가 없어요.
+            </Text>
+          )}
+        </View>
+
+        {/* 자주 쓰는 표현 분석 (선택한 날짜가 속한 주 기준) — GET /api/users/frequent-expressions */}
+        <View style={mpStyles.card}>
+          <View
+            style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}
+          >
+            <View
+              style={[mpStyles.cardIconBadge, { backgroundColor: "#FFFBEB" }]}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={16} color="#D97706" />
+            </View>
+            <Text style={mpStyles.cardTitle}>자주 쓰는 표현</Text>
+          </View>
+          {frequentExpressions.length > 0 ? (
+            <View style={mpStyles.expressionChipRow}>
+              {frequentExpressions.map((item) => (
+                <View key={item.expression} style={mpStyles.expressionChip}>
+                  <Text style={mpStyles.expressionChipText}>
+                    {item.expression}
+                  </Text>
+                  <Text style={mpStyles.expressionChipCount}>
+                    {item.count}회
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={mpStyles.monthlyReviewEmpty}>
+              이 주에는 기록이 없어요.
+            </Text>
+          )}
+        </View>
+
+        {/* 음성/채팅 학습 비율 (선택한 날짜가 속한 주 기준) — GET /api/users/mode-ratio */}
+        <View style={mpStyles.card}>
+          <View
+            style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}
+          >
+            <View
+              style={[mpStyles.cardIconBadge, { backgroundColor: "#ECFEFF" }]}
+            >
+              <Ionicons name="mic-outline" size={16} color="#0EA5E9" />
+            </View>
+            <Text style={mpStyles.cardTitle}>음성/채팅 학습 비율</Text>
+          </View>
+          {modeRatio && modeRatio.voiceMinutes + modeRatio.chatMinutes > 0 ? (
+            <ModeRatioDonut ratio={modeRatio} />
+          ) : (
+            <Text style={mpStyles.monthlyReviewEmpty}>
+              이 주에는 기록이 없어요.
+            </Text>
+          )}
         </View>
 
         {/* 이번 주 리그 요약 — GET /api/users/league 실데이터 */}
@@ -8459,6 +9203,8 @@ const mpStyles = StyleSheet.create({
     borderColor: "#F3F4F6",
     padding: 12,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 64,
   },
   statLabel: { color: "#9CA3AF", fontSize: 11, marginBottom: 4 },
   statValue: { color: "#111827", fontSize: 14, fontWeight: "800" },
@@ -8528,6 +9274,58 @@ const mpStyles = StyleSheet.create({
     padding: 10,
   },
   leagueHintText: { fontSize: 12, color: "#92400E", fontWeight: "600", flex: 1 },
+  dateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    paddingVertical: 4,
+  },
+  dateRowText: { fontSize: 14, fontWeight: "700", color: "#111827" },
+  monthlyReviewBox: { marginTop: 16 },
+  monthlyReviewTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#6B7280",
+    marginBottom: 6,
+  },
+  monthlyReviewText: { fontSize: 13, color: "#374151", lineHeight: 20 },
+  monthlyReviewEmpty: { fontSize: 12, color: "#9CA3AF" },
+  weakPointGroupLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#9CA3AF",
+    marginBottom: 6,
+  },
+  weakPointRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 4,
+  },
+  weakPointRank: {
+    width: 16,
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#DC2626",
+  },
+  weakPointText: { flex: 1, fontSize: 13, color: "#111827" },
+  weakPointCount: { fontSize: 12, color: "#9CA3AF" },
+  expressionChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  expressionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FFFBEB",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  expressionChipText: { fontSize: 12, fontWeight: "700", color: "#92400E" },
+  expressionChipCount: { fontSize: 11, color: "#B45309" },
+  heatmapCell: { width: 11, height: 11, borderRadius: 2 },
+  heatmapWeekdayLabel: { fontSize: 9, color: "#9CA3AF" },
+  heatmapMonthLabel: { fontSize: 9, color: "#9CA3AF", marginBottom: 2 },
 });
 
 function InfoScreen({
