@@ -6497,7 +6497,13 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
       name: "Free",
       price: "0",
       period: "",
-      features: ["하루 5회 대화", "기본 피드백"],
+      features: [
+        "최대 3개까지 생성 가능",
+        "하루 최대 30회 (내 발화 기준)",
+        "빈칸 채우기 퀴즈만 이용 가능 (기타 퀴즈 잠김)",
+        "기본 리포트 제공 (월별 종합 AI 평가 제외)",
+        "광고 시청 포함",
+      ],
     },
     monthly: {
       name: "Monthly",
@@ -6505,11 +6511,10 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
       period: "/월",
       badge: "인기",
       features: [
+        "AI 대화 방 무제한",
         "무제한 대화",
-        "고급 피드백",
-        "실시간 음성 피드백",
-        "표현 무제한 저장",
-        "우선 고객 지원",
+        "모든 퀴즈 전면 해제",
+        "월별 심층 AI 학습 레포트",
         "광고 없음",
       ],
     },
@@ -6519,11 +6524,10 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
       period: "/년",
       badge: "20% 할인",
       features: [
+        "AI 대화 방 무제한",
         "무제한 대화",
-        "고급 피드백",
-        "실시간 음성 피드백",
-        "표현 무제한 저장",
-        "우선 고객 지원",
+        "모든 퀴즈 전면 해제",
+        "월별 심층 AI 학습 레포트",
         "광고 없음",
         "2개월 무료",
       ],
@@ -6953,63 +6957,57 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
             originWhitelist={["*"]}
             source={{
               html: `
-                <!DOCTYPE html>
-                <html lang="ko">
-                  <head>
-                    <meta charset="utf-8" />
-                    <script src="https://js.tosspayments.com/v2/standard"></script>
-                  </head>
-                  <body>
-                    <div id="payment-method"></div>
-                    <div id="agreement"></div>
-                    <button id="payment-button" style="width:100%; padding:15px; background:#3182F6; color:white; border:none; border-radius:8px; font-size:16px; font-weight:bold; margin-top:20px;">결제하기</button>
+        <!DOCTYPE html>
+        <html lang="ko">
+          <head>
+            <meta charset="utf-8" />
+            <!-- 토스페이먼츠 SDK v2 표준 결제창 스크립트 -->
+            <script src="https://js.tosspayments.com/v2/standard"></script>
+          </head>
+          <body>
+            <button id="payment-button" style="width:100%; padding:15px; background:#3182F6; color:white; border:none; border-radius:8px; font-size:16px; font-weight:bold; margin-top:20px;">결제하기</button>
 
-                    <script>
-                      main();
-                      async function main() {
-                        const button = document.getElementById("payment-button");
-                        
-                        const clientKey = "test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm";
-                        const tossPayments = TossPayments(clientKey);
-                        const customerKey = "A5IHwwhUdnF_7bnNQMYiM";
-                        
-                        const widgets = tossPayments.widgets({
-                          customerKey,
-                        });
+            <script>
+              main();
+              async function main() {
+                const button = document.getElementById("payment-button");
+                
+                // ⭐️ 1. 위젯용 키(test_gck_docs) 대신 일반 결제용 clientKey(test_ck로 시작) 입력
+                const clientKey = "발급받은_test_ck_..._키를_입력하세요";
+                const tossPayments = TossPayments(clientKey);
+                
+                // 일반 결제(Payment) 인스턴스 생성
+                const payment = tossPayments.payment({
+                  customerKey: "A5IHwwhUdnF_7bnNQMYiM",
+                });
 
-                        // ⭐️ currentOrder가 무조건 있기 때문에 안전하게 amount를 읽어옵니다.
-                        await widgets.setAmount({
-                          currency: "KRW",
-                          value: ${currentOrder.amount},
-                        });
-
-                        await Promise.all([
-                          widgets.renderPaymentMethods({
-                            selector: "#payment-method",
-                            variantKey: "DEFAULT",
-                          }),
-                          widgets.renderAgreement({ selector: "#agreement", variantKey: "AGREEMENT" }),
-                        ]);
-
-                        button.addEventListener("click", async function () {
-                          try {
-                            await widgets.requestPayment({
-                              orderId: '${currentOrder.orderId}',
-                              orderName: '${currentOrder.planName}',
-                              successUrl: 'sentic://payment/success',
-                              failUrl: 'sentic://payment/fail',
-                              customerEmail: 'customer123@gmail.com',
-                              customerName: 'User',
-                            });
-                          } catch (error) {
-                            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'FAIL', message: error.message }));
-                          }
-                        });
-                      }
-                    </script>
-                  </body>
-                </html>
-              `,
+                button.addEventListener("click", async function () {
+                  try {
+                    // ⭐️ 2. widgets.requestPayment 대신 payment.requestPayment 사용
+                    // ⭐️ 3. successUrl과 failUrl은 HTTPS ngrok 주소로 지정하고, appScheme을 분리합니다.
+                    await payment.requestPayment({
+                      method: "CARD", // 카드 및 간편결제
+                      amount: {
+                        currency: "KRW",
+                        value: ${currentOrder.amount},
+                      },
+                      orderId: '${currentOrder.orderId}',
+                      orderName: '${currentOrder.planName}',
+                      successUrl: 'https://rundown-irrigate-majesty.ngrok-free.dev/payment/success',
+                      failUrl: 'https://rundown-irrigate-majesty.ngrok-free.dev/payment/fail',
+                      customerEmail: 'customer123@gmail.com',
+                      customerName: 'User',
+                      appScheme: 'sentic://', // ⭐️ 카드사 앱에서 돌아올 때 사용할 앱 스킴
+                    });
+                  } catch (error) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'FAIL', message: error.message }));
+                  }
+                });
+              }
+            </script>
+          </body>
+        </html>
+      `,
             }}
             onMessage={(event) => {
               const data = JSON.parse(event.nativeEvent.data);
@@ -7021,7 +7019,11 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
             onShouldStartLoadWithRequest={(request) => {
               const url = request.url;
 
-              if (url.startsWith("sentic://payment/success")) {
+              // ⭐️ 성공 URL이 ngrok 주소로 들어오거나 혹은 sentic:// 스킴으로 가로채질 때 처리
+              if (
+                url.includes("/payment/success") ||
+                url.startsWith("sentic://payment/success")
+              ) {
                 setShowToss(false);
 
                 const getParam = (name: string) => {
@@ -7046,7 +7048,6 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
                         {
                           paymentKey: paymentKey,
                           orderId: orderId,
-                          // ⭐️ 딥링크 처리에서도 안전하게 접근!
                           amount: currentOrder.amount,
                           planId: currentOrder.planId,
                         },
@@ -7074,7 +7075,10 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
                 return false;
               }
 
-              if (url.startsWith("sentic://payment/fail")) {
+              if (
+                url.includes("/payment/fail") ||
+                url.startsWith("sentic://payment/fail")
+              ) {
                 setShowToss(false);
                 Alert.alert("결제 실패", "결제가 취소되었거나 실패했습니다.");
                 return false;
