@@ -10090,7 +10090,7 @@ const styles = StyleSheet.create({
     borderTopColor: "#F3F4F6",
     backgroundColor: "#FFFFFF",
     paddingTop: 8,
-    paddingBottom: Platform.OS === "ios" ? 20 : 10,
+    paddingBottom: Platform.OS === "ios" ? 24 : 52,
   },
   bottomTabItem: {
     flex: 1,
