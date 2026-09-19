@@ -17,6 +17,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Modal,
+  Keyboard,
   Platform,
   Pressable,
   SafeAreaView,
@@ -3802,6 +3803,34 @@ export function TextChatScreen({
   >(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const bubbleYRef = useRef<Record<string, number>>({});
+  // 1. 키보드 높이를 담을 상태 (기본값 0)
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+
+        // ⭐️ animated: true와 아주 짧은 지연(50ms)을 주면,
+        // 키보드가 올라오는 애니메이션과 스크롤이 부드럽게 맞물려서 같이 올라오는 것처럼 보입니다.
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 10);
+      },
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => {
+        setKeyboardHeight(0);
+      },
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // 🔊 AI 메시지를 TTS로 읽어주는 버튼용 상태
   const [speakingId, setSpeakingId] = useState<string | null>(null);
@@ -4245,14 +4274,12 @@ export function TextChatScreen({
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+    <View
       style={{
         flex: 1,
-        backgroundColor: "#fff", // 👈 상단바/하단바 영역을 흰색(헤더 색)으로 통일
+        backgroundColor: "#fff",
         paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 24,
-      }} // styles.screen 대체
+      }}
     >
       {<Header title={room.title} go={go} backTo="chatRooms" />}
 
@@ -4286,19 +4313,18 @@ export function TextChatScreen({
                 width: "100%",
               }}
             >
-              {/* 대화 말풍선 (AI는 캐릭터 아바타+이름을 옆에 붙여서 보여주고,
-                  스크랩/읽어주기 버튼도 같은 컬럼 안에 넣어서 말풍선과 왼쪽 끝을 맞춥니다) */}
+              {/* 대화 말풍선 */}
               {(() => {
                 const bubble = (
                   <View
                     style={{
-                      backgroundColor: isUser ? "#5C6BC0" : "#ffffff", // 내 메시지는 파란색, AI는 흰색
+                      backgroundColor: isUser ? "#5C6BC0" : "#ffffff",
                       padding: 12,
                       borderRadius: 16,
                       borderBottomRightRadius: isUser ? 4 : 16,
                       borderBottomLeftRadius: isUser ? 16 : 4,
                       maxWidth: "80%",
-                      elevation: 1, // 안드로이드 그림자
+                      elevation: 1,
                       borderWidth: isHighlighted ? 2 : 0,
                       borderColor: "#FBBF24",
                     }}
@@ -4317,7 +4343,6 @@ export function TextChatScreen({
                     character={room.characters?.[msg.characterIndex ?? 0]}
                   >
                     {bubble}
-                    {/* 🔖 스크랩 버튼 + 🔊 읽어주기 버튼 */}
                     <View
                       style={{
                         flexDirection: "row",
@@ -4326,7 +4351,6 @@ export function TextChatScreen({
                       }}
                     >
                       <Pressable
-                        // ⭐️ 스크랩 여부에 따라 배경 스타일만 바꿔줍니다!
                         style={
                           isAiScraped
                             ? styles.aiScrapBadge
@@ -4344,7 +4368,6 @@ export function TextChatScreen({
                         <BookmarkIcon
                           color={isAiScraped ? "#fff" : "#9CA3AF"}
                           size={11}
-                          // ⭐️ 스크랩 상태일 때만 아이콘 안을 채워줍니다!
                           filled={isAiScraped ? true : undefined}
                         />
                         <Text
@@ -4376,7 +4399,7 @@ export function TextChatScreen({
                 );
               })()}
 
-              {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에, feedback 데이터가 있을 때만 등장!) */}
+              {/* 피드백 박스 */}
               {isUser &&
                 msg.feedback &&
                 msg.feedback.map((item: any, index: number) => {
@@ -4385,7 +4408,6 @@ export function TextChatScreen({
                     item.perfectSentence.trim() !== "[]" &&
                     item.perfectSentence.trim() !== "";
 
-                  // 1. 단어, 문법, 어색한 표현이 실제로 내용이 있는지 검사하는 헬퍼 함수
                   const hasContent = (data: any) => {
                     if (
                       !data ||
@@ -4407,12 +4429,10 @@ export function TextChatScreen({
                   const hasGrammar = hasContent(item.grammarErrors);
                   const hasExpr = hasContent(item.expressionErrors);
 
-                  // 2. 오류나 추천 문장 중 단 하나라도 존재하지 않는다면 아예 렌더링하지 않음!
                   const hasAnyFeedback =
                     hasWord || hasGrammar || hasExpr || hasPerfectSentence;
                   if (!hasAnyFeedback) return null;
 
-                  // ⭐️ 도우미 함수: 단어/문법/표현 오류 스크랩 버튼을 누를 때 데이터를 백엔드 양식으로 싹 바꿔줍니다!
                   const makeScrapCtx = (suffix: string): ScrapContext => ({
                     keyPrefix: `${msg.id}-${index}-${suffix}`,
                     isScraped: (key) => scrapedKeys.has(key),
@@ -4453,10 +4473,10 @@ export function TextChatScreen({
                       key={index}
                       style={{
                         marginTop: 8,
-                        backgroundColor: "#FFF9C4", // 연한 노란색
+                        backgroundColor: "#FFF9C4",
                         padding: 16,
                         borderRadius: 16,
-                        width: "85%", // 피드백 박스 크기
+                        width: "85%",
                         gap: 12,
                       }}
                     >
@@ -4540,11 +4560,14 @@ export function TextChatScreen({
         })}
       </ScrollView>
 
-      {/* 입력창 (기존 styles.composer 적용 부분을 인라인으로 합쳤습니다) */}
+      {/* ⭐️ 입력창 영역 (하단바 여백 및 키보드 연동 반영) */}
       <View
         style={{
           flexDirection: "row",
           padding: 12,
+          paddingBottom:
+            keyboardHeight > 0 ? 56 : Platform.OS === "ios" ? 24 : 52,
+          marginBottom: keyboardHeight,
           backgroundColor: "#fff",
           alignItems: "center",
           borderTopWidth: 1,
@@ -4578,7 +4601,7 @@ export function TextChatScreen({
           <Text style={{ color: "#fff", fontWeight: "bold" }}>전송</Text>
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
