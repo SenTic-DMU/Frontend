@@ -172,7 +172,7 @@ async function restoreRoomFromTrash(roomId: string | number) {
 async function permanentlyDeleteRoom(roomId: string | number) {
   try {
     const accessToken = await AsyncStorage.getItem("accessToken");
-    const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+    const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
     await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -237,7 +237,7 @@ type MyLeague = {
 
 async function fetchMyLeague(): Promise<MyLeague> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/league`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -284,7 +284,7 @@ type QuizStats = {
 
 async function fetchQuizStats(): Promise<QuizStats> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/quiz-stats`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -302,7 +302,7 @@ type FeedbackStats = {
 
 async function fetchFeedbackStats(): Promise<FeedbackStats> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/feedback-stats`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -321,7 +321,7 @@ type WeakPoints = {
 
 async function fetchWeakPoints(dateISO: string): Promise<WeakPoints> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/weak-points`, {
     params: { date: dateISO },
     headers: {
@@ -340,7 +340,7 @@ type GrowthTrendPoint = {
 
 async function fetchGrowthTrend(): Promise<GrowthTrendPoint[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/growth-trend`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -358,7 +358,7 @@ type MonthlyReview = {
 
 async function fetchMonthlyReview(monthISO: string): Promise<MonthlyReview> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/monthly-review`, {
     params: { month: monthISO },
     headers: {
@@ -375,7 +375,7 @@ async function fetchFrequentExpressions(
   dateISO: string,
 ): Promise<FrequentExpression[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/frequent-expressions`, {
     params: { date: dateISO },
     headers: {
@@ -390,7 +390,7 @@ type ModeRatio = { voiceMinutes: number; chatMinutes: number };
 
 async function fetchModeRatio(dateISO: string): Promise<ModeRatio> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/mode-ratio`, {
     params: { date: dateISO },
     headers: {
@@ -406,7 +406,7 @@ type StudyHeatmapDay = { date: string; minutes: number };
 
 async function fetchStudyHeatmap(): Promise<StudyHeatmapDay[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/study-heatmap`, {
     params: { months: 6 },
     headers: {
@@ -526,7 +526,7 @@ export default function App() {
         const token = await AsyncStorage.getItem("accessToken");
         if (!token) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // POST 방식으로 /start 또는 /end 주소로 찌릅니다 (바디 데이터는 없음)
         await axios.post(
@@ -608,7 +608,7 @@ export default function App() {
           return;
         }
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         // ⭐️ 기존 헤더 코드에 백엔드가 알려준 옵션을 추가해 줍니다!
         const headers = {
           Authorization: `Bearer ${accessToken}`,
@@ -857,7 +857,7 @@ export default function App() {
 }
 
 // 백엔드 API 주소 (필요시 변경하세요)
-const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
 function QuizScreen({ go }: { go: (screen: any, data?: any) => void }) {
   const [isLoading, setIsLoading] = useState(true);
@@ -1930,7 +1930,7 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // ⭐️ 백엔드에서 알려준 정확한 주소(/api/users/me)로 수정!
         const res = await axios.get(`${API_URL}/api/users/me`, {
@@ -2806,7 +2806,7 @@ export function VoiceChatScreen({
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
       // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
       if (scrapedKeys.has(key)) {
@@ -2938,7 +2938,7 @@ export function VoiceChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const currentRoomId = room.id;
 
         // ⭐️ 스크랩 내역과 메시지 내역 동시 호출!
@@ -3161,7 +3161,7 @@ export function VoiceChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const currentRoomId = room.id;
 
       // 통화 시작 상태로 변경
@@ -3274,7 +3274,7 @@ export function VoiceChatScreen({
   const sendVoiceToServer = async (fileUri: string) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
       const formData = new FormData();
       formData.append("file", {
@@ -3922,7 +3922,7 @@ export function TextChatScreen({
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
       // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
       if (scrapedKeys.has(key)) {
@@ -3999,7 +3999,7 @@ export function TextChatScreen({
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const payload = {
         content:
           "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
@@ -4043,7 +4043,7 @@ export function TextChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // ⭐️ 1. Promise.all을 사용하여 두 API를 동시에(병렬로) 호출합니다! (속도 2배 향상)
         const [messagesRes, scrapsRes] = await Promise.all([
@@ -4282,7 +4282,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
       const response = await axios.post(
         `${API_URL}/api/rooms/${room.id}/messages/chat`,
         { content: text },
@@ -5043,7 +5043,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
         // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
         const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/announcements";
 
         console.log("🚀 최종 요청 주소:", FULL_URL);
 
@@ -5359,7 +5359,7 @@ function BookmarksScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "ngrok-skip-browser-warning": "true",
@@ -5450,7 +5450,7 @@ function BookmarksScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+              const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
               await axios.delete(`${API_URL}/api/scraps/${expr.scrapId}`, {
                 headers: {
                   Authorization: `Bearer ${accessToken}`,
@@ -5913,7 +5913,7 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const res = await axios.get(`${API_URL}/api/users/study-stats`, {
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -6018,7 +6018,7 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         const res = await axios.get(`${API_URL}/api/users/me`, {
           headers: {
@@ -6462,7 +6462,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
 
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
       // 1. 백엔드에서 알려준 새 주소로 변경 완료!
       const res = await axios.get(`${API_URL}/api/payments/my`, {
@@ -6534,7 +6534,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
 
             try {
               const token = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+              const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
               const headers = {
                 Authorization: `Bearer ${token}`,
                 "ngrok-skip-browser-warning": "true",
@@ -6965,7 +6965,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
                     try {
                       const token = await AsyncStorage.getItem("accessToken");
                       const API_URL =
-                        "https://rundown-irrigate-majesty.ngrok-free.dev";
+                        "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
                       await axios.post(
                         `${API_URL}/api/payments/toss/confirm`,
@@ -7059,7 +7059,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
+          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/faq";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -8191,10 +8191,11 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
   >([]);
   const [modeRatio, setModeRatio] = useState<ModeRatio | null>(null);
 
-  // 🗒️ 캘린더에 펼쳐진 달의 AI 총평 (지난 달까지만)
+  // 🗒️ 캘린더에 펼쳐진 달의 AI 총평 (지난 달까지만) — 유료 전용 API라 무료 회원은 403
   const [monthlyReview, setMonthlyReview] = useState<MonthlyReview | null>(
     null,
   );
+  const [monthlyReviewLocked, setMonthlyReviewLocked] = useState(false);
 
   useEffect(() => {
     const loadQuizAndFeedbackStats = async () => {
@@ -8271,6 +8272,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
   }, [selectedDateISO]);
 
   useEffect(() => {
+    setMonthlyReviewLocked(false);
     if (!isPastMonth) {
       setMonthlyReview(null);
       return;
@@ -8280,10 +8282,14 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         const data = await fetchMonthlyReview(visibleMonthISO);
         setMonthlyReview(data);
       } catch (error: any) {
-        console.error(
-          "🚨 AI 월말 총평 불러오기 실패:",
-          error.response?.data || error.message,
-        );
+        if (error.response?.status === 403) {
+          setMonthlyReviewLocked(true);
+        } else {
+          console.error(
+            "🚨 AI 월말 총평 불러오기 실패:",
+            error.response?.data || error.message,
+          );
+        }
         setMonthlyReview(null);
       }
     };
@@ -8326,7 +8332,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
         const res = await axios.get(`${API_URL}/api/users/study-stats`, {
           params: { date: selectedDateISO },
           headers: {
@@ -8400,7 +8406,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
       // '결정' 버튼을 눌렀을 때 -> 서버로 변경된 레벨 전송
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
 
         // ⭐️ 1. 저장된 토큰이 아예 없거나 null인지 확인!
         console.log("📌 현재 저장된 토큰:", accessToken);
@@ -8511,6 +8517,10 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
               {!isPastMonth ? (
                 <Text style={mpStyles.monthlyReviewEmpty}>
                   이번 달이 끝나면 총평이 생성돼요.
+                </Text>
+              ) : monthlyReviewLocked ? (
+                <Text style={mpStyles.monthlyReviewEmpty}>
+                  프리미엄 회원만 볼 수 있어요.
                 </Text>
               ) : monthlyReview?.summary ? (
                 <Text style={mpStyles.monthlyReviewText}>
