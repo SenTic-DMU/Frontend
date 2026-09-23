@@ -312,14 +312,10 @@ async function fetchFeedbackStats(): Promise<FeedbackStats> {
   return res.data.data;
 }
 
-type WeakPointItem = { text: string; count: number };
-type WeakPoints = {
-  words: WeakPointItem[];
-  grammar: WeakPointItem[];
-  expressions: WeakPointItem[];
-};
+// 약점 목록 항목 하나 — "과거시제를 잘 못 지킨다"처럼 실제 분석된 약점 패턴 (단어/문법/표현 카테고리 구분 없음)
+type WeakPointItem = { rank: number; description: string; count: number };
 
-async function fetchWeakPoints(dateISO: string): Promise<WeakPoints> {
+async function fetchWeakPoints(dateISO: string): Promise<WeakPointItem[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
   const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/weak-points`, {
@@ -329,7 +325,7 @@ async function fetchWeakPoints(dateISO: string): Promise<WeakPoints> {
       "ngrok-skip-browser-warning": "true",
     },
   });
-  return res.data.data;
+  return res.data.data.weakPoints;
 }
 
 type GrowthTrendPoint = {
@@ -8185,7 +8181,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
   const [studyHeatmap, setStudyHeatmap] = useState<StudyHeatmapDay[]>([]);
 
   // 🗓️ 선택한 날짜가 속한 주 기준으로 바뀌는 카드들
-  const [weakPoints, setWeakPoints] = useState<WeakPoints | null>(null);
+  const [weakPoints, setWeakPoints] = useState<WeakPointItem[]>([]);
   const [frequentExpressions, setFrequentExpressions] = useState<
     FrequentExpression[]
   >([]);
@@ -8992,30 +8988,22 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
             </View>
             <Text style={mpStyles.cardTitle}>나의 약점 TOP3</Text>
           </View>
-          {(
-            [
-              ["단어", weakPoints?.words],
-              ["문법", weakPoints?.grammar],
-              ["표현", weakPoints?.expressions],
-            ] as [string, WeakPointItem[] | undefined][]
-          ).map(([label, items]) => (
-            <View key={label} style={{ marginBottom: 12 }}>
-              <Text style={mpStyles.weakPointGroupLabel}>{label}</Text>
-              {items && items.length > 0 ? (
-                items.map((item, index) => (
-                  <View key={item.text} style={mpStyles.weakPointRow}>
-                    <Text style={mpStyles.weakPointRank}>{index + 1}</Text>
-                    <Text style={mpStyles.weakPointText}>{item.text}</Text>
-                    <Text style={mpStyles.weakPointCount}>{item.count}회</Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={mpStyles.monthlyReviewEmpty}>
-                  이 주에는 기록이 없어요.
-                </Text>
-              )}
-            </View>
-          ))}
+          {weakPoints.length > 0 ? (
+            weakPoints
+              .slice()
+              .sort((a, b) => a.rank - b.rank)
+              .map((item, index) => (
+                <View key={item.rank} style={mpStyles.weakPointRow}>
+                  <Text style={mpStyles.weakPointRank}>{index + 1}</Text>
+                  <Text style={mpStyles.weakPointText}>{item.description}</Text>
+                  <Text style={mpStyles.weakPointCount}>{item.count}회</Text>
+                </View>
+              ))
+          ) : (
+            <Text style={mpStyles.monthlyReviewEmpty}>
+              이 주에는 기록이 없어요.
+            </Text>
+          )}
         </View>
 
         {/* 실력 성장 그래프 (최근 8주) — GET /api/users/growth-trend */}
@@ -9301,12 +9289,6 @@ const mpStyles = StyleSheet.create({
   },
   monthlyReviewText: { fontSize: 13, color: "#374151", lineHeight: 20 },
   monthlyReviewEmpty: { fontSize: 12, color: "#9CA3AF" },
-  weakPointGroupLabel: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#9CA3AF",
-    marginBottom: 6,
-  },
   weakPointRow: {
     flexDirection: "row",
     alignItems: "center",
