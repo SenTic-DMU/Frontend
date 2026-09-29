@@ -174,7 +174,7 @@ async function restoreRoomFromTrash(roomId: string | number) {
 async function permanentlyDeleteRoom(roomId: string | number) {
   try {
     const accessToken = await AsyncStorage.getItem("accessToken");
-    const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+    const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
     await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -239,7 +239,7 @@ type MyLeague = {
 
 async function fetchMyLeague(): Promise<MyLeague> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/league`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -288,7 +288,7 @@ type QuizStats = {
 
 async function fetchQuizStats(): Promise<QuizStats> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/quiz-stats`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -306,7 +306,7 @@ type FeedbackStats = {
 
 async function fetchFeedbackStats(): Promise<FeedbackStats> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/feedback-stats`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -321,7 +321,7 @@ type WeakPointItem = { rank: number; description: string; count: number };
 
 async function fetchWeakPoints(dateISO: string): Promise<WeakPointItem[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/weak-points`, {
     params: { date: dateISO },
     headers: {
@@ -340,7 +340,7 @@ type GrowthTrendPoint = {
 
 async function fetchGrowthTrend(): Promise<GrowthTrendPoint[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/growth-trend`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -358,7 +358,7 @@ type MonthlyReview = {
 
 async function fetchMonthlyReview(monthISO: string): Promise<MonthlyReview> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/monthly-review`, {
     params: { month: monthISO },
     headers: {
@@ -375,7 +375,7 @@ async function fetchFrequentExpressions(
   dateISO: string,
 ): Promise<FrequentExpression[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/frequent-expressions`, {
     params: { date: dateISO },
     headers: {
@@ -390,7 +390,7 @@ type ModeRatio = { voiceMinutes: number; chatMinutes: number };
 
 async function fetchModeRatio(dateISO: string): Promise<ModeRatio> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/mode-ratio`, {
     params: { date: dateISO },
     headers: {
@@ -406,7 +406,7 @@ type StudyHeatmapDay = { date: string; minutes: number };
 
 async function fetchStudyHeatmap(): Promise<StudyHeatmapDay[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
   const res = await axios.get(`${API_URL}/api/users/study-heatmap`, {
     params: { months: 6 },
     headers: {
@@ -599,7 +599,7 @@ export default function App() {
         const token = await AsyncStorage.getItem("accessToken");
         if (!token) return;
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         // POST 방식으로 /start 또는 /end 주소로 찌릅니다 (바디 데이터는 없음)
         await axios.post(
@@ -681,7 +681,7 @@ export default function App() {
           return;
         }
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         // ⭐️ 기존 헤더 코드에 백엔드가 알려준 옵션을 추가해 줍니다!
         const headers = {
           Authorization: `Bearer ${accessToken}`,
@@ -930,7 +930,7 @@ export default function App() {
 }
 
 // 백엔드 API 주소 (필요시 변경하세요)
-const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
 function QuizScreen({ go }: { go: (screen: any, data?: any) => void }) {
   const [isLoading, setIsLoading] = useState(true);
@@ -2003,7 +2003,7 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         // ⭐️ 백엔드에서 알려준 정확한 주소(/api/users/me)로 수정!
         const res = await axios.get(`${API_URL}/api/users/me`, {
@@ -2879,7 +2879,7 @@ export function VoiceChatScreen({
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
       // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
       if (scrapedKeys.has(key)) {
@@ -3011,7 +3011,7 @@ export function VoiceChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const currentRoomId = room.id;
 
         // ⭐️ 스크랩 내역과 메시지 내역 동시 호출!
@@ -3234,7 +3234,7 @@ export function VoiceChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const currentRoomId = room.id;
 
       // 통화 시작 상태로 변경
@@ -3347,7 +3347,7 @@ export function VoiceChatScreen({
   const sendVoiceToServer = async (fileUri: string) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
       const formData = new FormData();
       formData.append("file", {
@@ -4023,7 +4023,7 @@ export function TextChatScreen({
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
       // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
       if (scrapedKeys.has(key)) {
@@ -4100,7 +4100,7 @@ export function TextChatScreen({
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const payload = {
         content:
           "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
@@ -4144,7 +4144,7 @@ export function TextChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         // ⭐️ 1. Promise.all을 사용하여 두 API를 동시에(병렬로) 호출합니다! (속도 2배 향상)
         const [messagesRes, scrapsRes] = await Promise.all([
@@ -4383,7 +4383,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const response = await axios.post(
         `${API_URL}/api/rooms/${room.id}/messages/chat`,
         { content: text },
@@ -5138,7 +5138,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
 
         // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
         const FULL_URL =
-          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/announcements";
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
 
         console.log("🚀 최종 요청 주소:", FULL_URL);
 
@@ -5454,7 +5454,7 @@ function BookmarksScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "ngrok-skip-browser-warning": "true",
@@ -5545,7 +5545,7 @@ function BookmarksScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
               await axios.delete(`${API_URL}/api/scraps/${expr.scrapId}`, {
                 headers: {
                   Authorization: `Bearer ${accessToken}`,
@@ -6114,7 +6114,7 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const res = await axios.get(`${API_URL}/api/users/study-stats`, {
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -6236,7 +6236,7 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
         const res = await axios.get(`${API_URL}/api/users/me`, {
           headers: {
@@ -6701,7 +6701,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
     try {
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
-      const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
       const res = await axios.get(`${API_URL}/api/payments/my`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -6768,7 +6768,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
 
             try {
               const token = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
               const headers = {
                 Authorization: `Bearer ${token}`,
                 "ngrok-skip-browser-warning": "true",
@@ -6829,8 +6829,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
           onPress: async () => {
             try {
               const token = await AsyncStorage.getItem("accessToken");
-              const API_URL =
-                "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
 
               // ⭐️ 백엔드 요청사항: DELETE가 아닌 POST 빈 객체 발송
               await axios.post(
@@ -7200,8 +7199,8 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
                                 amount: { currency: "KRW", value: ${currentOrder.amount} },
                                 orderId: '${currentOrder.orderId}',
                                 orderName: '${currentOrder.planName}',
-                                successUrl: 'https://unmasked-earthworm-unbitten.ngrok-free.dev/payment/success',
-                                failUrl: 'https://unmasked-earthworm-unbitten.ngrok-free.dev/payment/fail',
+                                successUrl: 'https://rundown-irrigate-majesty.ngrok-free.dev/payment/success',
+                                failUrl: 'https://rundown-irrigate-majesty.ngrok-free.dev/payment/fail',
                                 customerEmail: 'customer123@gmail.com',
                                 customerName: 'User',
                                 card: { flowMode: "DEFAULT", appScheme: 'sentic://' }
@@ -7261,7 +7260,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
                     try {
                       const token = await AsyncStorage.getItem("accessToken");
                       const API_URL =
-                        "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+                        "https://rundown-irrigate-majesty.ngrok-free.dev";
 
                       await axios.post(
                         `${API_URL}/api/payments/toss/confirm`,
@@ -7375,7 +7374,7 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
         const FULL_URL =
-          "https://unmasked-earthworm-unbitten.ngrok-free.dev/api/faq";
+          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -8245,13 +8244,23 @@ function GrowthTrendChart({ data }: { data: GrowthTrendPoint[] }) {
       <View style={{ flexDirection: "row", gap: 16, marginTop: 8 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           <View
-            style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: primary }}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              backgroundColor: primary,
+            }}
           />
           <Text style={{ fontSize: 11, color: "#6B7280" }}>퀴즈 정답률</Text>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           <View
-            style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#059669" }}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              backgroundColor: "#059669",
+            }}
           />
           <Text style={{ fontSize: 11, color: "#6B7280" }}>피드백 비율</Text>
         </View>
@@ -8267,7 +8276,8 @@ function ModeRatioDonut({ ratio }: { ratio: ModeRatio }) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const total = ratio.voiceMinutes + ratio.chatMinutes;
-  const voiceLength = total > 0 ? (ratio.voiceMinutes / total) * circumference : 0;
+  const voiceLength =
+    total > 0 ? (ratio.voiceMinutes / total) * circumference : 0;
 
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 20 }}>
@@ -8301,7 +8311,12 @@ function ModeRatioDonut({ ratio }: { ratio: ModeRatio }) {
       <View style={{ gap: 8 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           <View
-            style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#0EA5E9" }}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              backgroundColor: "#0EA5E9",
+            }}
           />
           <Text style={{ fontSize: 12, color: "#374151" }}>
             음성 {ratio.voiceMinutes}분
@@ -8309,7 +8324,12 @@ function ModeRatioDonut({ ratio }: { ratio: ModeRatio }) {
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           <View
-            style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#C7D2FE" }}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              backgroundColor: "#C7D2FE",
+            }}
           />
           <Text style={{ fontSize: 12, color: "#374151" }}>
             채팅 {ratio.chatMinutes}분
@@ -8383,10 +8403,7 @@ function StudyHeatmap({ data }: { data: StudyHeatmapDay[] }) {
             <View style={{ flexDirection: "row", gap: HEATMAP_GAP }}>
               {weeks.map((week, wi) => (
                 <View key={wi} style={{ width: HEATMAP_CELL }}>
-                  <Text
-                    style={mpStyles.heatmapMonthLabel}
-                    numberOfLines={1}
-                  >
+                  <Text style={mpStyles.heatmapMonthLabel} numberOfLines={1}>
                     {monthLabelFor(week)}
                   </Text>
                 </View>
@@ -8411,16 +8428,27 @@ function StudyHeatmap({ data }: { data: StudyHeatmapDay[] }) {
           </View>
         </ScrollView>
       </View>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
+          marginTop: 8,
+        }}
+      >
         <Text style={{ fontSize: 11, color: "#9CA3AF" }}>적음</Text>
-        {["#F3F4F6", primary + "33", primary + "66", primary + "99", primary].map(
-          (color, i) => (
-            <View
-              key={i}
-              style={[mpStyles.heatmapCell, { backgroundColor: color }]}
-            />
-          ),
-        )}
+        {[
+          "#F3F4F6",
+          primary + "33",
+          primary + "66",
+          primary + "99",
+          primary,
+        ].map((color, i) => (
+          <View
+            key={i}
+            style={[mpStyles.heatmapCell, { backgroundColor: color }]}
+          />
+        ))}
         <Text style={{ fontSize: 11, color: "#9CA3AF" }}>많음</Text>
       </View>
     </View>
@@ -8453,7 +8481,9 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
 
   // 📊 전체 누적 고정 카드 (퀴즈 정답률 / 피드백 비율) — 캘린더 선택과 무관
   const [quizStats, setQuizStats] = useState<QuizStats | null>(null);
-  const [feedbackStats, setFeedbackStats] = useState<FeedbackStats | null>(null);
+  const [feedbackStats, setFeedbackStats] = useState<FeedbackStats | null>(
+    null,
+  );
 
   // 📈 최근 8주 고정 성장 그래프
   const [growthTrend, setGrowthTrend] = useState<GrowthTrendPoint[]>([]);
@@ -8588,7 +8618,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://unmasked-earthworm-unbitten.ngrok-free.dev";
+        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
         const res = await axios.get(`${API_URL}/api/users/study-stats`, {
           params: { date: selectedDateISO },
           headers: {
@@ -8736,7 +8766,12 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         {/* 🌱 학습 활동 히트맵 (최근 6개월) — GET /api/users/study-heatmap, 기록 없으면 빈 잔디로 채워둠 */}
         <View style={mpStyles.card}>
           <View
-            style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 14,
+            }}
           >
             <View
               style={[mpStyles.cardIconBadge, { backgroundColor: "#EEF2FF" }]}
@@ -8871,7 +8906,9 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
               marginBottom: 14,
             }}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
               <View style={mpStyles.cardIconBadge}>
                 <Ionicons name="help-buoy-outline" size={16} color={primary} />
               </View>
@@ -8921,7 +8958,9 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
               marginBottom: 14,
             }}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
               <View
                 style={[mpStyles.cardIconBadge, { backgroundColor: "#ECFDF5" }]}
               >
@@ -8970,7 +9009,12 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         {/* 나의 약점 TOP3 (선택한 날짜가 속한 주 기준) — GET /api/users/weak-points */}
         <View style={mpStyles.card}>
           <View
-            style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 14,
+            }}
           >
             <View
               style={[mpStyles.cardIconBadge, { backgroundColor: "#FEF2F2" }]}
@@ -9000,7 +9044,12 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         {/* 실력 성장 그래프 (최근 8주) — GET /api/users/growth-trend */}
         <View style={mpStyles.card}>
           <View
-            style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 14,
+            }}
           >
             <View
               style={[mpStyles.cardIconBadge, { backgroundColor: "#EEF2FF" }]}
@@ -9021,12 +9070,21 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         {/* 자주 쓰는 표현 분석 (선택한 날짜가 속한 주 기준) — GET /api/users/frequent-expressions */}
         <View style={mpStyles.card}>
           <View
-            style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 14,
+            }}
           >
             <View
               style={[mpStyles.cardIconBadge, { backgroundColor: "#FFFBEB" }]}
             >
-              <Ionicons name="chatbubble-ellipses-outline" size={16} color="#D97706" />
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={16}
+                color="#D97706"
+              />
             </View>
             <Text style={mpStyles.cardTitle}>자주 쓰는 표현</Text>
           </View>
@@ -9053,7 +9111,12 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         {/* 음성/채팅 학습 비율 (선택한 날짜가 속한 주 기준) — GET /api/users/mode-ratio */}
         <View style={mpStyles.card}>
           <View
-            style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 14,
+            }}
           >
             <View
               style={[mpStyles.cardIconBadge, { backgroundColor: "#ECFEFF" }]}
@@ -9176,7 +9239,12 @@ const mpStyles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
   },
-  leagueHintText: { fontSize: 12, color: "#92400E", fontWeight: "600", flex: 1 },
+  leagueHintText: {
+    fontSize: 12,
+    color: "#92400E",
+    fontWeight: "600",
+    flex: 1,
+  },
   dateRow: {
     flexDirection: "row",
     alignItems: "center",
