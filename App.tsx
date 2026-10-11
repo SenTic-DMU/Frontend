@@ -29,6 +29,8 @@ import {
   View,
   Linking,
   TouchableOpacity,
+  BackHandler,
+  ToastAndroid,
 } from "react-native";
 import Svg, { Path, Circle, Polyline } from "react-native-svg";
 import { Calendar, DateData } from "react-native-calendars";
@@ -174,7 +176,8 @@ async function restoreRoomFromTrash(roomId: string | number) {
 async function permanentlyDeleteRoom(roomId: string | number) {
   try {
     const accessToken = await AsyncStorage.getItem("accessToken");
-    const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+    // 👇 기존 ngrok 주소를 새 AWS 백엔드 주소로 변경
+    const API_URL = "https://api.sentimpro.com";
     await axios.delete(`${API_URL}/api/rooms/${roomId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -239,7 +242,7 @@ type MyLeague = {
 
 async function fetchMyLeague(): Promise<MyLeague> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://api.sentimpro.com";
   const res = await axios.get(`${API_URL}/api/users/league`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -288,7 +291,7 @@ type QuizStats = {
 
 async function fetchQuizStats(): Promise<QuizStats> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://api.sentimpro.com";
   const res = await axios.get(`${API_URL}/api/users/quiz-stats`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -306,7 +309,7 @@ type FeedbackStats = {
 
 async function fetchFeedbackStats(): Promise<FeedbackStats> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://api.sentimpro.com";
   const res = await axios.get(`${API_URL}/api/users/feedback-stats`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -321,7 +324,7 @@ type WeakPointItem = { rank: number; description: string; count: number };
 
 async function fetchWeakPoints(dateISO: string): Promise<WeakPointItem[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://api.sentimpro.com";
   const res = await axios.get(`${API_URL}/api/users/weak-points`, {
     params: { date: dateISO },
     headers: {
@@ -340,7 +343,7 @@ type GrowthTrendPoint = {
 
 async function fetchGrowthTrend(): Promise<GrowthTrendPoint[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://api.sentimpro.com";
   const res = await axios.get(`${API_URL}/api/users/growth-trend`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -358,7 +361,7 @@ type MonthlyReview = {
 
 async function fetchMonthlyReview(monthISO: string): Promise<MonthlyReview> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://api.sentimpro.com";
   const res = await axios.get(`${API_URL}/api/users/monthly-review`, {
     params: { month: monthISO },
     headers: {
@@ -375,7 +378,7 @@ async function fetchFrequentExpressions(
   dateISO: string,
 ): Promise<FrequentExpression[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://api.sentimpro.com";
   const res = await axios.get(`${API_URL}/api/users/frequent-expressions`, {
     params: { date: dateISO },
     headers: {
@@ -390,7 +393,7 @@ type ModeRatio = { voiceMinutes: number; chatMinutes: number };
 
 async function fetchModeRatio(dateISO: string): Promise<ModeRatio> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://api.sentimpro.com";
   const res = await axios.get(`${API_URL}/api/users/mode-ratio`, {
     params: { date: dateISO },
     headers: {
@@ -406,7 +409,7 @@ type StudyHeatmapDay = { date: string; minutes: number };
 
 async function fetchStudyHeatmap(): Promise<StudyHeatmapDay[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
-  const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+  const API_URL = "https://api.sentimpro.com";
   const res = await axios.get(`${API_URL}/api/users/study-heatmap`, {
     params: { months: 6 },
     headers: {
@@ -597,11 +600,10 @@ export default function App() {
     const notifySession = async (type: "start" | "end") => {
       try {
         const token = await AsyncStorage.getItem("accessToken");
-        if (!token) return;
+        if (!token) return; // 토큰이 아예 없으면(로그아웃 상태면) 찌르지 않음
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://api.sentimpro.com";
 
-        // POST 방식으로 /start 또는 /end 주소로 찌릅니다 (바디 데이터는 없음)
         await axios.post(
           `${API_URL}/api/users/me/session/${type}`,
           {},
@@ -613,8 +615,24 @@ export default function App() {
           },
         );
         console.log(`✅ 세션 [${type}] 서버 전송 완료!`);
-      } catch (err) {
-        console.error(`🚨 세션 [${type}] 전송 실패:`, err);
+      } catch (err: any) {
+        console.error(
+          `🚨 세션 [${type}] 전송 실패:`,
+          err.response?.data || err.message,
+        );
+
+        // ⭐️ 추가된 핵심 로직: 백엔드에서 401이나 403(토큰 만료) 에러를 주면 기기에서 옛날 토큰을 싹 지워버립니다!
+        const status = err.response?.status;
+        if (status === 401 || status === 403) {
+          console.log(
+            "⚠️ 토큰이 만료되었습니다. 저장소에서 옛날 토큰을 삭제합니다.",
+          );
+          await AsyncStorage.removeItem("accessToken");
+          await AsyncStorage.removeItem("refreshToken");
+
+          // 만약 이 컴포넌트에서 화면 이동 함수(go)를 쓸 수 있다면 아래 주석을 해제해 로그인 화면으로 쫓아냅니다.
+          // go("login");
+        }
       }
     };
 
@@ -681,7 +699,7 @@ export default function App() {
           return;
         }
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://api.sentimpro.com";
         // ⭐️ 기존 헤더 코드에 백엔드가 알려준 옵션을 추가해 줍니다!
         const headers = {
           Authorization: `Bearer ${accessToken}`,
@@ -930,7 +948,7 @@ export default function App() {
 }
 
 // 백엔드 API 주소 (필요시 변경하세요)
-const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+const API_URL = "https://api.sentimpro.com";
 
 function QuizScreen({ go }: { go: (screen: any, data?: any) => void }) {
   const [isLoading, setIsLoading] = useState(true);
@@ -1595,7 +1613,7 @@ function LoginScreen({
 
     try {
       const res = await fetch(
-        `${process.env.EXPO_PUBLIC_BASE_URL}/api/auth/login`,
+        `${process.env.EXPO_PUBLIC_API_URL}/api/auth/login`,
         {
           method: "POST",
           headers: {
@@ -1739,7 +1757,7 @@ function LoginScreen({
 }
 
 async function authPost(path: string, body: object) {
-  const res = await fetch(`${process.env.EXPO_PUBLIC_BASE_URL}${path}`, {
+  const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json; charset=UTF-8",
@@ -1990,6 +2008,38 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
     "Hello! 오늘도 힘차게 시작해 봐요! 😊",
   ];
 
+  // 👇 1. 뒤로 가기 버튼을 한 번 눌렀는지 기억할 '타이머 상태'를 만듭니다.
+  const exitAppRef = useRef(false);
+
+  // 👇 2. 두 번 눌러 앱 종료하기 로직
+  useEffect(() => {
+    const handleBackPress = () => {
+      // 이미 한 번 눌린 상태라면? (2초 안에 다시 누른 경우) -> 진짜로 앱 종료
+      if (exitAppRef.current) {
+        BackHandler.exitApp();
+        return true;
+      }
+
+      // 처음 누른 상태라면? -> 안내 메시지(토스트)를 띄우고 상태를 true로 변경
+      exitAppRef.current = true;
+      ToastAndroid.show("한 번 더 누르시면 종료됩니다.", ToastAndroid.SHORT);
+
+      // 2초(2000ms)가 지나면 다시 원래 상태(false)로 되돌림
+      setTimeout(() => {
+        exitAppRef.current = false;
+      }, 2000);
+
+      return true; // 기본 동작(바로 앱 꺼짐) 방지
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    return () => backHandler.remove();
+  }, []);
+
   // ⭐️ 2. 화면이 처음 켜질 때 랜덤으로 하나를 뽑아서 State에 저장합니다.
   // (useState 안에 콜백 함수를 넣으면 딱 처음 한 번만 랜덤값을 뽑아냅니다!)
   const [randomGreeting] = useState(() => {
@@ -2003,7 +2053,7 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://api.sentimpro.com";
 
         // ⭐️ 백엔드에서 알려준 정확한 주소(/api/users/me)로 수정!
         const res = await axios.get(`${API_URL}/api/users/me`, {
@@ -2081,14 +2131,10 @@ function ModeScreen({ go }: { go: (screen: Screen) => void }) {
         contentContainerStyle={[styles.content, { paddingBottom: 36 }]}
       >
         <View style={styles.rowBetween}>
-          {/* ⭐️ 바로 여기! flex: 1을 주면 남은 공간 안에서만 크기를 차지하고, 글자가 길면 알아서 줄바꿈됩니다. */}
-          <View style={{ flex: 1, marginRight: 12 }}>
+          {/* 불꽃 배지가 사라졌으므로 marginRight: 12 제거 */}
+          <View style={{ flex: 1 }}>
             <Text style={styles.caption}>안녕하세요, {nickname}님</Text>
             <Text style={styles.h2}>{randomGreeting}</Text>
-          </View>
-
-          <View style={styles.streak}>
-            <Text style={styles.streakText}>불꽃 5일 연속</Text>
           </View>
         </View>
         <Text style={styles.sectionTitle}>학습 모드</Text>
@@ -2145,6 +2191,24 @@ export function RoomListScreen({
   // 🗑️ 이 목록으로 다시 들어올 때마다 휴지통에 들어간 방 id를 다시 확인해서 걸러줍니다.
   // (진짜 삭제가 아니라 휴지통 이동이라 서버 목록에는 여전히 남아있을 수 있음)
   const [trashedIds, setTrashedIds] = useState<Set<string>>(new Set());
+
+  // 👇 여기에 안드로이드 뒤로 가기 제어 코드를 추가합니다!
+  useEffect(() => {
+    const handleBackPress = () => {
+      // ⭐️ 화면 상단의 '뒤로 가기' 버튼을 눌렀을 때 가는 화면 이름과 똑같이 맞춰주세요!
+      // 예: 마이페이지에서 넘어왔다면 go("profile"), 홈에서 왔다면 go("home")
+      go("mode");
+
+      return true; // 앱 튕김 방지
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    return () => backHandler.remove();
+  }, [go]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2263,6 +2327,23 @@ export function RoomListScreen({
 function TrashScreen({ onBack }: { onBack: () => void }) {
   const [trashedRooms, setTrashedRooms] = useState<TrashedRoom[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // 👇 안드로이드 뒤로 가기 제어 코드 추가
+  useEffect(() => {
+    const handleBackPress = () => {
+      // 화면 상단의 '‹' 버튼과 똑같이 onBack 함수를 실행합니다.
+      onBack();
+      return true; // 앱 종료 방지
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    // ⭐️ 의존성 배열에 onBack을 넣어줍니다.
+    return () => backHandler.remove();
+  }, [onBack]);
 
   const load = async () => {
     setLoading(true);
@@ -2531,6 +2612,24 @@ function SituationScreen({
     })),
   );
 
+  // 👇 안드로이드 뒤로 가기 버튼 제어
+  useEffect(() => {
+    const handleBackPress = () => {
+      // ⭐️ 화면 상단 '<' 버튼과 완전히 똑같은 목적지로 이동!
+      go(mode === "voice" ? "voiceRooms" : "chatRooms");
+
+      return true; // 앱 강제 종료 방지
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    // ⭐️ 주의: 배열 안에 go 외에도 mode를 꼭 넣어주어야 최신 상태를 반영합니다.
+    return () => backHandler.remove();
+  }, [go, mode]);
+
   // 💡 통신 중 버튼을 비활성화하기 위한 로딩 상태 추가
   const [loading, setLoading] = useState(false);
 
@@ -2615,7 +2714,7 @@ function SituationScreen({
       console.log("👉 방 생성 데이터 전송:", requestBody);
 
       const response = await axios.post(
-        `${process.env.EXPO_PUBLIC_BASE_URL}/api/rooms`,
+        `${process.env.EXPO_PUBLIC_API_URL}/api/rooms`,
         requestBody,
         {
           headers: {
@@ -2670,6 +2769,7 @@ function SituationScreen({
         },
       ]}
     >
+      {/* --- 1. 상단 헤더 영역 --- */}
       <View style={styles.roomListHeader}>
         <Pressable
           style={styles.headerButton}
@@ -2686,9 +2786,11 @@ function SituationScreen({
         </Pressable>
       </View>
 
+      {/* --- 2. 스크롤 가능한 본문 영역 --- */}
+      {/* flex: 1을 추가하여 버튼 영역을 제외한 나머지 화면을 꽉 채우도록 합니다 */}
       <ScrollView
-        style={{ backgroundColor: "#F9FAFB" }}
-        contentContainerStyle={styles.setupContent}
+        style={{ flex: 1, backgroundColor: "#F9FAFB" }}
+        contentContainerStyle={[styles.setupContent, { paddingBottom: 20 }]}
         keyboardShouldPersistTaps="handled"
       >
         <Label text="대화방 제목" />
@@ -2776,12 +2878,24 @@ function SituationScreen({
             부적절한 상황 설정은 자동으로 제한됩니다
           </Text>
         </View>
+      </ScrollView>
 
+      {/* --- 3. 하단에 항상 고정되는 버튼 영역 --- */}
+      <View
+        style={{
+          paddingHorizontal: 20,
+          paddingTop: 6,
+          paddingBottom: Platform.OS === "ios" ? 36 : 48, // iOS 여부에 따라 하단바 대응 여백 조절
+          backgroundColor: "#F9FAFB",
+          borderTopWidth: 1,
+          borderColor: "#E5E7EB", // 스크롤 영역과 버튼 영역을 깔끔하게 나누는 얇은 선
+        }}
+      >
         <PrimaryButton
           label={loading ? "방을 생성하는 중..." : "대화 시작하기"}
           onPress={start}
         />
-      </ScrollView>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -2853,6 +2967,24 @@ export function VoiceChatScreen({
   // 🔊 기록 탭에서 AI 메시지를 다시 읽어주는 TTS (실시간 통화 자동재생과는 별개)
   const [speakingId, setSpeakingId] = useState<string | null>(null);
 
+  // 👇 여기에 안드로이드 뒤로 가기 제어 코드를 추가합니다!
+  useEffect(() => {
+    const handleBackPress = () => {
+      // ⭐️ 화면 상단의 '뒤로 가기' 버튼을 눌렀을 때 가는 화면 이름과 똑같이 맞춰주세요!
+      // 예: 마이페이지에서 넘어왔다면 go("profile"), 홈에서 왔다면 go("home")
+      go("voiceRooms");
+
+      return true; // 앱 튕김 방지
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    return () => backHandler.remove();
+  }, [go]);
+
   useEffect(() => {
     return () => {
       Speech.stop();
@@ -2879,7 +3011,7 @@ export function VoiceChatScreen({
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://api.sentimpro.com";
 
       // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
       if (scrapedKeys.has(key)) {
@@ -3011,7 +3143,7 @@ export function VoiceChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://api.sentimpro.com";
         const currentRoomId = room.id;
 
         // ⭐️ 스크랩 내역과 메시지 내역 동시 호출!
@@ -3234,7 +3366,7 @@ export function VoiceChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://api.sentimpro.com";
       const currentRoomId = room.id;
 
       // 통화 시작 상태로 변경
@@ -3347,7 +3479,7 @@ export function VoiceChatScreen({
   const sendVoiceToServer = async (fileUri: string) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://api.sentimpro.com";
 
       const formData = new FormData();
       formData.append("file", {
@@ -3954,6 +4086,24 @@ export function TextChatScreen({
   onConsumeScrapNavTarget?: () => void;
 }) {
   const [input, setInput] = useState("");
+
+  // 👇 안드로이드 뒤로 가기 버튼 제어 (go 함수 사용)
+  useEffect(() => {
+    const handleBackPress = () => {
+      // ⭐️ 직전 화면(채팅방 목록 등)으로 이동하도록 go 함수 호출
+      go("chatRooms"); // ⬅️ "home" 대신 돌아가고 싶은 화면 이름(예: "chatList")을 적어주세요!
+
+      return true; // ⭐️️ 앱 종료 방지
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    return () => backHandler.remove();
+  }, [go]);
+
   const [messages, setMessages] = useState<any[]>([]); // Message 타입 대체
   const [scrapedKeys, setScrapedKeys] = useState<Set<string>>(new Set());
   const [highlightedMessageId, setHighlightedMessageId] = useState<
@@ -4023,7 +4173,7 @@ export function TextChatScreen({
   const handleScrap = async (key: string, entry: Record<string, any>) => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://api.sentimpro.com";
 
       // ⭐️ 1. 이미 스크랩된 상태라면? -> 스크랩 취소 (DELETE)
       if (scrapedKeys.has(key)) {
@@ -4100,7 +4250,7 @@ export function TextChatScreen({
   const requestInitialGreeting = async () => {
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://api.sentimpro.com";
       const payload = {
         content:
           "(시스템: 사용자가 방에 입장했습니다. 설정된 상황에 맞게 캐릭터에 완벽히 몰입해서 먼저 자연스럽게 영어로 대화를 시작해 주세요.)",
@@ -4144,7 +4294,7 @@ export function TextChatScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://api.sentimpro.com";
 
         // ⭐️ 1. Promise.all을 사용하여 두 API를 동시에(병렬로) 호출합니다! (속도 2배 향상)
         const [messagesRes, scrapsRes] = await Promise.all([
@@ -4383,7 +4533,7 @@ export function TextChatScreen({
 
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://api.sentimpro.com";
       const response = await axios.post(
         `${API_URL}/api/rooms/${room.id}/messages/chat`,
         { content: text },
@@ -4439,19 +4589,52 @@ export function TextChatScreen({
         paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 24,
       }}
     >
-      {<Header title={room.title} go={go} backTo="chatRooms" />}
+      <Header title={room.title} go={go} backTo="chatRooms" />
 
-      {/* ⭐️ 3. MessageList를 빼버리고 여기서 직접 채팅과 피드백을 그립니다! */}
       <ScrollView
         ref={scrollViewRef}
         style={{ flex: 1, backgroundColor: "#f5f5f5", paddingHorizontal: 16 }}
         contentContainerStyle={{ paddingVertical: 20 }}
       >
-        {messages.map((msg) => {
+        {messages.map((msg, index) => {
           const isUser = msg.speaker === "user";
           const aiScrapKey = `${msg.id}-ai`;
           const isAiScraped = scrapedKeys.has(aiScrapKey);
           const isHighlighted = msg.id === highlightedMessageId;
+
+          // ---------------------------------------------------------
+          // 💡 [핵심] AI 메시지 텍스트 파싱 & 캐릭터 매칭 로직
+          // ---------------------------------------------------------
+          let displayMessage = msg.text;
+          let matchedCharacter = room.characters?.[msg.characterIndex ?? 0];
+
+          if (!isUser) {
+            // 정규식: "[이름]: 대사" 패턴 찾기
+            const match = msg.text.match(/^\[(.*?)\]:\s*([\s\S]*)/);
+
+            if (match) {
+              const parsedName = match[1].trim(); // 예: "소피"
+              displayMessage = match[2].trim(); // 예: "Great! Do you..."
+
+              // 방에 설정된 캐릭터 목록에서 이름이 같은 캐릭터 찾기
+              const foundChar = room.characters?.find(
+                (c) => c.name === parsedName,
+              );
+
+              if (foundChar) {
+                matchedCharacter = foundChar;
+              } else if (matchedCharacter) {
+                matchedCharacter = { ...matchedCharacter, name: parsedName };
+              } else {
+                matchedCharacter = {
+                  name: parsedName,
+                  avatar: "🤖",
+                  photoUri: null,
+                };
+              }
+            }
+          }
+          // ---------------------------------------------------------
 
           return (
             <View
@@ -4490,16 +4673,16 @@ export function TextChatScreen({
                     <Text
                       style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}
                     >
-                      {msg.text}
+                      {/* ⭐️ 괄호가 제거된 순수 대사 출력 */}
+                      {displayMessage}
                     </Text>
                   </View>
                 );
+
                 if (isUser) return bubble;
 
                 return (
-                  <AiMessageRow
-                    character={room.characters?.[msg.characterIndex ?? 0]}
-                  >
+                  <AiMessageRow character={matchedCharacter}>
                     {bubble}
                     <View
                       style={{
@@ -4517,7 +4700,8 @@ export function TextChatScreen({
                         onPress={() =>
                           handleScrap(aiScrapKey, {
                             roomId: room.id,
-                            expression: msg.text,
+                            // ⭐️ 스크랩 시 순수 대사만 저장
+                            expression: displayMessage,
                             context: "",
                             category: "EXPRESSION",
                           })
@@ -4539,7 +4723,10 @@ export function TextChatScreen({
                         </Text>
                       </Pressable>
                       <Pressable
-                        onPress={() => toggleSpeakMessage(msg.id, msg.text)}
+                        // ⭐️ TTS 음성 출력 시 순수 대사만 읽도록 설정
+                        onPress={() =>
+                          toggleSpeakMessage(msg.id, displayMessage)
+                        }
                         style={styles.aiScrapButton}
                       >
                         <Ionicons
@@ -4557,10 +4744,10 @@ export function TextChatScreen({
                 );
               })()}
 
-              {/* 피드백 박스 */}
+              {/* 피드백 박스 (User 전용 로직) */}
               {isUser &&
                 msg.feedback &&
-                msg.feedback.map((item: any, index: number) => {
+                msg.feedback.map((item: any, feedbackIndex: number) => {
                   const hasPerfectSentence =
                     item.perfectSentence &&
                     item.perfectSentence.trim() !== "[]" &&
@@ -4592,7 +4779,7 @@ export function TextChatScreen({
                   if (!hasAnyFeedback) return null;
 
                   const makeScrapCtx = (suffix: string): ScrapContext => ({
-                    keyPrefix: `${msg.id}-${index}-${suffix}`,
+                    keyPrefix: `${msg.id}-${feedbackIndex}-${suffix}`,
                     isScraped: (key) => scrapedKeys.has(key),
                     onScrap: (key, entry) => {
                       let mappedCategory = "EXPRESSION";
@@ -4623,12 +4810,12 @@ export function TextChatScreen({
                   });
 
                   const msgId = msg.id || Math.random().toString();
-                  const perfectKey = `${msgId}-${index}-perfect`;
+                  const perfectKey = `${msgId}-${feedbackIndex}-perfect`;
                   const isPerfectScraped = scrapedKeys.has(perfectKey);
 
                   return (
                     <View
-                      key={index}
+                      key={feedbackIndex}
                       style={{
                         marginTop: 8,
                         backgroundColor: "#FFF9C4",
@@ -4700,12 +4887,12 @@ export function TextChatScreen({
                             }
                           >
                             <BookmarkIcon
-                              color="#8A6D00"
+                              color={isPerfectScraped ? "#fff" : "#6B7280"}
                               size={12}
-                              filled={isPerfectScraped}
+                              filled={isPerfectScraped ? true : undefined}
                             />
                             <Text style={styles.scrapButtonText}>
-                              {isPerfectScraped ? "스크랩됨" : "스크랩"}
+                              {isPerfectScraped ? "저장됨" : "저장"}
                             </Text>
                           </Pressable>
                         </View>
@@ -4718,7 +4905,7 @@ export function TextChatScreen({
         })}
       </ScrollView>
 
-      {/* ⭐️ 입력창 영역 (하단바 여백 및 키보드 연동 반영) */}
+      {/* ⭐️ 입력창 영역 (기존 코드 유지) */}
       <View
         style={{
           flexDirection: "row",
@@ -5130,6 +5317,29 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // 👇 안드로이드 뒤로 가기 제어 코드 추가
+  useEffect(() => {
+    const handleBackPress = () => {
+      // 1. 공지사항 상세 글을 보고 있는 경우 -> 상세 창을 닫고 목록으로 이동
+      if (selectedNotice) {
+        setSelectedNotice(null);
+        return true;
+      }
+
+      // 2. 공지사항 목록을 보고 있는 경우 -> mode 화면으로 완전히 나가기
+      go("mode");
+      return true;
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    // ⭐️ 의존성 배열에 selectedNotice와 go를 반드시 넣어주세요.
+    return () => backHandler.remove();
+  }, [selectedNotice, go]);
+
   // ⭐️ 3. 화면이 켜지자마자 서버에서 공지사항 목록을 가져오는 통신 코드
   useEffect(() => {
     const fetchAnnouncements = async () => {
@@ -5137,8 +5347,7 @@ export function NoticeScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
 
         // ⭐️ 1. baseURL 끝에 절대 슬래시를 붙이지 않은 완전한 주소
-        const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/announcements";
+        const FULL_URL = "https://api.sentimpro.com/api/announcements";
 
         console.log("🚀 최종 요청 주소:", FULL_URL);
 
@@ -5363,6 +5572,7 @@ function BookmarksScreen({
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(
     null,
   );
+
   // selectedRoom은 `${roomType}:${roomId}` 형태의 합성 키를 저장합니다.
   // (roomName만으로는 서로 다른 방이 같은 이름을 가질 수 있어 키 충돌이 발생하므로)
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
@@ -5371,6 +5581,35 @@ function BookmarksScreen({
   const [fetchError, setFetchError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+
+  // 👇 여기에 안드로이드 뒤로 가기 제어 코드를 추가합니다!
+  useEffect(() => {
+    const handleBackPress = () => {
+      // 1. 카테고리 상세 페이지(단어, 문법, 문장) 안에 있다면? -> 상세를 닫고 목록으로!
+      if (selectedCategory) {
+        setSelectedCategory(null);
+        return true;
+      }
+
+      // 2. 대화방 상세 페이지 안에 있다면? -> 상세를 닫고 목록으로!
+      if (selectedRoom) {
+        setSelectedRoom(null);
+        return true;
+      }
+
+      // 3. 상세 페이지가 아니라 최상단 목록을 보고 있다면? -> 진짜 이전 화면(홈)으로 이동!
+      go("mode"); // ⭐️ 화면 상단 뒤로가기 버튼이 가는 곳과 동일한 이름으로 맞춰주세요 (예: "main")
+      return true;
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    // ⭐️ 중요: 의존성 배열에 상태값들을 꼭 넣어주어야 정상 작동합니다.
+    return () => backHandler.remove();
+  }, [selectedCategory, selectedRoom, go]);
 
   useEffect(() => {
     return () => {
@@ -5454,7 +5693,7 @@ function BookmarksScreen({
 
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://api.sentimpro.com";
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "ngrok-skip-browser-warning": "true",
@@ -5545,7 +5784,7 @@ function BookmarksScreen({
           onPress: async () => {
             try {
               const accessToken = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+              const API_URL = "https://api.sentimpro.com";
               await axios.delete(`${API_URL}/api/scraps/${expr.scrapId}`, {
                 headers: {
                   Authorization: `Bearer ${accessToken}`,
@@ -6070,8 +6309,9 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
   const [editField, setEditField] = useState<"nickname" | "motto" | null>(null);
   const [editValue, setEditValue] = useState("");
 
-  // ⭐️ 상단 통계(총 학습 시간 / 연속 학습일 / 일평균 학습) — 실데이터
-  const [totalMinutes, setTotalMinutes] = useState(0);
+  // ⭐️ 상단 통계(총 학습 시간 / 연속 학습일 / 일평균 학습)
+  const [totalMinutes, setTotalMinutes] = useState(0); // (기존) 총 누적 시간
+  const [weeklyTotal, setWeeklyTotal] = useState(0); // (추가) 이번 주 시간 ⭐️
   const [avgMinutes, setAvgMinutes] = useState(0);
   const [continuousDays, setContinuousDays] = useState(0);
 
@@ -6080,6 +6320,24 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
 
   const [badges, setBadges] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // 👇 여기에 안드로이드 뒤로 가기 제어 코드를 추가합니다!
+  useEffect(() => {
+    const handleBackPress = () => {
+      // ⭐️ 화면 상단의 '뒤로 가기' 버튼을 눌렀을 때 가는 화면 이름과 똑같이 맞춰주세요!
+      // 예: 마이페이지에서 넘어왔다면 go("profile"), 홈에서 왔다면 go("home")
+      go("mode");
+
+      return true; // 앱 튕김 방지
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    return () => backHandler.remove();
+  }, [go]);
 
   useEffect(() => {
     const getBadges = async () => {
@@ -6114,28 +6372,37 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        // ⭐️ 1. 하드코딩된 주소 대신 .env 변수 사용 (이하 동일)
+        const API_URL = process.env.EXPO_PUBLIC_API_URL;
         const res = await axios.get(`${API_URL}/api/users/study-stats`, {
           headers: {
             Authorization: `Bearer ${accessToken}`,
-            "ngrok-skip-browser-warning": "69420",
-            "Bypass-Tunnel-Reminder": "true",
-            "User-Agent": "PostmanRuntime/7.28.4",
+            // ⭐️ 2. AWS 실서버에서는 ngrok 관련 헤더가 전혀 필요 없으므로 삭제합니다.
           },
         });
 
         const stats = res.data?.data || {};
         const weeklyData = stats.weekly || [];
+        // calcTotal은 주간 그래프 7일치 배열의 합 (= 진짜 이번 주 학습 시간)
         const calcTotal = weeklyData.reduce(
-          (sum: number, item: any) => sum + Number(item.minute),
+          (sum: number, item: any) =>
+            sum + Math.round(Number(item.minute) / 60),
           0,
         );
         const calcAvg = Math.round(calcTotal / 7);
 
+        // ⭐️ 2. 서버가 직접 보내준 totalMinutes와 avgMinutes도 초 단위일 테니 60으로 나눠서 저장합니다.
         setTotalMinutes(
-          stats.totalMinutes > 0 ? stats.totalMinutes : calcTotal,
+          stats.totalMinutes > 0
+            ? Math.round(stats.totalMinutes / 60)
+            : calcTotal,
         );
-        setAvgMinutes(stats.avgMinutes > 0 ? stats.avgMinutes : calcAvg);
+        setWeeklyTotal(calcTotal); // 우리가 계산한 이번 주 시간
+        setAvgMinutes(
+          stats.avgMinutes > 0
+            ? Math.round(stats.avgMinutes / 60) // ⭐️ 여기도 60으로 나누기!
+            : calcAvg,
+        );
         setContinuousDays(stats.continuousDays || 0);
       } catch (error: any) {
         console.error(
@@ -6236,12 +6503,14 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
+        console.log("현재 주소:", process.env.EXPO_PUBLIC_API_URL);
 
         const res = await axios.get(`${API_URL}/api/users/me`, {
           headers: {
             Authorization: `Bearer ${accessToken}`,
-            "ngrok-skip-browser-warning": "true",
+            // ⭐️ ngrok 헤더 삭제
           },
         });
 
@@ -6260,7 +6529,6 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
           error.response?.data || error.message,
         );
 
-        // 토큰이 가리키는 유저가 서버에 없는 경우 -> 만료된 토큰이므로 로그아웃 처리
         if (error.response?.data?.message?.includes("존재하지 않는")) {
           await AsyncStorage.removeItem("accessToken");
           await AsyncStorage.removeItem("refreshToken");
@@ -6301,11 +6569,16 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
     setWithdrawing(true);
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      await axios.delete(`${process.env.EXPO_PUBLIC_BASE_URL}/api/users/me`, {
+
+      // ⭐️ 회원탈퇴 API에 쓰인 변수명이 기존 코드에서는 EXPO_PUBLIC_API_URL 이었습니다.
+      // .env 파일에 설정하신 이름(EXPO_PUBLIC_API_URL 등)과 정확히 일치시켜 주세요.
+      const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
+      await axios.delete(`${API_URL}/api/users/me`, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json; charset=UTF-8",
-          "ngrok-skip-browser-warning": "true",
+          // ⭐️ ngrok 헤더 삭제
         },
         data: { password: withdrawPassword },
       });
@@ -6696,12 +6969,30 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
     },
   };
 
+  // 👇 여기에 안드로이드 뒤로 가기 제어 코드를 추가합니다!
+  useEffect(() => {
+    const handleBackPress = () => {
+      // ⭐️ 화면 상단의 '뒤로 가기' 버튼을 눌렀을 때 가는 화면 이름과 똑같이 맞춰주세요!
+      // 예: 마이페이지에서 넘어왔다면 go("profile"), 홈에서 왔다면 go("home")
+      go("settings");
+
+      return true; // 앱 튕김 방지
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    return () => backHandler.remove();
+  }, [go]);
+
   // ⭐️ 2. 화면이 켜질 때 백엔드에서 내 결제(구독) 정보를 불러옵니다.
   const fetchMySubscription = async () => {
     try {
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://api.sentimpro.com";
       const res = await axios.get(`${API_URL}/api/payments/my`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -6768,7 +7059,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
 
             try {
               const token = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+              const API_URL = "https://api.sentimpro.com";
               const headers = {
                 Authorization: `Bearer ${token}`,
                 "ngrok-skip-browser-warning": "true",
@@ -6829,7 +7120,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
           onPress: async () => {
             try {
               const token = await AsyncStorage.getItem("accessToken");
-              const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+              const API_URL = "https://api.sentimpro.com";
 
               // ⭐️ 백엔드 요청사항: DELETE가 아닌 POST 빈 객체 발송
               await axios.post(
@@ -7199,8 +7490,8 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
                                 amount: { currency: "KRW", value: ${currentOrder.amount} },
                                 orderId: '${currentOrder.orderId}',
                                 orderName: '${currentOrder.planName}',
-                                successUrl: 'https://rundown-irrigate-majesty.ngrok-free.dev/payment/success',
-                                failUrl: 'https://rundown-irrigate-majesty.ngrok-free.dev/payment/fail',
+                                successUrl: 'https://api.sentimpro.com/payment/success',
+                                failUrl: 'https://api.sentimpro.com/payment/fail',
                                 customerEmail: 'customer123@gmail.com',
                                 customerName: 'User',
                                 card: { flowMode: "DEFAULT", appScheme: 'sentic://' }
@@ -7259,8 +7550,7 @@ function PaymentScreen({ go }: { go: (screen: Screen) => void }) {
                   (async () => {
                     try {
                       const token = await AsyncStorage.getItem("accessToken");
-                      const API_URL =
-                        "https://rundown-irrigate-majesty.ngrok-free.dev";
+                      const API_URL = "https://api.sentimpro.com";
 
                       await axios.post(
                         `${API_URL}/api/payments/toss/confirm`,
@@ -7368,13 +7658,30 @@ function FaqScreen({ go }: { go: (screen: any) => void }) {
   // 2. 열려있는 항목을 추적할 상태 (globalIndex 대신 카테고리-아이템 인덱스 조합 사용)
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // 👇 여기에 안드로이드 뒤로 가기 제어 코드를 추가합니다!
+  useEffect(() => {
+    const handleBackPress = () => {
+      // ⭐️ 화면 상단의 '뒤로 가기' 버튼을 눌렀을 때 가는 화면 이름과 똑같이 맞춰주세요!
+      // 예: 마이페이지에서 넘어왔다면 go("profile"), 홈에서 왔다면 go("home")
+      go("mode");
+
+      return true; // 앱 튕김 방지
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    return () => backHandler.remove();
+  }, [go]);
+
   // 3. 백엔드에서 FAQ 목록 불러오기 (공지사항과 99.9% 동일!)
   useEffect(() => {
     const fetchFaqs = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const FULL_URL =
-          "https://rundown-irrigate-majesty.ngrok-free.dev/api/faq";
+        const FULL_URL = "https://api.sentimpro.com/api/faq";
 
         console.log("🚀 FAQ 요청 주소:", FULL_URL);
 
@@ -8504,6 +8811,24 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
   );
   const [monthlyReviewLocked, setMonthlyReviewLocked] = useState(false);
 
+  // 👇 여기에 안드로이드 뒤로 가기 제어 코드를 추가합니다!
+  useEffect(() => {
+    const handleBackPress = () => {
+      // ⭐️ 화면 상단의 '뒤로 가기' 버튼을 눌렀을 때 가는 화면 이름과 똑같이 맞춰주세요!
+      // 예: 마이페이지에서 넘어왔다면 go("profile"), 홈에서 왔다면 go("home")
+      go("mode");
+
+      return true; // 앱 튕김 방지
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    return () => backHandler.remove();
+  }, [go]);
+
   useEffect(() => {
     const loadQuizAndFeedbackStats = async () => {
       try {
@@ -8618,7 +8943,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         const accessToken = await AsyncStorage.getItem("accessToken");
         if (!accessToken) return;
 
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://api.sentimpro.com";
         const res = await axios.get(`${API_URL}/api/users/study-stats`, {
           params: { date: selectedDateISO },
           headers: {
@@ -8789,10 +9114,11 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
           <View style={mpStyles.statBox}>
             <Text style={mpStyles.statLabel}>이번 주</Text>
             <Text style={mpStyles.statValue}>
-              {/* ⭐️ 60분 미만이면 '2분', 60분 이상이면 '1.5h'처럼 표시되도록 방어! */}
-              {totalMinutes < 60
-                ? `${totalMinutes}분`
-                : `${Math.round((totalMinutes / 60) * 10) / 10}h`}
+              {/* ⭐️ 백엔드 값이 '초(Seconds)'이므로 먼저 60으로 나누어 '진짜 분'을 구합니다 */}
+              {Math.floor(totalMinutes / 60) < 60
+                ? `${Math.floor(totalMinutes / 60)}분`
+                : `${Math.round((totalMinutes / 3600) * 10) / 10}h`}
+              {/* 3600초(1시간)로 나누어 시간(h) 계산 */}
             </Text>
           </View>
 
@@ -8800,8 +9126,12 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
           <View style={mpStyles.statBox}>
             <Text style={mpStyles.statLabel}>일 평균</Text>
             <Text style={mpStyles.statValue}>
-              {/* ⭐️ 총 시간이 있는데 평균이 0으로 반올림되었다면 최소 '1분'으로 표시! */}
-              {totalMinutes > 0 && avgMinutes === 0 ? 1 : avgMinutes}분
+              {/* ⭐️ 일 평균도 '초' 단위일 확률이 높으므로 60으로 나누어 분으로 표시 */}
+              {Math.floor(totalMinutes / 60) > 0 &&
+              Math.floor(avgMinutes / 60) === 0
+                ? 1
+                : Math.floor(avgMinutes / 60)}
+              분
             </Text>
           </View>
 
@@ -8809,90 +9139,6 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
           <View style={mpStyles.statBox}>
             <Text style={mpStyles.statLabel}>연속 학습</Text>
             <Text style={mpStyles.statValue}>{continuousDays}일</Text>
-          </View>
-        </View>
-
-        {/* 주간 그래프 (기존 코드 거의 동일, maxMinutes 방어 로직만 추가됨) */}
-        <View style={mpStyles.card}>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-              marginBottom: 16,
-            }}
-          >
-            <View>
-              <Text style={mpStyles.cardTitle}>주간 학습 시간</Text>
-              <Text style={mpStyles.cardSub}>최근 7일 기록</Text>
-            </View>
-            <Text style={mpStyles.cardSub}>{totalMinutes}분</Text>
-          </View>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "flex-end",
-              height: CHART_HEIGHT,
-              gap: 6,
-            }}
-          >
-            {weekly.map((item, index) => {
-              const isToday = index === weekly.length - 1;
-
-              // ⭐️ maxMinutes가 0일 때 NaN이 되는 것을 방지
-              const ratio = maxMinutes > 0 ? item.minute / maxMinutes : 0;
-              const barH = isAnimated
-                ? Math.max(8, ratio * (CHART_HEIGHT - 28))
-                : 0;
-
-              return (
-                <View
-                  key={item.day || index.toString()} // 혹시 day가 없을 때를 대비
-                  style={{
-                    flex: 1,
-                    alignItems: "center",
-                    height: CHART_HEIGHT,
-                    justifyContent: "flex-end",
-                    gap: 4,
-                  }}
-                >
-                  <Text
-                    style={[mpStyles.barMinute, isToday && { color: primary }]}
-                  >
-                    {item.minute}분
-                  </Text>
-                  <View
-                    style={[
-                      mpStyles.bar,
-                      { height: barH },
-                      isToday
-                        ? { backgroundColor: primary }
-                        : { backgroundColor: "#C7D2FE" },
-                    ]}
-                  />
-                  <Text
-                    style={[mpStyles.barDay, isToday && { color: primary }]}
-                  >
-                    {{
-                      Mon: "월",
-                      Tue: "화",
-                      Wed: "수",
-                      Thu: "목",
-                      Fri: "금",
-                      Sat: "토",
-                      Sun: "일",
-                      MON: "월",
-                      TUE: "화",
-                      WED: "수",
-                      THU: "목",
-                      FRI: "금",
-                      SAT: "토",
-                      SUN: "일",
-                    }[item.day] || item.day}
-                  </Text>
-                </View>
-              );
-            })}
           </View>
         </View>
 
@@ -9058,8 +9304,35 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
             </View>
             <Text style={mpStyles.cardTitle}>실력 성장 그래프</Text>
           </View>
+
           {growthTrend.length > 0 ? (
-            <GrowthTrendChart data={growthTrend} />
+            // ⭐️ 격자와 차트를 겹치기 위한 Wrapper
+            <View style={{ position: "relative" }}>
+              {/* 1. 배경 격자 (Grid) 레이어 */}
+              <View
+                style={{
+                  position: "absolute",
+                  top: 10, // 차트 상단 여백에 맞춰 조절
+                  bottom: 24, // 차트 하단(X축 텍스트) 여백에 맞춰 조절
+                  left: 0,
+                  right: 0,
+                  justifyContent: "space-between",
+                  zIndex: 0,
+                }}
+              >
+                {[...Array(4)].map((_, i) => (
+                  <View
+                    key={`growth-grid-${i}`}
+                    style={{ height: 1, backgroundColor: "#E5E7EB" }}
+                  />
+                ))}
+              </View>
+
+              {/* 2. 기존 차트 컴포넌트 */}
+              <View style={{ zIndex: 1 }}>
+                <GrowthTrendChart data={growthTrend} />
+              </View>
+            </View>
           ) : (
             <Text style={mpStyles.monthlyReviewEmpty}>
               아직 표시할 데이터가 없어요.
@@ -9321,6 +9594,22 @@ function InfoScreen({
       ],
     }[title] ?? [];
 
+  // 👇 안드로이드 뒤로 가기 버튼 제어
+  useEffect(() => {
+    const handleBackPress = () => {
+      // 헤더의 backTo="mode"와 동일하게 맞춤
+      go("mode");
+      return true; // 앱 튕김 방지
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    return () => backHandler.remove();
+  }, [go]);
+
   return (
     <View style={styles.screenSoft}>
       <Header title={title} go={go} backTo="mode" />
@@ -9466,6 +9755,24 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
   const [data, setData] = useState<MyLeague | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+
+  // 👇 여기에 안드로이드 뒤로 가기 제어 코드를 추가합니다!
+  useEffect(() => {
+    const handleBackPress = () => {
+      // ⭐️ 화면 상단의 '뒤로 가기' 버튼을 눌렀을 때 가는 화면 이름과 똑같이 맞춰주세요!
+      // 예: 마이페이지에서 넘어왔다면 go("profile"), 홈에서 왔다면 go("home")
+      go("mode");
+
+      return true; // 앱 튕김 방지
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      handleBackPress,
+    );
+
+    return () => backHandler.remove();
+  }, [go]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -11182,4 +11489,4 @@ const styles = StyleSheet.create({
   devSkipButtonText: { color: "#6B7280", fontSize: 12, fontWeight: "600" },
 });
 
-console.log(process.env.EXPO_PUBLIC_BASE_URL);
+console.log(process.env.EXPO_PUBLIC_API_URL);
