@@ -5,6 +5,7 @@ import {
   useCallback,
   useRef,
   ReactNode,
+  Fragment,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
@@ -32,7 +33,19 @@ import {
   BackHandler,
   ToastAndroid,
 } from "react-native";
-import Svg, { Path, Circle, Polyline } from "react-native-svg";
+import Svg, {
+  Path,
+  Circle,
+  Polyline,
+  Polygon,
+  Line,
+  G,
+  Defs,
+  LinearGradient,
+  RadialGradient,
+  Stop,
+  Text as SvgText,
+} from "react-native-svg";
 import { Calendar, DateData } from "react-native-calendars";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import {
@@ -41,9 +54,14 @@ import {
 } from "@expo-google-fonts/lily-script-one";
 import * as ImagePicker from "expo-image-picker";
 import { WebView } from "react-native-webview";
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 // ⭐️ 음성 재생을 위해 expo-av에서 Audio를 꼭 불러와야 합니다!
 import { Audio } from "expo-av";
 import * as Speech from "expo-speech";
+import * as Clipboard from "expo-clipboard";
 
 const KAKAO_REST_API_KEY = "5775a3641d33077c7adf61cbcc01d0a9";
 const KAKAO_REDIRECT_URI = "https://localhost/kakao";
@@ -224,6 +242,267 @@ const LEAGUE_TIER_META: Record<
   DIAMOND: { label: "다이아몬드", color: "#0EA5E9", bg: "#ECFEFF" },
   MASTER: { label: "마스터", color: "#7C3AED", bg: "#F5F3FF" },
 };
+
+// 🛡️ 리그 엠블럼 — 티어가 오를수록 장식이 하나씩 늘어납니다.
+// 브론즈(기본 방패) → 실버(테두리) → 골드(별) → 사파이어(작은 날개+보석)
+// → 다이아몬드(큰 날개+왕관) → 마스터(황금 날개+왕관+후광+반짝이)
+const LEAGUE_EMBLEM_STYLE: Record<
+  LeagueTier,
+  {
+    top: string;
+    bottom: string;
+    rim: string;
+    wing?: { top: string; bottom: string; size: "small" | "large" };
+    crown?: boolean;
+    glow?: string;
+    sparkles?: boolean;
+    center: "dot" | "chevron" | "star" | "gem" | "diamond" | "masterStar";
+  }
+> = {
+  BRONZE: { top: "#E9AD74", bottom: "#9A5A2B", rim: "#7C4420", center: "dot" },
+  SILVER: {
+    top: "#F8FAFC",
+    bottom: "#94A3B8",
+    rim: "#64748B",
+    center: "chevron",
+  },
+  GOLD: { top: "#FDE68A", bottom: "#D97706", rim: "#B45309", center: "star" },
+  SAPPHIRE: {
+    top: "#93C5FD",
+    bottom: "#1D4ED8",
+    rim: "#1E3A8A",
+    wing: { top: "#EFF6FF", bottom: "#93C5FD", size: "small" },
+    center: "gem",
+  },
+  DIAMOND: {
+    top: "#CFFAFE",
+    bottom: "#0891B2",
+    rim: "#155E75",
+    wing: { top: "#ECFEFF", bottom: "#67E8F9", size: "large" },
+    crown: true,
+    center: "diamond",
+  },
+  MASTER: {
+    top: "#DDD6FE",
+    bottom: "#6D28D9",
+    rim: "#4C1D95",
+    wing: { top: "#FEF3C7", bottom: "#F59E0B", size: "large" },
+    crown: true,
+    glow: "#A78BFA",
+    sparkles: true,
+    center: "masterStar",
+  },
+};
+
+// (cx, cy) 중심의 n각 별 꼭짓점 문자열
+function starPoints(
+  cx: number,
+  cy: number,
+  outer: number,
+  inner: number,
+  n = 5,
+) {
+  return Array.from({ length: n * 2 }, (_, i) => {
+    const r = i % 2 === 0 ? outer : inner;
+    const a = (Math.PI / n) * i - Math.PI / 2;
+    return `${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}`;
+  }).join(" ");
+}
+
+function LeagueEmblem({ tier, size }: { tier: LeagueTier; size: number }) {
+  const s = LEAGUE_EMBLEM_STYLE[tier];
+  const id = `lg-${tier}`;
+  const shield =
+    "M60 22 L92 34 V64 C92 88 78 104 60 112 C42 104 28 88 28 64 V34 Z";
+  const innerRim =
+    "M60 31 L84 40 V64 C84 83 73 96 60 102 C47 96 36 83 36 64 V40 Z";
+  // 왼쪽 날개 깃털 (오른쪽은 좌우 반전해서 재사용)
+  const feathers =
+    s.wing?.size === "large"
+      ? [
+          "M31 44 C17 34 7 22 2 8 C15 16 25 25 33 34 Z",
+          "M30 56 C14 50 4 41 0 30 C12 35 22 41 31 48 Z",
+          "M30 68 C16 66 7 60 3 51 C13 55 22 58 30 61 Z",
+        ]
+      : [
+          "M30 54 C20 50 13 44 10 36 C18 40 24 43 31 47 Z",
+          "M30 66 C20 65 14 61 11 55 C18 58 24 59 30 60 Z",
+        ];
+
+  return (
+    <Svg width={size * 1.2} height={size * 1.24} viewBox="0 0 120 124">
+      <Defs>
+        <LinearGradient id={`${id}-body`} x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={s.top} />
+          <Stop offset="1" stopColor={s.bottom} />
+        </LinearGradient>
+        {s.wing && (
+          <LinearGradient id={`${id}-wing`} x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor={s.wing.top} />
+            <Stop offset="1" stopColor={s.wing.bottom} />
+          </LinearGradient>
+        )}
+        {s.glow && (
+          <RadialGradient id={`${id}-glow`} cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor={s.glow} stopOpacity={0.55} />
+            <Stop offset="1" stopColor={s.glow} stopOpacity={0} />
+          </RadialGradient>
+        )}
+      </Defs>
+
+      {/* 후광 */}
+      {s.glow && <Circle cx={60} cy={66} r={58} fill={`url(#${id}-glow)`} />}
+
+      {/* 날개 */}
+      {s.wing &&
+        [false, true].map((mirror) => (
+          <G
+            key={String(mirror)}
+            transform={mirror ? "translate(120,0) scale(-1,1)" : undefined}
+          >
+            {feathers.map((d) => (
+              <Path
+                key={d}
+                d={d}
+                fill={`url(#${id}-wing)`}
+                stroke={s.wing!.bottom}
+                strokeWidth={1.5}
+                strokeLinejoin="round"
+              />
+            ))}
+          </G>
+        ))}
+
+      {/* 방패 본체 */}
+      <Path
+        d={shield}
+        fill={`url(#${id}-body)`}
+        stroke={s.rim}
+        strokeWidth={4}
+        strokeLinejoin="round"
+      />
+      {tier !== "BRONZE" && (
+        <Path
+          d={innerRim}
+          fill="none"
+          stroke="#FFFFFF"
+          strokeOpacity={0.55}
+          strokeWidth={2.5}
+          strokeLinejoin="round"
+        />
+      )}
+      {/* 왼쪽 위 하이라이트 */}
+      <Path
+        d="M60 31 L84 40 V50 C70 46 52 46 36 52 V40 Z"
+        fill="#FFFFFF"
+        opacity={0.25}
+      />
+
+      {/* 중앙 장식 */}
+      {s.center === "dot" && (
+        <Circle cx={60} cy={68} r={9} fill={s.rim} opacity={0.75} />
+      )}
+      {s.center === "chevron" && (
+        <Path
+          d="M46 64 L60 54 L74 64 M46 78 L60 68 L74 78"
+          fill="none"
+          stroke={s.rim}
+          strokeWidth={6}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )}
+      {s.center === "star" && (
+        <Polygon
+          points={starPoints(60, 68, 17, 7)}
+          fill="#FFFBEB"
+          stroke={s.rim}
+          strokeWidth={2.5}
+          strokeLinejoin="round"
+        />
+      )}
+      {s.center === "gem" && (
+        <>
+          <Polygon
+            points="60,50 75,60 70,82 50,82 45,60"
+            fill="#DBEAFE"
+            stroke={s.rim}
+            strokeWidth={2.5}
+            strokeLinejoin="round"
+          />
+          <Path
+            d="M45 60 L60 66 L75 60 M60 66 L60 50 M60 66 L50 82 M60 66 L70 82"
+            fill="none"
+            stroke={s.rim}
+            strokeWidth={1.5}
+            strokeOpacity={0.6}
+          />
+        </>
+      )}
+      {(s.center === "diamond" || s.center === "masterStar") && (
+        <>
+          {s.center === "masterStar" && (
+            <Polygon
+              points={starPoints(60, 68, 26, 11)}
+              fill="#FDE68A"
+              stroke="#B45309"
+              strokeWidth={2.5}
+              strokeLinejoin="round"
+            />
+          )}
+          <Polygon
+            points="60,52 74,64 60,84 46,64"
+            fill="#FFFFFF"
+            stroke={s.center === "masterStar" ? "#7C3AED" : s.rim}
+            strokeWidth={2.5}
+            strokeLinejoin="round"
+          />
+          <Path
+            d="M46 64 L74 64 M53 58 L60 84 L67 58"
+            fill="none"
+            stroke={s.center === "masterStar" ? "#7C3AED" : s.rim}
+            strokeWidth={1.5}
+            strokeOpacity={0.6}
+          />
+        </>
+      )}
+
+      {/* 왕관 */}
+      {s.crown && (
+        <G>
+          <Path
+            d="M42 28 L45 8 L54 19 L60 3 L66 19 L75 8 L78 28 Z"
+            fill={tier === "MASTER" ? "#FBBF24" : "#E0F2FE"}
+            stroke={tier === "MASTER" ? "#B45309" : s.rim}
+            strokeWidth={2.5}
+            strokeLinejoin="round"
+          />
+          <Circle
+            cx={60}
+            cy={20}
+            r={3}
+            fill={tier === "MASTER" ? "#EF4444" : "#0EA5E9"}
+          />
+        </G>
+      )}
+
+      {/* 반짝이 */}
+      {s.sparkles &&
+        [
+          [14, 92, 6],
+          [106, 92, 6],
+          [100, 14, 4.5],
+          [20, 16, 4.5],
+        ].map(([x, y, r]) => (
+          <Polygon
+            key={`${x}-${y}`}
+            points={starPoints(x, y, r, r * 0.35, 4)}
+            fill="#FDE68A"
+          />
+        ))}
+    </Svg>
+  );
+}
 
 type LeagueMember = {
   rank: number;
@@ -836,6 +1115,7 @@ export default function App() {
   }
 
   return (
+    <SafeAreaProvider>
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <Modal visible={kakaoWebViewVisible} animationType="slide">
@@ -944,6 +1224,7 @@ export default function App() {
       {screen === "faq" && <FaqScreen go={go} />}
       {TAB_SCREENS.includes(screen) && <BottomTabBar screen={screen} go={go} />}
     </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
@@ -2562,7 +2843,7 @@ function SituationScreen({
   go: (screen: Screen) => void;
   onStart: (room: PracticeRoom) => void;
 }) {
-  // 🧑‍🤝‍🧑 1인 프리셋 3개 + 2인 프리셋 1개. randomize()가 이 중 하나를 랜덤으로 고릅니다.
+  // 🧑‍🤝‍🧑 1인 프리셋 16개 + 2인 프리셋 4개. randomize()가 이 중 하나를 랜덤으로 고릅니다.
   const presets = [
     {
       title: "카페에서 주문하기",
@@ -2594,11 +2875,151 @@ function SituationScreen({
       ],
     },
     {
+      title: "공항 체크인하기",
+      desc: "해외 공항 카운터에서 수하물을 부치고 좌석을 요청하는 상황",
+      characters: [
+        {
+          name: "항공사 직원",
+          trait: "정중하고 꼼꼼하게 안내함",
+          avatar: "👩",
+        },
+      ],
+    },
+    {
+      title: "호텔 체크인하기",
+      desc: "예약한 호텔에 도착해 체크인하고 객실 요청 사항을 전달하는 상황",
+      characters: [
+        {
+          name: "호텔 리셉셔니스트",
+          trait: "밝고 세심한 응대를 함",
+          avatar: "👨",
+        },
+      ],
+    },
+    {
+      title: "레스토랑에서 주문하기",
+      desc: "레스토랑에서 메뉴 추천을 받고 알레르기 여부를 전달하는 상황",
+      characters: [
+        { name: "웨이터", trait: "유쾌하고 메뉴를 잘 아는 직원", avatar: "👨" },
+      ],
+    },
+    {
+      title: "길 물어보기",
+      desc: "처음 가본 도시에서 지하철역까지 가는 길을 현지인에게 묻는 상황",
+      characters: [
+        { name: "현지인", trait: "친절하지만 말이 조금 빠름", avatar: "👩" },
+      ],
+    },
+    {
+      title: "영어 면접 보기",
+      desc: "외국계 회사 면접에서 자기소개와 지원 동기를 이야기하는 상황",
+      characters: [
+        {
+          name: "면접관",
+          trait: "날카로운 질문을 하지만 공정함",
+          avatar: "👨",
+        },
+      ],
+    },
+    {
+      title: "병원 진료 받기",
+      desc: "해외에서 몸이 아파 병원을 찾아 증상을 설명하는 상황",
+      characters: [
+        { name: "의사", trait: "차분하고 쉽게 설명해줌", avatar: "👩" },
+      ],
+    },
+    {
+      title: "옷 가게에서 쇼핑하기",
+      desc: "옷 가게에서 사이즈를 묻고 다른 색상을 찾아달라고 요청하는 상황",
+      characters: [
+        { name: "점원", trait: "센스 있고 스타일 추천을 잘함", avatar: "👩" },
+      ],
+    },
+    {
+      title: "환불 요청하기",
+      desc: "구매한 물건에 문제가 있어 매장에 환불을 요청하는 상황",
+      characters: [
+        {
+          name: "매니저",
+          trait: "원칙적이지만 문제 해결에 적극적임",
+          avatar: "👨",
+        },
+      ],
+    },
+    {
+      title: "새 이웃과 인사하기",
+      desc: "새로 이사 온 이웃과 처음 인사를 나누고 동네 정보를 묻는 상황",
+      characters: [
+        { name: "이웃", trait: "수다스럽고 동네 소식에 밝음", avatar: "🧑" },
+      ],
+    },
+    {
+      title: "택시 타기",
+      desc: "택시를 타고 목적지를 설명하며 예상 요금과 시간을 묻는 상황",
+      characters: [
+        {
+          name: "택시 기사",
+          trait: "말이 많고 도시 이야기를 좋아함",
+          avatar: "👨",
+        },
+      ],
+    },
+    {
+      title: "헬스장 등록하기",
+      desc: "헬스장에 방문해 회원권 종류와 이용 시간을 상담받는 상황",
+      characters: [
+        {
+          name: "트레이너",
+          trait: "에너지 넘치고 운동을 권하는 걸 좋아함",
+          avatar: "🧑",
+        },
+      ],
+    },
+    {
+      title: "교수님과 상담하기",
+      desc: "유학 중 과제 마감 연장을 위해 교수님께 상담을 요청하는 상황",
+      characters: [
+        {
+          name: "Professor Kim",
+          trait: "엄격하지만 학생을 배려함",
+          avatar: "👩",
+        },
+      ],
+    },
+    {
       title: "친구 두 명과 브런치 약속 잡기",
       desc: "주말 브런치 장소와 시간을 두 친구와 함께 영어로 정하는 상황",
       characters: [
         { name: "이든", trait: "느긋하고 맛집 탐방을 좋아함", avatar: "🧑" },
         { name: "소피", trait: "활발하고 계획 세우는 걸 좋아함", avatar: "👩" },
+      ],
+    },
+    {
+      title: "팀 프로젝트 회의",
+      desc: "조별 과제의 역할 분담과 발표 일정을 팀원들과 정하는 상황",
+      characters: [
+        { name: "제이크", trait: "아이디어가 많지만 즉흥적임", avatar: "👨" },
+        { name: "미아", trait: "꼼꼼하고 일정 관리를 잘함", avatar: "👩" },
+      ],
+    },
+    {
+      title: "생일 파티 준비하기",
+      desc: "친구의 깜짝 생일 파티를 위해 선물과 장소를 함께 의논하는 상황",
+      characters: [
+        { name: "루카스", trait: "유머러스하고 분위기 메이커", avatar: "🧑" },
+        { name: "엠마", trait: "섬세하고 선물 고르는 걸 좋아함", avatar: "👩" },
+      ],
+    },
+    {
+      title: "룸메이트와 집안일 나누기",
+      desc: "셰어하우스에서 두 룸메이트와 청소와 장보기 당번을 정하는 상황",
+      characters: [
+        {
+          name: "올리버",
+          trait: "깔끔하고 규칙을 중요하게 생각함",
+          avatar: "👨",
+        },
+        { name: "클로이", trait: "자유분방하고 협상을 잘함", avatar: "👩" },
       ],
     },
   ];
@@ -2672,7 +3093,9 @@ function SituationScreen({
   };
 
   const randomize = () => {
-    const next = presets[Math.floor(Math.random() * presets.length)];
+    // 지금 화면에 떠 있는 상황과 같은 프리셋은 제외하고 고릅니다.
+    const candidates = presets.filter((p) => p.title !== title);
+    const next = candidates[Math.floor(Math.random() * candidates.length)];
     setTitle(next.title);
     setDesc(next.desc);
     setCharacters(next.characters.map((c) => ({ ...c, photoUri: null })));
@@ -2902,6 +3325,181 @@ function SituationScreen({
 
 // 💬 AI 말풍선 앞에 캐릭터 아바타(사진 또는 이모지) + 이름을 붙여서 감싸는 행.
 // 내 메시지는 이 컴포넌트를 쓰지 않고 말풍선만 그대로 둡니다.
+type RoomCharacter = { name: string; avatar: string; photoUri: string | null };
+
+// 💡 2인 방에서는 백엔드가 "[이든]: 대사 [소피]: 대사"처럼 한 응답에 여러 캐릭터 대사를 담아 보냅니다.
+// "[이름]:" 마커 기준으로 잘라서 캐릭터별 말풍선으로 나눠 그릴 수 있게 변환합니다.
+function splitAiSpeakers(
+  text: string,
+  characters: RoomCharacter[] | undefined,
+  fallback: RoomCharacter | undefined,
+): { character: RoomCharacter | undefined; text: string }[] {
+  const markerRegex = /\[([^\]\n]+?)\]\s*:\s*/g;
+  const markers = [...text.matchAll(markerRegex)];
+  if (markers.length === 0) return [{ character: fallback, text }];
+
+  const segments: { character: RoomCharacter | undefined; text: string }[] =
+    [];
+
+  // 첫 마커 앞에 붙은 대사는 기본 캐릭터 말로 취급합니다.
+  const leading = text.slice(0, markers[0].index).trim();
+  if (leading) segments.push({ character: fallback, text: leading });
+
+  markers.forEach((m, i) => {
+    const name = m[1].trim();
+    const start = (m.index ?? 0) + m[0].length;
+    const end = i + 1 < markers.length ? markers[i + 1].index : text.length;
+    const body = text.slice(start, end).trim();
+    if (!body) return;
+
+    const found = characters?.find((c) => c.name === name);
+    const character = found
+      ? found
+      : fallback
+        ? { ...fallback, name }
+        : { name, avatar: "🤖", photoUri: null };
+    segments.push({ character, text: body });
+  });
+
+  return segments.length > 0 ? segments : [{ character: fallback, text }];
+}
+
+// 📋 채팅/음성 기록에서 말풍선을 꾹 눌렀을 때 뜨는 복사 메뉴.
+// "복사"는 대사 전체를 바로 복사하고, "선택 복사"는 원하는 부분만 드래그해서 복사할 수 있게 보여줍니다.
+function MessageCopySheet({
+  text,
+  onClose,
+}: {
+  text: string | null;
+  onClose: () => void;
+}) {
+  const [selectMode, setSelectMode] = useState(false);
+
+  useEffect(() => {
+    if (text === null) setSelectMode(false);
+  }, [text]);
+
+  const copyAll = async () => {
+    if (!text) return;
+    await Clipboard.setStringAsync(text);
+    if (Platform.OS === "android") {
+      ToastAndroid.show("복사되었어요", ToastAndroid.SHORT);
+    }
+    onClose();
+  };
+
+  return (
+    <Modal
+      visible={text !== null}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={copySheetStyles.backdrop} onPress={onClose}>
+        {/* 시트 안쪽을 눌렀을 때는 닫히지 않도록 이벤트를 막습니다. */}
+        <Pressable style={copySheetStyles.sheet} onPress={() => {}}>
+          <View style={copySheetStyles.handle} />
+          {selectMode ? (
+            <>
+              <Text style={copySheetStyles.title}>선택 복사</Text>
+              <Text style={copySheetStyles.hint}>
+                복사할 부분을 꾹 눌러 드래그한 뒤 복사를 눌러주세요
+              </Text>
+              <ScrollView style={copySheetStyles.selectBox}>
+                <Text selectable style={copySheetStyles.selectText}>
+                  {text}
+                </Text>
+              </ScrollView>
+              <Pressable style={copySheetStyles.doneButton} onPress={onClose}>
+                <Text style={copySheetStyles.doneText}>닫기</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={copySheetStyles.preview} numberOfLines={2}>
+                {text}
+              </Text>
+              <Pressable style={copySheetStyles.option} onPress={copyAll}>
+                <Ionicons name="copy-outline" size={20} color={primary} />
+                <Text style={copySheetStyles.optionText}>복사</Text>
+              </Pressable>
+              <Pressable
+                style={copySheetStyles.option}
+                onPress={() => setSelectMode(true)}
+              >
+                <MaterialCommunityIcons
+                  name="cursor-text"
+                  size={20}
+                  color={primary}
+                />
+                <Text style={copySheetStyles.optionText}>선택 복사</Text>
+              </Pressable>
+            </>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const copySheetStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(17, 24, 39, 0.4)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === "ios" ? 36 : 52,
+  },
+  handle: {
+    alignSelf: "center",
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#E5E7EB",
+    marginBottom: 16,
+  },
+  preview: {
+    fontSize: 13,
+    color: "#9CA3AF",
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  option: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: "#F5F6FF",
+    marginBottom: 8,
+  },
+  optionText: { fontSize: 15, fontWeight: "700", color: "#1F2937" },
+  title: { fontSize: 16, fontWeight: "700", color: "#1F2937" },
+  hint: { fontSize: 12, color: "#9CA3AF", marginTop: 4, marginBottom: 12 },
+  selectBox: {
+    maxHeight: 240,
+    borderRadius: 14,
+    backgroundColor: "#F9FAFB",
+    padding: 14,
+  },
+  selectText: { fontSize: 16, lineHeight: 24, color: "#1F2937" },
+  doneButton: {
+    marginTop: 14,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: primary,
+    alignItems: "center",
+  },
+  doneText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+});
+
 function AiMessageRow({
   character,
   children,
@@ -2940,6 +3538,10 @@ export function VoiceChatScreen({
   scrapNavTarget?: { feedbackId: number | null; expression: string } | null;
   onConsumeScrapNavTarget?: () => void;
 }) {
+  // 갤럭시 하단 내비게이션 바에 음소거/통화종료 버튼이 가려지지 않도록 하단 여백을 확보합니다.
+  const insets = useSafeAreaInsets();
+  // 꾹 눌러서 복사 메뉴를 띄운 말풍선 텍스트 (null이면 메뉴 닫힘)
+  const [copyText, setCopyText] = useState<string | null>(null);
   const [inCall, setInCall] = useState(false);
   const [tab, setTab] = useState<"call" | "history">(
     scrapNavTarget ? "history" : "call",
@@ -3183,14 +3785,25 @@ export function VoiceChatScreen({
 
             // --- AI 메시지 매칭 ---
             if (msg.senderType === "AI") {
-              // ⭐️ some 대신 find를 써서 스크랩 데이터를 통째로 가져옵니다!
-              const matchedAiScrap = scraps.find(
-                (s: any) => !s.feedbackId && s.expression === msg.contentText,
+              // 2인 방은 말풍선이 캐릭터별로 나뉘므로, 말풍선마다 스크랩 여부를 확인합니다.
+              const segments = splitAiSpeakers(
+                msg.contentText || "",
+                room.characters,
+                undefined,
               );
+              segments.forEach((segment, segIndex) => {
+                // ⭐️ some 대신 find를 써서 스크랩 데이터를 통째로 가져옵니다!
+                const matchedAiScrap = scraps.find(
+                  (s: any) =>
+                    !s.feedbackId &&
+                    (s.expression === segment.text ||
+                      (segIndex === 0 && s.expression === msg.contentText)),
+                );
+                if (!matchedAiScrap) return;
 
-              // 매칭된 스크랩 내역이 있다면?
-              if (matchedAiScrap) {
-                const aiScrapKey = `${msg.id?.toString() || idx}-ai`;
+                const baseKey = `${msg.id?.toString() || idx}-ai`;
+                const aiScrapKey =
+                  segIndex === 0 ? baseKey : `${baseKey}-${segIndex}`;
 
                 // 1. 화면에 노란불 켜기
                 loadedScrapedKeys.add(aiScrapKey);
@@ -3200,7 +3813,7 @@ export function VoiceChatScreen({
                   ...prev,
                   [aiScrapKey]: matchedAiScrap.scrapId,
                 }));
-              }
+              });
             }
 
             // --- 사용자 피드백 매칭 ---
@@ -3563,9 +4176,11 @@ export function VoiceChatScreen({
         flex: 1,
         backgroundColor: "#fff", // 👈 헤더 색상과 맞춤
         paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 24,
+        paddingBottom: insets.bottom,
       }}
     >
       <Header title={room.title} go={go} backTo="voiceRooms" />
+      <MessageCopySheet text={copyText} onClose={() => setCopyText(null)} />
       <TabBar
         active={tab}
         setActive={setTab}
@@ -3573,7 +4188,11 @@ export function VoiceChatScreen({
       />
       {tab === "call" && (
         <View style={styles.callBody}>
-          <View style={styles.callFeedbackSlot}>
+          {/* 피드백이 길어져도 하단 버튼이 밀려나지 않도록 이 영역만 스크롤됩니다. */}
+          <ScrollView
+            style={styles.callFeedbackScroll}
+            contentContainerStyle={styles.callFeedbackSlot}
+          >
             {inCall &&
               [...messages]
                 .reverse()
@@ -3605,7 +4224,7 @@ export function VoiceChatScreen({
                       )}
                   </View>
                 ))}
-          </View>
+          </ScrollView>
           <View style={styles.avatarRingOuter}>
             <View style={[styles.avatarLarge, inCall && styles.avatarActive]}>
               {isPlaying ? (
@@ -3631,14 +4250,28 @@ export function VoiceChatScreen({
             </Text>
           </View>
 
-          {inCall && latestAiText ? (
-            <View style={styles.subtitleBox}>
-              <View style={styles.subtitleChip}>
-                <Text style={styles.subtitleChipText}>AI</Text>
-              </View>
-              <Text style={styles.subtitleText}>{latestAiText}</Text>
-            </View>
-          ) : null}
+          {/* 2인 방이면 자막도 캐릭터별로 한 줄씩 나눠서 보여줍니다. */}
+          {inCall && latestAiText
+            ? splitAiSpeakers(latestAiText, room.characters, undefined).map(
+                (segment, segIndex, all) => (
+                  <View
+                    key={segIndex}
+                    style={[
+                      styles.subtitleBox,
+                      // 자막끼리는 촘촘하게, 마지막 자막만 원래 하단 여백 유지
+                      segIndex < all.length - 1 && { marginBottom: 8 },
+                    ]}
+                  >
+                    <View style={styles.subtitleChip}>
+                      <Text style={styles.subtitleChipText}>
+                        {segment.character?.name || "AI"}
+                      </Text>
+                    </View>
+                    <Text style={styles.subtitleText}>{segment.text}</Text>
+                  </View>
+                ),
+              )
+            : null}
 
           <View style={styles.controlRow}>
             {inCall && (
@@ -3712,8 +4345,6 @@ export function VoiceChatScreen({
 
             // ⭐️ 고유 키 생성 (백엔드 매칭과 동일하게)
             const msgId = msg.id || idx.toString();
-            const aiScrapKey = `${msgId}-ai`;
-            const isAiScraped = scrapedKeys.has(aiScrapKey);
             const isHighlighted = msgId === highlightedMessageId;
 
             return (
@@ -3737,8 +4368,10 @@ export function VoiceChatScreen({
                 {/* 대화 말풍선 (AI는 캐릭터 아바타+이름을 옆에 붙여서 보여주고,
                     스크랩/읽어주기 버튼도 같은 컬럼 안에 넣어서 말풍선과 왼쪽 끝을 맞춥니다) */}
                 {(() => {
-                  const bubble = (
-                    <View
+                  const makeBubble = (text: string) => (
+                    <Pressable
+                      onLongPress={() => setCopyText(text)}
+                      delayLongPress={350}
                       style={{
                         backgroundColor: isUser ? "#5C6BC0" : "#ffffff",
                         padding: 12,
@@ -3757,74 +4390,100 @@ export function VoiceChatScreen({
                           fontSize: 16,
                         }}
                       >
-                        {msg.text}
+                        {text}
                       </Text>
-                    </View>
+                    </Pressable>
                   );
-                  if (isUser) return bubble;
+                  if (isUser) return makeBubble(msg.text);
 
-                  return (
-                    <AiMessageRow
-                      character={room.characters?.[msg.characterIndex ?? 0]}
-                    >
-                      {bubble}
-                      {/* 🔖 스크랩 버튼 + 🔊 읽어주기 버튼 */}
+                  // ⭐️ 2인 방은 한 응답에 여러 캐릭터 대사가 들어 있으므로 캐릭터별로 말풍선을 나눕니다.
+                  // 첫 말풍선은 기존 스크랩 키(`${msgId}-ai`)를 그대로 써서 예전 스크랩과 호환됩니다.
+                  const aiSegments = splitAiSpeakers(
+                    msg.text,
+                    room.characters,
+                    room.characters?.[msg.characterIndex ?? 0],
+                  );
+
+                  return aiSegments.map((segment, segIndex) => {
+                    const aiScrapKey =
+                      segIndex === 0 ? `${msgId}-ai` : `${msgId}-ai-${segIndex}`;
+                    const isAiScraped = scrapedKeys.has(aiScrapKey);
+                    const speakId =
+                      segIndex === 0 ? msgId : `${msgId}-${segIndex}`;
+
+                    return (
                       <View
+                        key={segIndex}
                         style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 10,
+                          width: "100%",
+                          marginTop: segIndex === 0 ? 0 : 12,
                         }}
                       >
-                        <Pressable
-                          // ⭐️ 스크랩 여부에 따라 스타일만 바꿔줍니다.
-                          style={
-                            isAiScraped
-                              ? styles.aiScrapBadge
-                              : styles.aiScrapButton
-                          }
-                          onPress={() =>
-                            handleScrap(aiScrapKey, {
-                              roomId: room.id,
-                              expression: msg.text,
-                              context: "",
-                              category: "EXPRESSION",
-                            })
-                          }
-                        >
-                          <BookmarkIcon
-                            color={isAiScraped ? "#fff" : "#9CA3AF"}
-                            size={11}
-                            // ⭐️ 아이콘이 칠해지는 속성(filled)이 있다면 여기에 연결해줍니다.
-                            filled={isAiScraped ? true : undefined}
-                          />
-                          <Text
-                            style={
-                              isAiScraped
-                                ? styles.aiScrapBadgeText
-                                : styles.aiScrapText
-                            }
+                        <AiMessageRow character={segment.character}>
+                          {makeBubble(segment.text)}
+                          {/* 🔖 스크랩 버튼 + 🔊 읽어주기 버튼 */}
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 10,
+                            }}
                           >
-                            {isAiScraped ? "스크랩됨" : "스크랩"}
-                          </Text>
-                        </Pressable>
-                        <Pressable
-                          onPress={() => toggleSpeakMessage(msgId, msg.text)}
-                          style={styles.aiScrapButton}
-                        >
-                          <Ionicons
-                            name={
-                              speakingId === msgId
-                                ? "stop-circle-outline"
-                                : "volume-medium-outline"
-                            }
-                            size={13}
-                            color={speakingId === msgId ? primary : "#9CA3AF"}
-                          />
-                        </Pressable>
+                            <Pressable
+                              // ⭐️ 스크랩 여부에 따라 스타일만 바꿔줍니다.
+                              style={
+                                isAiScraped
+                                  ? styles.aiScrapBadge
+                                  : styles.aiScrapButton
+                              }
+                              onPress={() =>
+                                handleScrap(aiScrapKey, {
+                                  roomId: room.id,
+                                  expression: segment.text,
+                                  context: "",
+                                  category: "EXPRESSION",
+                                })
+                              }
+                            >
+                              <BookmarkIcon
+                                color={isAiScraped ? "#fff" : "#9CA3AF"}
+                                size={11}
+                                // ⭐️ 아이콘이 칠해지는 속성(filled)이 있다면 여기에 연결해줍니다.
+                                filled={isAiScraped ? true : undefined}
+                              />
+                              <Text
+                                style={
+                                  isAiScraped
+                                    ? styles.aiScrapBadgeText
+                                    : styles.aiScrapText
+                                }
+                              >
+                                {isAiScraped ? "스크랩됨" : "스크랩"}
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              onPress={() =>
+                                toggleSpeakMessage(speakId, segment.text)
+                              }
+                              style={styles.aiScrapButton}
+                            >
+                              <Ionicons
+                                name={
+                                  speakingId === speakId
+                                    ? "stop-circle-outline"
+                                    : "volume-medium-outline"
+                                }
+                                size={13}
+                                color={
+                                  speakingId === speakId ? primary : "#9CA3AF"
+                                }
+                              />
+                            </Pressable>
+                          </View>
+                        </AiMessageRow>
                       </View>
-                    </AiMessageRow>
-                  );
+                    );
+                  });
                 })()}
 
                 {/* ⭐️ 피드백 박스 (내가 보낸 메시지 밑에만) */}
@@ -4086,6 +4745,8 @@ export function TextChatScreen({
   onConsumeScrapNavTarget?: () => void;
 }) {
   const [input, setInput] = useState("");
+  // 꾹 눌러서 복사 메뉴를 띄운 말풍선 텍스트 (null이면 메뉴 닫힘)
+  const [copyText, setCopyText] = useState<string | null>(null);
 
   // 👇 안드로이드 뒤로 가기 버튼 제어 (go 함수 사용)
   useEffect(() => {
@@ -4355,12 +5016,25 @@ export function TextChatScreen({
 
               // --- [AI 메시지 매칭] ---
               if (msg.senderType === "AI") {
-                const matchedAiScrap = scraps.find(
-                  (s: any) => !s.feedbackId && s.expression === msg.contentText,
+                // 2인 방은 말풍선이 캐릭터별로 나뉘므로, 말풍선마다 스크랩 여부를 확인합니다.
+                const segments = splitAiSpeakers(
+                  msg.contentText || "",
+                  room.characters,
+                  undefined,
                 );
+                segments.forEach((segment, segIndex) => {
+                  const matchedAiScrap = scraps.find(
+                    (s: any) =>
+                      !s.feedbackId &&
+                      (s.expression === segment.text ||
+                        (segIndex === 0 && s.expression === msg.contentText)),
+                  );
+                  if (!matchedAiScrap) return;
 
-                if (matchedAiScrap) {
-                  const aiScrapKey = `${msg.id.toString()}-ai`;
+                  const aiScrapKey =
+                    segIndex === 0
+                      ? `${msg.id.toString()}-ai`
+                      : `${msg.id.toString()}-ai-${segIndex}`;
                   loadedScrapedKeys.add(aiScrapKey);
 
                   // ⭐️ 삭제를 위해 scrapId 저장!
@@ -4368,7 +5042,7 @@ export function TextChatScreen({
                     ...prev,
                     [aiScrapKey]: matchedAiScrap.scrapId,
                   }));
-                }
+                });
               }
 
               // --- [사용자 피드백 매칭] ---
@@ -4590,6 +5264,7 @@ export function TextChatScreen({
       }}
     >
       <Header title={room.title} go={go} backTo="chatRooms" />
+      <MessageCopySheet text={copyText} onClose={() => setCopyText(null)} />
 
       <ScrollView
         ref={scrollViewRef}
@@ -4598,42 +5273,19 @@ export function TextChatScreen({
       >
         {messages.map((msg, index) => {
           const isUser = msg.speaker === "user";
-          const aiScrapKey = `${msg.id}-ai`;
-          const isAiScraped = scrapedKeys.has(aiScrapKey);
           const isHighlighted = msg.id === highlightedMessageId;
 
           // ---------------------------------------------------------
           // 💡 [핵심] AI 메시지 텍스트 파싱 & 캐릭터 매칭 로직
+          // 한 응답에 여러 캐릭터 대사가 들어 있으면 캐릭터별로 나눕니다.
           // ---------------------------------------------------------
-          let displayMessage = msg.text;
-          let matchedCharacter = room.characters?.[msg.characterIndex ?? 0];
-
-          if (!isUser) {
-            // 정규식: "[이름]: 대사" 패턴 찾기
-            const match = msg.text.match(/^\[(.*?)\]:\s*([\s\S]*)/);
-
-            if (match) {
-              const parsedName = match[1].trim(); // 예: "소피"
-              displayMessage = match[2].trim(); // 예: "Great! Do you..."
-
-              // 방에 설정된 캐릭터 목록에서 이름이 같은 캐릭터 찾기
-              const foundChar = room.characters?.find(
-                (c) => c.name === parsedName,
+          const aiSegments = isUser
+            ? []
+            : splitAiSpeakers(
+                msg.text,
+                room.characters,
+                room.characters?.[msg.characterIndex ?? 0],
               );
-
-              if (foundChar) {
-                matchedCharacter = foundChar;
-              } else if (matchedCharacter) {
-                matchedCharacter = { ...matchedCharacter, name: parsedName };
-              } else {
-                matchedCharacter = {
-                  name: parsedName,
-                  avatar: "🤖",
-                  photoUri: null,
-                };
-              }
-            }
-          }
           // ---------------------------------------------------------
 
           return (
@@ -4656,8 +5308,10 @@ export function TextChatScreen({
             >
               {/* 대화 말풍선 */}
               {(() => {
-                const bubble = (
-                  <View
+                const makeBubble = (text: string) => (
+                  <Pressable
+                    onLongPress={() => setCopyText(text)}
+                    delayLongPress={350}
                     style={{
                       backgroundColor: isUser ? "#5C6BC0" : "#ffffff",
                       padding: 12,
@@ -4674,74 +5328,96 @@ export function TextChatScreen({
                       style={{ color: isUser ? "#fff" : "#333", fontSize: 16 }}
                     >
                       {/* ⭐️ 괄호가 제거된 순수 대사 출력 */}
-                      {displayMessage}
+                      {text}
                     </Text>
-                  </View>
+                  </Pressable>
                 );
 
-                if (isUser) return bubble;
+                if (isUser) return makeBubble(msg.text);
 
-                return (
-                  <AiMessageRow character={matchedCharacter}>
-                    {bubble}
+                // ⭐️ 캐릭터별로 말풍선을 따로 그립니다.
+                // 첫 말풍선은 기존 스크랩 키(`${msg.id}-ai`)를 그대로 써서 예전 스크랩과 호환됩니다.
+                return aiSegments.map((segment, segIndex) => {
+                  const aiScrapKey =
+                    segIndex === 0
+                      ? `${msg.id}-ai`
+                      : `${msg.id}-ai-${segIndex}`;
+                  const isAiScraped = scrapedKeys.has(aiScrapKey);
+                  const speakId =
+                    segIndex === 0 ? msg.id : `${msg.id}-${segIndex}`;
+
+                  return (
                     <View
+                      key={segIndex}
                       style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 10,
+                        width: "100%",
+                        marginTop: segIndex === 0 ? 0 : 12,
                       }}
                     >
-                      <Pressable
-                        style={
-                          isAiScraped
-                            ? styles.aiScrapBadge
-                            : styles.aiScrapButton
-                        }
-                        onPress={() =>
-                          handleScrap(aiScrapKey, {
-                            roomId: room.id,
-                            // ⭐️ 스크랩 시 순수 대사만 저장
-                            expression: displayMessage,
-                            context: "",
-                            category: "EXPRESSION",
-                          })
-                        }
-                      >
-                        <BookmarkIcon
-                          color={isAiScraped ? "#fff" : "#9CA3AF"}
-                          size={11}
-                          filled={isAiScraped ? true : undefined}
-                        />
-                        <Text
-                          style={
-                            isAiScraped
-                              ? styles.aiScrapBadgeText
-                              : styles.aiScrapText
-                          }
+                      <AiMessageRow character={segment.character}>
+                        {makeBubble(segment.text)}
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 10,
+                          }}
                         >
-                          {isAiScraped ? "스크랩됨" : "스크랩"}
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        // ⭐️ TTS 음성 출력 시 순수 대사만 읽도록 설정
-                        onPress={() =>
-                          toggleSpeakMessage(msg.id, displayMessage)
-                        }
-                        style={styles.aiScrapButton}
-                      >
-                        <Ionicons
-                          name={
-                            speakingId === msg.id
-                              ? "stop-circle-outline"
-                              : "volume-medium-outline"
-                          }
-                          size={13}
-                          color={speakingId === msg.id ? primary : "#9CA3AF"}
-                        />
-                      </Pressable>
+                          <Pressable
+                            style={
+                              isAiScraped
+                                ? styles.aiScrapBadge
+                                : styles.aiScrapButton
+                            }
+                            onPress={() =>
+                              handleScrap(aiScrapKey, {
+                                roomId: room.id,
+                                // ⭐️ 스크랩 시 순수 대사만 저장
+                                expression: segment.text,
+                                context: "",
+                                category: "EXPRESSION",
+                              })
+                            }
+                          >
+                            <BookmarkIcon
+                              color={isAiScraped ? "#fff" : "#9CA3AF"}
+                              size={11}
+                              filled={isAiScraped ? true : undefined}
+                            />
+                            <Text
+                              style={
+                                isAiScraped
+                                  ? styles.aiScrapBadgeText
+                                  : styles.aiScrapText
+                              }
+                            >
+                              {isAiScraped ? "스크랩됨" : "스크랩"}
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            // ⭐️ TTS 음성 출력 시 순수 대사만 읽도록 설정
+                            onPress={() =>
+                              toggleSpeakMessage(speakId, segment.text)
+                            }
+                            style={styles.aiScrapButton}
+                          >
+                            <Ionicons
+                              name={
+                                speakingId === speakId
+                                  ? "stop-circle-outline"
+                                  : "volume-medium-outline"
+                              }
+                              size={13}
+                              color={
+                                speakingId === speakId ? primary : "#9CA3AF"
+                              }
+                            />
+                          </Pressable>
+                        </View>
+                      </AiMessageRow>
                     </View>
-                  </AiMessageRow>
-                );
+                  );
+                });
               })()}
 
               {/* 피드백 박스 (User 전용 로직) */}
@@ -6291,6 +6967,122 @@ const ACHIEVEMENTS_MOCK: Achievement[] = [
   },
 ];
 
+// 💬 업적 뱃지를 눌렀을 때 뱃지 아래에 뜨는 조건 설명 말풍선
+function BadgeConditionBubble({
+  badge,
+  align,
+  onClose,
+}: {
+  badge: any;
+  align: "left" | "center" | "right";
+  onClose: () => void;
+}) {
+  const BUBBLE_WIDTH = 220;
+  const bubblePosition =
+    align === "left"
+      ? { left: 0 }
+      : align === "right"
+        ? { right: 0 }
+        : { left: "50%" as const, marginLeft: -BUBBLE_WIDTH / 2 };
+
+  return (
+    <>
+      {/* 꼬리는 말풍선과 별도로 뱃지 칸 가운데에 붙여서 항상 뱃지를 가리키게 합니다. */}
+      <View style={badgeBubbleStyles.tail} />
+      <Pressable
+        onPress={onClose}
+        style={[
+          badgeBubbleStyles.bubble,
+          { width: BUBBLE_WIDTH },
+          bubblePosition,
+        ]}
+      >
+        <View style={badgeBubbleStyles.headerRow}>
+          <Text style={badgeBubbleStyles.icon}>
+            {badge.earned ? badge.badgeIcon : "🔒"}
+          </Text>
+          <Text style={badgeBubbleStyles.name} numberOfLines={1}>
+            {badge.badgeName}
+          </Text>
+          <View
+            style={[
+              badgeBubbleStyles.statusChip,
+              { backgroundColor: badge.earned ? "#ECFDF5" : "#374151" },
+            ]}
+          >
+            <Text
+              style={[
+                badgeBubbleStyles.statusText,
+                { color: badge.earned ? "#059669" : "#D1D5DB" },
+              ]}
+            >
+              {badge.earned ? "획득" : "미획득"}
+            </Text>
+          </View>
+        </View>
+        {!!badge.description && (
+          <Text style={badgeBubbleStyles.description}>{badge.description}</Text>
+        )}
+        <View style={badgeBubbleStyles.conditionBox}>
+          <Ionicons name="flag-outline" size={13} color={primary} />
+          <Text style={badgeBubbleStyles.conditionText}>
+            {badge.conditionText}
+          </Text>
+        </View>
+      </Pressable>
+    </>
+  );
+}
+
+const badgeBubbleStyles = StyleSheet.create({
+  bubble: {
+    position: "absolute",
+    top: "100%",
+    marginTop: 6,
+    backgroundColor: "#1F2937",
+    borderRadius: 14,
+    padding: 12,
+    gap: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  // 위쪽(뱃지)을 가리키는 삼각형 꼬리
+  tail: {
+    position: "absolute",
+    top: "100%",
+    left: "50%",
+    marginLeft: -7,
+    marginTop: -1,
+    zIndex: 1,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 7,
+    borderRightWidth: 7,
+    borderBottomWidth: 7,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderBottomColor: "#1F2937",
+  },
+  headerRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  icon: { fontSize: 16 },
+  name: { flex: 1, color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
+  statusChip: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
+  statusText: { fontSize: 10, fontWeight: "800" },
+  description: { color: "#D1D5DB", fontSize: 12, lineHeight: 17 },
+  conditionBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+    padding: 8,
+  },
+  conditionText: { flex: 1, color: "#1F2937", fontSize: 12, lineHeight: 17 },
+});
+
 function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
   const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
   const [withdrawPassword, setWithdrawPassword] = useState("");
@@ -6319,6 +7111,8 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
   const [myLeague, setMyLeague] = useState<MyLeague | null>(null);
 
   const [badges, setBadges] = useState<any[]>([]);
+  // 💬 조건 말풍선이 열려 있는 업적 뱃지 id (null이면 닫힘)
+  const [openBadgeId, setOpenBadgeId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   // 👇 여기에 안드로이드 뒤로 가기 제어 코드를 추가합니다!
@@ -6619,6 +7413,8 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
       <ScrollView
         style={{ backgroundColor: "#F9FAFB" }}
         contentContainerStyle={pfStyles.content}
+        // 스크롤하면 열려 있던 뱃지 말풍선을 닫습니다.
+        onScrollBeginDrag={() => setOpenBadgeId(null)}
       >
         {/* 프로필 히어로 카드 */}
         <View style={pfStyles.heroCard}>
@@ -6674,18 +7470,7 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
             <Text style={pfStyles.currentLeagueLabel}>
               {leagueTierMeta ? `${leagueTierMeta.label} 리그` : "현재 리그"}
             </Text>
-            <View
-              style={[
-                pfStyles.leagueShield,
-                { backgroundColor: leagueTierMeta?.bg ?? "#FEF3C7" },
-              ]}
-            >
-              <Ionicons
-                name="shield"
-                size={14}
-                color={leagueTierMeta?.color ?? "#D97706"}
-              />
-            </View>
+            <LeagueEmblem tier={myLeague?.league ?? "BRONZE"} size={22} />
           </View>
         </View>
         <View style={pfStyles.card}>
@@ -6702,22 +7487,26 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
           <Text style={pfStyles.sectionTitle}>업적</Text>
           <Text style={pfStyles.sectionArrow}>›</Text>
         </View>
-        <View style={pfStyles.achievementsGrid}>
+        <View
+          style={[
+            pfStyles.achievementsGrid,
+            // 말풍선이 아래 "계정" 섹션 위로 보이도록 열려 있을 때 레이어를 올립니다.
+            openBadgeId !== null && { zIndex: 10, elevation: 10 },
+          ]}
+        >
           {/* ⭐️ 1. ACHIEVEMENTS_MOCK 대신 App.tsx에서 받아온 badges 상태를 map으로 돕니다 */}
-          {badges.map((item) => (
+          {badges.map((item, index) => (
             <Pressable
               key={item.id}
-              style={pfStyles.achievementItem}
-              // ⭐️ 뱃지를 터치했을 때 실행되는 함수
-              onPress={() => {
-                // 획득한 뱃지인지, 미획득 뱃지인지에 따라 메시지를 다르게 보여줄 수 있습니다.
-                const statusTitle = item.earned
-                  ? `🎉 ${item.badgeName} (획득 완료)`
-                  : `🔒 ${item.badgeName} (미획득)`;
-                const message = `${item.description}\n\n[달성 조건]\n${item.conditionText}`;
-
-                Alert.alert(statusTitle, message);
-              }}
+              style={[
+                pfStyles.achievementItem,
+                // 말풍선이 아래 줄 뱃지들 위로 올라오도록 열린 뱃지를 맨 위 레이어로
+                openBadgeId === item.id && { zIndex: 10, elevation: 10 },
+              ]}
+              // ⭐️ 뱃지를 터치하면 조건 말풍선을 열고, 다시 누르면 닫습니다.
+              onPress={() =>
+                setOpenBadgeId((prev) => (prev === item.id ? null : item.id))
+              }
             >
               <View style={pfStyles.medalWrap}>
                 <View
@@ -6753,6 +7542,20 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
               <Text style={pfStyles.achievementTitle} numberOfLines={2}>
                 {item.badgeName}
               </Text>
+              {openBadgeId === item.id && (
+                <BadgeConditionBubble
+                  badge={item}
+                  // 3열 그리드에서 양 끝 열은 말풍선이 화면 밖으로 나가지 않게 안쪽으로 붙입니다.
+                  align={
+                    index % 3 === 0
+                      ? "left"
+                      : index % 3 === 2
+                        ? "right"
+                        : "center"
+                  }
+                  onClose={() => setOpenBadgeId(null)}
+                />
+              )}
             </Pressable>
           ))}
         </View>
@@ -8120,14 +8923,6 @@ const pfStyles = StyleSheet.create({
   sectionArrow: { color: "#C7CBD1", fontSize: 20 },
   currentLeagueBadge: { flexDirection: "row", alignItems: "center", gap: 6 },
   currentLeagueLabel: { color: "#9CA3AF", fontSize: 12 },
-  leagueShield: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#FEF3C7",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   totalPointBlock: { alignItems: "center", paddingVertical: 16, gap: 4 },
   totalPointLabel: { color: "#9CA3AF", fontSize: 12, fontWeight: "600" },
   totalPointValue: { color: primary, fontSize: 28, fontWeight: "800" },
@@ -8514,39 +9309,138 @@ const ntStyles = StyleSheet.create({
   detailBody: { color: "#374151", fontSize: 14, lineHeight: 22 },
 });
 
+// 📏 진행 막대 뒤에 25/50/75% 위치를 표시하는 세로 격자선
+function ProgressGridLines() {
+  return (
+    <>
+      {[25, 50, 75].map((tick) => (
+        <View
+          key={tick}
+          style={{
+            position: "absolute",
+            left: `${tick}%`,
+            top: 0,
+            bottom: 0,
+            width: 1,
+            backgroundColor: "#E5E7EB",
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
 // 📈 실력 성장 그래프 — 퀴즈 정답률/피드백 비율 두 선을 그리는 듀얼 라인 차트 (react-native-svg)
 function GrowthTrendChart({ data }: { data: GrowthTrendPoint[] }) {
-  const width = 280;
-  const height = 120;
-  const padding = 8;
+  // 카드 폭에 맞춰 그래프가 늘어나도록 실제 폭을 측정합니다.
+  const [width, setWidth] = useState(280);
+  const height = 140;
+  const axisWidth = 28; // 왼쪽 % 눈금 영역
+  const topPad = 8;
+  const bottomPad = 20; // 아래쪽 주차 라벨 영역
+  const rightPad = 8;
+  const plotLeft = axisWidth;
+  const plotRight = width - rightPad;
+  const plotTop = topPad;
+  const plotBottom = height - bottomPad;
+  const yTicks = [0, 25, 50, 75, 100];
+
+  const xAt = (index: number) =>
+    data.length > 1
+      ? plotLeft + (index / (data.length - 1)) * (plotRight - plotLeft)
+      : (plotLeft + plotRight) / 2;
+  const yAt = (value: number) =>
+    plotTop +
+    (1 - Math.max(0, Math.min(100, value)) / 100) * (plotBottom - plotTop);
 
   const toPoints = (values: number[]) =>
-    values
-      .map((value, index) => {
-        const x =
-          data.length > 1
-            ? padding + (index / (data.length - 1)) * (width - padding * 2)
-            : width / 2;
-        const y = padding + (1 - value / 100) * (height - padding * 2);
-        return `${x},${y}`;
-      })
-      .join(" ");
+    values.map((value, index) => `${xAt(index)},${yAt(value)}`).join(" ");
+
+  // "2026-09-07" → "9/7"
+  const weekLabel = (weekStart: string) => {
+    const [, m, d] = weekStart.split("-");
+    return m && d ? `${Number(m)}/${Number(d)}` : weekStart;
+  };
+
+  const series = [
+    { key: "quizAccuracy" as const, color: primary },
+    { key: "feedbackCleanRatio" as const, color: "#059669" },
+  ];
 
   return (
-    <View>
+    <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       <Svg width={width} height={height}>
-        <Polyline
-          points={toPoints(data.map((d) => d.quizAccuracy))}
-          fill="none"
-          stroke={primary}
-          strokeWidth={2}
-        />
-        <Polyline
-          points={toPoints(data.map((d) => d.feedbackCleanRatio))}
-          fill="none"
-          stroke="#059669"
-          strokeWidth={2}
-        />
+        {/* 가로 격자 + % 눈금 */}
+        {yTicks.map((tick) => (
+          <Fragment key={`y-${tick}`}>
+            <Line
+              x1={plotLeft}
+              x2={plotRight}
+              y1={yAt(tick)}
+              y2={yAt(tick)}
+              stroke={tick === 0 ? "#D1D5DB" : "#EEF0F3"}
+              strokeWidth={1}
+              strokeDasharray={tick === 0 ? undefined : "4 4"}
+            />
+            <SvgText
+              x={plotLeft - 6}
+              y={yAt(tick) + 3}
+              fontSize={9}
+              fill="#9CA3AF"
+              textAnchor="end"
+            >
+              {tick}
+            </SvgText>
+          </Fragment>
+        ))}
+
+        {/* 세로 격자 + 주차 라벨 */}
+        {data.map((point, index) => (
+          <Fragment key={`x-${point.weekStart}`}>
+            <Line
+              x1={xAt(index)}
+              x2={xAt(index)}
+              y1={plotTop}
+              y2={plotBottom}
+              stroke="#F3F4F6"
+              strokeWidth={1}
+            />
+            <SvgText
+              x={xAt(index)}
+              y={height - 4}
+              fontSize={9}
+              fill="#9CA3AF"
+              textAnchor="middle"
+            >
+              {weekLabel(point.weekStart)}
+            </SvgText>
+          </Fragment>
+        ))}
+
+        {/* 데이터 선 + 점 */}
+        {series.map(({ key, color }) => (
+          <Fragment key={key}>
+            <Polyline
+              points={toPoints(data.map((d) => d[key]))}
+              fill="none"
+              stroke={color}
+              strokeWidth={2}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            {data.map((d, index) => (
+              <Circle
+                key={`${key}-${index}`}
+                cx={xAt(index)}
+                cy={yAt(d[key])}
+                r={3}
+                fill="#fff"
+                stroke={color}
+                strokeWidth={2}
+              />
+            ))}
+          </Fragment>
+        ))}
       </Svg>
       <View style={{ flexDirection: "row", gap: 16, marginTop: 8 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -8784,7 +9678,22 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
   const [visibleMonth, setVisibleMonth] = useState(new Date());
   const selectedDateISO = formatDateISO(selectedDate);
   const visibleMonthISO = formatMonthISO(visibleMonth);
-  const isPastMonth = visibleMonthISO < formatMonthISO(new Date());
+
+  // 🗒️ 맨 위 AI 월간 총평 카드가 보여줄 달 — 총평은 달이 끝나야 생기므로 기본값은 지난 달
+  const [reviewMonth, setReviewMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  });
+  const reviewMonthISO = formatMonthISO(reviewMonth);
+  const currentMonthISO = formatMonthISO(new Date());
+  const canGoNextReviewMonth =
+    formatMonthISO(
+      new Date(reviewMonth.getFullYear(), reviewMonth.getMonth() + 1, 1),
+    ) < currentMonthISO;
+  const shiftReviewMonth = (delta: number) =>
+    setReviewMonth(
+      (prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1),
+    );
 
   // 📊 전체 누적 고정 카드 (퀴즈 정답률 / 피드백 비율) — 캘린더 선택과 무관
   const [quizStats, setQuizStats] = useState<QuizStats | null>(null);
@@ -8805,7 +9714,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
   >([]);
   const [modeRatio, setModeRatio] = useState<ModeRatio | null>(null);
 
-  // 🗒️ 캘린더에 펼쳐진 달의 AI 총평 (지난 달까지만) — 유료 전용 API라 무료 회원은 403
+  // 🗒️ reviewMonth의 AI 총평 (지난 달까지만) — 유료 전용 API라 무료 회원은 403
   const [monthlyReview, setMonthlyReview] = useState<MonthlyReview | null>(
     null,
   );
@@ -8905,13 +9814,9 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
 
   useEffect(() => {
     setMonthlyReviewLocked(false);
-    if (!isPastMonth) {
-      setMonthlyReview(null);
-      return;
-    }
     const loadMonthlyReview = async () => {
       try {
-        const data = await fetchMonthlyReview(visibleMonthISO);
+        const data = await fetchMonthlyReview(reviewMonthISO);
         setMonthlyReview(data);
       } catch (error: any) {
         if (error.response?.status === 403) {
@@ -8926,7 +9831,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
       }
     };
     loadMonthlyReview();
-  }, [visibleMonthISO, isPastMonth]);
+  }, [reviewMonthISO]);
 
   // ⭐️ 3. TypeScript가 minute를 확실히 숫자로 인식하므로 빨간 줄이 사라집니다!
   const maxMinutes =
@@ -9024,6 +9929,61 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         style={{ backgroundColor: "#F9FAFB" }}
         contentContainerStyle={mpStyles.content}
       >
+        {/* ✨ AI 월간 총평 — 화면 맨 위에 강조 카드로 노출. 지난 달부터 보여주고 화살표로 이전 달 이동 */}
+        <View style={mpStyles.reviewCard}>
+          <View style={mpStyles.reviewGlow} />
+          <View style={mpStyles.reviewHeader}>
+            <View style={mpStyles.reviewBadge}>
+              <Ionicons name="sparkles" size={14} color={primary} />
+            </View>
+            <Text style={mpStyles.reviewTitle}>AI 월간 총평</Text>
+            <View style={mpStyles.reviewMonthNav}>
+              <Pressable
+                hitSlop={8}
+                onPress={() => shiftReviewMonth(-1)}
+                style={mpStyles.reviewArrow}
+              >
+                <Ionicons name="chevron-back" size={16} color="#fff" />
+              </Pressable>
+              <Text style={mpStyles.reviewMonthText}>
+                {reviewMonth.getFullYear()}년 {reviewMonth.getMonth() + 1}월
+              </Text>
+              <Pressable
+                hitSlop={8}
+                disabled={!canGoNextReviewMonth}
+                onPress={() => shiftReviewMonth(1)}
+                style={[
+                  mpStyles.reviewArrow,
+                  !canGoNextReviewMonth && { opacity: 0.3 },
+                ]}
+              >
+                <Ionicons name="chevron-forward" size={16} color="#fff" />
+              </Pressable>
+            </View>
+          </View>
+
+          {monthlyReviewLocked ? (
+            <View style={mpStyles.reviewLockedBox}>
+              <Ionicons name="lock-closed" size={18} color="#fff" />
+              <Text style={mpStyles.reviewLockedText}>
+                프리미엄 회원만 볼 수 있어요
+              </Text>
+              <Pressable
+                style={mpStyles.reviewUpgradeButton}
+                onPress={() => go("payment")}
+              >
+                <Text style={mpStyles.reviewUpgradeText}>프리미엄 알아보기</Text>
+              </Pressable>
+            </View>
+          ) : monthlyReview?.summary ? (
+            <Text style={mpStyles.reviewBody}>{monthlyReview.summary}</Text>
+          ) : (
+            <Text style={mpStyles.reviewEmpty}>
+              아직 이 달의 총평이 생성되지 않았어요.
+            </Text>
+          )}
+        </View>
+
         {/* 📅 오늘 날짜 → 캘린더 펼치기 */}
         <Pressable
           onPress={() => setCalendarOpen((v) => !v)}
@@ -9063,28 +10023,6 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
                 arrowColor: primary,
               }}
             />
-            <View style={mpStyles.monthlyReviewBox}>
-              <Text style={mpStyles.monthlyReviewTitle}>
-                AI 월간 총평 · {visibleMonthISO}
-              </Text>
-              {!isPastMonth ? (
-                <Text style={mpStyles.monthlyReviewEmpty}>
-                  이번 달이 끝나면 총평이 생성돼요.
-                </Text>
-              ) : monthlyReviewLocked ? (
-                <Text style={mpStyles.monthlyReviewEmpty}>
-                  프리미엄 회원만 볼 수 있어요.
-                </Text>
-              ) : monthlyReview?.summary ? (
-                <Text style={mpStyles.monthlyReviewText}>
-                  {monthlyReview.summary}
-                </Text>
-              ) : (
-                <Text style={mpStyles.monthlyReviewEmpty}>
-                  아직 이 달의 총평이 생성되지 않았어요.
-                </Text>
-              )}
-            </View>
           </View>
         )}
 
@@ -9182,6 +10120,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
             </Text>
           </View>
           <View style={mpStyles.progressTrack}>
+            <ProgressGridLines />
             <View
               style={[
                 mpStyles.progressFill,
@@ -9240,6 +10179,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
             </Text>
           </View>
           <View style={mpStyles.progressTrack}>
+            <ProgressGridLines />
             <View
               style={[
                 mpStyles.progressFill,
@@ -9250,6 +10190,59 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
               ]}
             />
           </View>
+        </View>
+
+        {/* 실력 성장 그래프 (최근 8주) — GET /api/users/growth-trend */}
+        <View style={mpStyles.card}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 14,
+            }}
+          >
+            <View
+              style={[mpStyles.cardIconBadge, { backgroundColor: "#EEF2FF" }]}
+            >
+              <Ionicons name="trending-up-outline" size={16} color={primary} />
+            </View>
+            <Text style={mpStyles.cardTitle}>실력 성장 그래프</Text>
+          </View>
+
+          {growthTrend.length > 0 ? (
+            <GrowthTrendChart data={growthTrend} />
+          ) : (
+            <Text style={mpStyles.monthlyReviewEmpty}>
+              아직 표시할 데이터가 없어요.
+            </Text>
+          )}
+        </View>
+
+        {/* 음성/채팅 학습 비율 (선택한 날짜가 속한 주 기준) — GET /api/users/mode-ratio */}
+        <View style={mpStyles.card}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 14,
+            }}
+          >
+            <View
+              style={[mpStyles.cardIconBadge, { backgroundColor: "#ECFEFF" }]}
+            >
+              <Ionicons name="mic-outline" size={16} color="#0EA5E9" />
+            </View>
+            <Text style={mpStyles.cardTitle}>음성/채팅 학습 비율</Text>
+          </View>
+          {modeRatio && modeRatio.voiceMinutes + modeRatio.chatMinutes > 0 ? (
+            <ModeRatioDonut ratio={modeRatio} />
+          ) : (
+            <Text style={mpStyles.monthlyReviewEmpty}>
+              이 주에는 기록이 없어요.
+            </Text>
+          )}
         </View>
 
         {/* 나의 약점 TOP3 (선택한 날짜가 속한 주 기준) — GET /api/users/weak-points */}
@@ -9283,59 +10276,6 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
           ) : (
             <Text style={mpStyles.monthlyReviewEmpty}>
               이 주에는 기록이 없어요.
-            </Text>
-          )}
-        </View>
-
-        {/* 실력 성장 그래프 (최근 8주) — GET /api/users/growth-trend */}
-        <View style={mpStyles.card}>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-              marginBottom: 14,
-            }}
-          >
-            <View
-              style={[mpStyles.cardIconBadge, { backgroundColor: "#EEF2FF" }]}
-            >
-              <Ionicons name="trending-up-outline" size={16} color={primary} />
-            </View>
-            <Text style={mpStyles.cardTitle}>실력 성장 그래프</Text>
-          </View>
-
-          {growthTrend.length > 0 ? (
-            // ⭐️ 격자와 차트를 겹치기 위한 Wrapper
-            <View style={{ position: "relative" }}>
-              {/* 1. 배경 격자 (Grid) 레이어 */}
-              <View
-                style={{
-                  position: "absolute",
-                  top: 10, // 차트 상단 여백에 맞춰 조절
-                  bottom: 24, // 차트 하단(X축 텍스트) 여백에 맞춰 조절
-                  left: 0,
-                  right: 0,
-                  justifyContent: "space-between",
-                  zIndex: 0,
-                }}
-              >
-                {[...Array(4)].map((_, i) => (
-                  <View
-                    key={`growth-grid-${i}`}
-                    style={{ height: 1, backgroundColor: "#E5E7EB" }}
-                  />
-                ))}
-              </View>
-
-              {/* 2. 기존 차트 컴포넌트 */}
-              <View style={{ zIndex: 1 }}>
-                <GrowthTrendChart data={growthTrend} />
-              </View>
-            </View>
-          ) : (
-            <Text style={mpStyles.monthlyReviewEmpty}>
-              아직 표시할 데이터가 없어요.
             </Text>
           )}
         </View>
@@ -9374,32 +10314,6 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
                 </View>
               ))}
             </View>
-          ) : (
-            <Text style={mpStyles.monthlyReviewEmpty}>
-              이 주에는 기록이 없어요.
-            </Text>
-          )}
-        </View>
-
-        {/* 음성/채팅 학습 비율 (선택한 날짜가 속한 주 기준) — GET /api/users/mode-ratio */}
-        <View style={mpStyles.card}>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-              marginBottom: 14,
-            }}
-          >
-            <View
-              style={[mpStyles.cardIconBadge, { backgroundColor: "#ECFEFF" }]}
-            >
-              <Ionicons name="mic-outline" size={16} color="#0EA5E9" />
-            </View>
-            <Text style={mpStyles.cardTitle}>음성/채팅 학습 비율</Text>
-          </View>
-          {modeRatio && modeRatio.voiceMinutes + modeRatio.chatMinutes > 0 ? (
-            <ModeRatioDonut ratio={modeRatio} />
           ) : (
             <Text style={mpStyles.monthlyReviewEmpty}>
               이 주에는 기록이 없어요.
@@ -9526,15 +10440,84 @@ const mpStyles = StyleSheet.create({
     paddingVertical: 4,
   },
   dateRowText: { fontSize: 14, fontWeight: "700", color: "#111827" },
-  monthlyReviewBox: { marginTop: 16 },
-  monthlyReviewTitle: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#6B7280",
-    marginBottom: 6,
-  },
-  monthlyReviewText: { fontSize: 13, color: "#374151", lineHeight: 20 },
   monthlyReviewEmpty: { fontSize: 12, color: "#9CA3AF" },
+  reviewCard: {
+    backgroundColor: primary,
+    borderRadius: 22,
+    padding: 18,
+    overflow: "hidden",
+    shadowColor: primary,
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  // 카드 오른쪽 위에 은은하게 번지는 장식 원
+  reviewGlow: {
+    position: "absolute",
+    top: -60,
+    right: -40,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  reviewHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 14,
+  },
+  reviewBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reviewTitle: { color: "#fff", fontSize: 16, fontWeight: "800", flex: 1 },
+  reviewMonthNav: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  reviewArrow: { padding: 2 },
+  reviewMonthText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  reviewBody: {
+    color: "#fff",
+    fontSize: 14,
+    lineHeight: 22,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: 14,
+    padding: 14,
+  },
+  reviewEmpty: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 13,
+    textAlign: "center",
+    paddingVertical: 12,
+  },
+  reviewLockedBox: {
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: 14,
+    paddingVertical: 16,
+  },
+  reviewLockedText: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  reviewUpgradeButton: {
+    marginTop: 2,
+    backgroundColor: "#fff",
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  reviewUpgradeText: { color: primary, fontSize: 12, fontWeight: "800" },
   weakPointRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -9885,28 +10868,11 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
           {LEAGUE_TIER_ORDER.map((t, i) => {
             const meta = LEAGUE_TIER_META[t];
             const isCurrent = i === tierIndex;
-            const isLocked = i > tierIndex;
+            // 모든 리그 엠블럼을 잠금 없이 보여주고, 현재 리그만 크게 강조합니다.
             return (
               <View key={t} style={lgStyles.carouselItem}>
-                <View
-                  style={[
-                    lgStyles.carouselBadge,
-                    {
-                      backgroundColor: isLocked ? "#F3F4F6" : meta.bg,
-                    },
-                    isCurrent && lgStyles.carouselBadgeCurrent,
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name="shield"
-                    size={isCurrent ? 30 : 20}
-                    color={isLocked ? "#D1D5DB" : meta.color}
-                  />
-                  {isLocked && (
-                    <View style={lgStyles.carouselLock}>
-                      <Ionicons name="lock-closed" size={10} color="#9CA3AF" />
-                    </View>
-                  )}
+                <View style={lgStyles.carouselBadge}>
+                  <LeagueEmblem tier={t} size={isCurrent ? 52 : 36} />
                 </View>
                 <Text
                   style={[
@@ -10018,35 +10984,11 @@ const lgStyles = StyleSheet.create({
     marginBottom: 18,
   },
   carouselItem: { alignItems: "center", flex: 1, gap: 6 },
+  // 엠블럼 크기가 달라도 라벨 높이가 맞도록 고정 높이 + 아래 정렬
   carouselBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    height: 66,
     alignItems: "center",
-    justifyContent: "center",
-  },
-  carouselBadgeCurrent: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  carouselLock: {
-    position: "absolute",
-    bottom: -2,
-    right: -2,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-end",
   },
   carouselLabel: { fontSize: 10, color: "#9CA3AF", fontWeight: "600" },
   titleRow: {
@@ -11152,6 +12094,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 24,
   },
+  callFeedbackScroll: { width: "100%", flexGrow: 0, flexShrink: 1 },
   callFeedbackSlot: { width: "100%", alignItems: "center", marginBottom: 12 },
   feedbackCard: {
     marginTop: 6,
