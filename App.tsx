@@ -531,6 +531,21 @@ async function fetchMyLeague(): Promise<MyLeague> {
   return res.data.data;
 }
 
+// 내가 속하지 않은 다른 티어 리그의 랭킹 — GET /api/users/league?tier=GOLD
+// (응답 형태는 내 리그와 동일, myRank/myScore는 의미 없음)
+async function fetchLeagueByTier(tier: LeagueTier): Promise<MyLeague> {
+  const accessToken = await AsyncStorage.getItem("accessToken");
+  const API_URL = "https://api.sentimpro.com";
+  const res = await axios.get(`${API_URL}/api/users/league`, {
+    params: { tier },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  return res.data.data;
+}
+
 // 상위/하위 몇 명이 승급·강등 대상인지(전체 인원의 10%, 최소 1명) 근사 계산합니다.
 // 정확한 반올림 규칙은 백엔드만 알고 있으므로, 이건 어디까지나 화면에 보여줄 컷라인 힌트입니다.
 function getLeagueCutoffCount(totalMembers: number): number {
@@ -624,6 +639,7 @@ async function fetchGrowthTrend(): Promise<GrowthTrendPoint[]> {
   const accessToken = await AsyncStorage.getItem("accessToken");
   const API_URL = "https://api.sentimpro.com";
   const res = await axios.get(`${API_URL}/api/users/growth-trend`, {
+    params: { weeks: 26 }, // 최근 6개월치
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "ngrok-skip-browser-warning": "true",
@@ -649,6 +665,26 @@ async function fetchMonthlyReview(monthISO: string): Promise<MonthlyReview> {
     },
   });
   return res.data.data;
+}
+
+// 결제 화면과 같은 기준(SUCCESS + 만료 전 + 유료 플랜)으로 현재 프리미엄 회원인지 확인합니다.
+async function fetchHasActivePremium(): Promise<boolean> {
+  const accessToken = await AsyncStorage.getItem("accessToken");
+  if (!accessToken) return false;
+  const API_URL = "https://api.sentimpro.com";
+  const res = await axios.get(`${API_URL}/api/payments/my`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+  const now = Date.now();
+  return (res.data.data || []).some(
+    (p: any) =>
+      p.status === "SUCCESS" &&
+      new Date(p.expiresAt).getTime() > now &&
+      (p.planId === 2 || p.planId === 3),
+  );
 }
 
 type FrequentExpression = { expression: string; count: number };
@@ -2000,14 +2036,31 @@ function LoginScreen({
             <View style={styles.divider} />
           </View>
           <View style={styles.socialRow}>
+            {/* 카카오 로그인 디자인 가이드 규격: 컨테이너 #FEE500, 심볼 #000000,
+                레이블 #000000 85%, 모서리 12, 심볼은 왼쪽·레이블은 가운데 */}
             <Pressable
-              style={[styles.socialButton, styles.kakao]}
+              style={({ pressed }) => [
+                styles.kakaoButton,
+                pressed && { opacity: 0.85 },
+              ]}
               onPress={onKakaoLogin}
+              accessibilityRole="button"
+              accessibilityLabel="카카오 로그인"
             >
-              <Text style={styles.socialText}>카카오</Text>
-            </Pressable>
-            <Pressable style={styles.socialButton} onPress={() => go("mode")}>
-              <Text style={styles.socialText}>Google</Text>
+              <Svg
+                width={18}
+                height={18}
+                viewBox="0 0 18 18"
+                style={styles.kakaoSymbol}
+              >
+                <Path
+                  fillRule="evenodd"
+                  clipRule="evenodd"
+                  d="M9 0.6C4.029 0.6 0 3.713 0 7.554c0 2.388 1.558 4.494 3.932 5.746l-0.998 3.648c-0.088 0.322 0.28 0.579 0.563 0.392L7.873 14.6c0.37 0.036 0.745 0.055 1.127 0.055 4.97 0 9-3.113 9-6.954C18 3.713 13.97 0.6 9 0.6"
+                  fill="#000000"
+                />
+              </Svg>
+              <Text style={styles.kakaoLabel}>카카오 로그인</Text>
             </Pressable>
           </View>
           <View style={styles.centerRow}>
@@ -6967,6 +7020,313 @@ const ACHIEVEMENTS_MOCK: Achievement[] = [
   },
 ];
 
+// 🏅 업적 뱃지 등급별 디자인 — 초급(브론즈) → 중급(실버) → 고급(골드) 순으로 점점 화려하게
+type BadgeTier = "EASY" | "MEDIUM" | "HARD";
+
+const BADGE_TIERS: Record<
+  BadgeTier,
+  {
+    label: string;
+    fill: string[]; // 메달 본체 그라데이션 (위 → 아래)
+    rim: string; // 메달 테두리
+    icon: string; // 가운데 아이콘 색
+    chipBg: string;
+    chipText: string;
+    chipBorder?: string;
+  }
+> = {
+  EASY: {
+    label: "초급",
+    fill: ["#E4A36C", "#B8693A"],
+    rim: "#F3D2B3",
+    icon: "#FFF7ED",
+    chipBg: "#B8693A",
+    chipText: "#FFFFFF",
+  },
+  MEDIUM: {
+    label: "중급",
+    fill: ["#F1F5F9", "#CBD5E1", "#94A3B8"],
+    rim: "#FFFFFF",
+    icon: "#334155",
+    chipBg: "#E2E8F0",
+    chipText: "#334155",
+    chipBorder: "#94A3B8",
+  },
+  HARD: {
+    label: "고급",
+    fill: ["#FEF3C7", "#FBBF24", "#D97706"],
+    rim: "#FFFBEB",
+    icon: "#FFFFFF",
+    chipBg: "#F59E0B",
+    chipText: "#FFFFFF",
+    chipBorder: "#FDE68A",
+  },
+};
+
+const LOCKED_BADGE_COLORS = {
+  fill: ["#F1F5F9", "#E2E8F0"],
+  rim: "#FFFFFF",
+  accent: "#CBD5E1",
+  icon: "#94A3B8",
+};
+
+function getBadgeTier(difficulty: string | undefined): BadgeTier {
+  return difficulty === "EASY"
+    ? "EASY"
+    : difficulty === "MEDIUM"
+      ? "MEDIUM"
+      : "HARD";
+}
+
+// 백엔드가 주는 이모지(badgeIcon) 대신 쓸 Ionicons 이름 — 매칭 안 되면 뱃지 이름 키워드로 추정
+const BADGE_EMOJI_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  "🔥": "flame",
+  "🏆": "trophy",
+  "🥇": "medal",
+  "🥈": "medal",
+  "🥉": "medal",
+  "🏅": "medal",
+  "👑": "diamond",
+  "💎": "diamond",
+  "⭐": "star",
+  "🌟": "star",
+  "✨": "sparkles",
+  "🎯": "locate",
+  "📚": "library",
+  "📖": "book",
+  "📝": "create",
+  "✍️": "create",
+  "💬": "chatbubbles",
+  "🗣️": "megaphone",
+  "🎤": "mic",
+  "🎙️": "mic",
+  "🎧": "headset",
+  "📅": "calendar",
+  "🗓️": "calendar",
+  "⏰": "alarm",
+  "⏱️": "stopwatch",
+  "🌙": "moon",
+  "☀️": "sunny",
+  "🌅": "sunny",
+  "🌱": "leaf",
+  "🌳": "leaf",
+  "🚀": "rocket",
+  "🧠": "bulb",
+  "💡": "bulb",
+  "💯": "checkmark-done",
+  "✅": "checkmark-circle",
+  "🎓": "school",
+  "🐣": "egg",
+  "👋": "hand-left",
+  "❤️": "heart",
+  "💪": "barbell",
+  "⚡": "flash",
+  "🎉": "sparkles",
+  "📈": "trending-up",
+};
+
+const BADGE_NAME_ICONS: [RegExp, keyof typeof Ionicons.glyphMap][] = [
+  [/연속|출석|스트릭/, "flame"],
+  [/퀴즈|문제|정답/, "help-circle"],
+  [/음성|말하기|발음/, "mic"],
+  [/채팅|대화|회화/, "chatbubbles"],
+  [/리그|랭킹|순위|1등/, "trophy"],
+  [/단어|어휘|표현|북마크|스크랩/, "bookmark"],
+  [/시간|분|아침|새벽|밤/, "time"],
+  [/첫|시작|입문/, "rocket"],
+  [/포인트|점수/, "star"],
+];
+
+function getBadgeIconName(badge: any): keyof typeof Ionicons.glyphMap {
+  const emoji = String(badge.badgeIcon ?? "").replace(/️/g, "");
+  const byEmoji =
+    BADGE_EMOJI_ICONS[emoji] ?? BADGE_EMOJI_ICONS[`${emoji}️`];
+  if (byEmoji) return byEmoji;
+  const name = String(badge.badgeName ?? "");
+  const byName = BADGE_NAME_ICONS.find(([pattern]) => pattern.test(name));
+  return byName ? byName[1] : "ribbon";
+}
+
+// ✦ 고급 뱃지 주변에 뿌리는 반짝이 (4갈래 별)
+const sparklePath = (x: number, y: number, s: number) =>
+  `M ${x} ${y - s} L ${x + s * 0.28} ${y - s * 0.28} L ${x + s} ${y} L ${x + s * 0.28} ${y + s * 0.28} L ${x} ${y + s} L ${x - s * 0.28} ${y + s * 0.28} L ${x - s} ${y} L ${x - s * 0.28} ${y - s * 0.28} Z`;
+
+function AchievementMedal({ badge }: { badge: any }) {
+  const tier = getBadgeTier(badge.difficulty);
+  const t = BADGE_TIERS[tier];
+  const earned = !!badge.earned;
+  const fill = earned ? t.fill : LOCKED_BADGE_COLORS.fill;
+  const rim = earned ? t.rim : LOCKED_BADGE_COLORS.rim;
+  const accent = earned ? t.fill[t.fill.length - 1] : LOCKED_BADGE_COLORS.accent;
+  const size = 72;
+  const c = size / 2;
+  const gid = `badge-${badge.id}`;
+
+  return (
+    <View style={{ width: size, height: size }}>
+      <Svg width={size} height={size}>
+        <Defs>
+          <LinearGradient id={`${gid}-fill`} x1="0" y1="0" x2="0.4" y2="1">
+            {fill.map((color, i) => (
+              <Stop
+                key={i}
+                offset={fill.length > 1 ? i / (fill.length - 1) : 0}
+                stopColor={color}
+              />
+            ))}
+          </LinearGradient>
+          <RadialGradient id={`${gid}-glow`} cx="50%" cy="50%" r="50%">
+            <Stop offset="0.55" stopColor="#FBBF24" stopOpacity={0.45} />
+            <Stop offset="1" stopColor="#FBBF24" stopOpacity={0} />
+          </RadialGradient>
+          <LinearGradient id={`${gid}-ring`} x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor="#FDE68A" />
+            <Stop offset="0.5" stopColor="#F59E0B" />
+            <Stop offset="1" stopColor="#FDE68A" />
+          </LinearGradient>
+        </Defs>
+
+        {/* 고급: 메달 뒤로 은은한 금빛 후광 */}
+        {earned && tier === "HARD" && (
+          <Circle cx={c} cy={c} r={36} fill={`url(#${gid}-glow)`} />
+        )}
+
+        {/* 중급·고급: 메달 아래로 늘어지는 리본 꼬리 */}
+        {tier !== "EASY" && (
+          <G>
+            <Polygon
+              points={`${c - 12},${c + 14} ${c - 17},${c + 34} ${c - 10},${c + 30} ${c - 5},${c + 35} ${c - 2},${c + 18}`}
+              fill={earned ? (tier === "HARD" ? "#DC2626" : "#6366F1") : LOCKED_BADGE_COLORS.accent}
+            />
+            <Polygon
+              points={`${c + 12},${c + 14} ${c + 17},${c + 34} ${c + 10},${c + 30} ${c + 5},${c + 35} ${c + 2},${c + 18}`}
+              fill={earned ? (tier === "HARD" ? "#B91C1C" : "#4F46E5") : LOCKED_BADGE_COLORS.accent}
+            />
+          </G>
+        )}
+
+        {/* 중급: 얇은 점선 외곽 링 / 고급: 두꺼운 금색 그라데이션 링 */}
+        {tier === "MEDIUM" && (
+          <Circle
+            cx={c}
+            cy={c}
+            r={30.5}
+            fill="none"
+            stroke={earned ? "#94A3B8" : LOCKED_BADGE_COLORS.accent}
+            strokeWidth={1.5}
+            strokeDasharray="3 3"
+          />
+        )}
+        {tier === "HARD" && (
+          <Circle
+            cx={c}
+            cy={c}
+            r={30.5}
+            fill="none"
+            stroke={earned ? `url(#${gid}-ring)` : LOCKED_BADGE_COLORS.accent}
+            strokeWidth={3}
+          />
+        )}
+
+        {/* 메달 본체 */}
+        <Circle
+          cx={c}
+          cy={c}
+          r={25}
+          fill={`url(#${gid}-fill)`}
+          stroke={rim}
+          strokeWidth={2}
+        />
+        {/* 고급: 안쪽 각인 링 */}
+        {tier === "HARD" && (
+          <Circle
+            cx={c}
+            cy={c}
+            r={20}
+            fill="none"
+            stroke={earned ? "#FFFBEB" : "#FFFFFF"}
+            strokeOpacity={0.7}
+            strokeWidth={1}
+          />
+        )}
+        {/* 윗부분 광택 */}
+        {earned && (
+          <Path
+            d={`M ${c - 17} ${c - 8} A 18 18 0 0 1 ${c + 17} ${c - 8}`}
+            stroke="#FFFFFF"
+            strokeOpacity={tier === "EASY" ? 0.25 : 0.55}
+            strokeWidth={3}
+            strokeLinecap="round"
+            fill="none"
+          />
+        )}
+
+        {/* 고급: 반짝이 */}
+        {earned && tier === "HARD" && (
+          <G fill="#FBBF24">
+            <Path d={sparklePath(61, 10, 5)} />
+            <Path d={sparklePath(9, 18, 3.5)} />
+            <Path d={sparklePath(65, 44, 3)} fill="#FDE68A" />
+          </G>
+        )}
+      </Svg>
+
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Ionicons
+          name={earned ? getBadgeIconName(badge) : "lock-closed"}
+          size={tier === "HARD" ? 22 : 20}
+          color={earned ? t.icon : LOCKED_BADGE_COLORS.icon}
+          style={
+            earned && tier !== "MEDIUM"
+              ? {
+                  textShadowColor: accent,
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 2,
+                }
+              : undefined
+          }
+        />
+      </View>
+    </View>
+  );
+}
+
+function BadgeTierChip({ difficulty }: { difficulty: string | undefined }) {
+  const tier = getBadgeTier(difficulty);
+  const t = BADGE_TIERS[tier];
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 3,
+        backgroundColor: t.chipBg,
+        borderRadius: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderWidth: t.chipBorder ? 1 : 0,
+        borderColor: t.chipBorder,
+      }}
+    >
+      {tier === "HARD" && <Ionicons name="star" size={9} color={t.chipText} />}
+      <Text style={{ color: t.chipText, fontSize: 10, fontWeight: "700" }}>
+        {t.label}
+      </Text>
+    </View>
+  );
+}
+
 // 💬 업적 뱃지를 눌렀을 때 뱃지 아래에 뜨는 조건 설명 말풍선
 function BadgeConditionBubble({
   badge,
@@ -6998,9 +7358,15 @@ function BadgeConditionBubble({
         ]}
       >
         <View style={badgeBubbleStyles.headerRow}>
-          <Text style={badgeBubbleStyles.icon}>
-            {badge.earned ? badge.badgeIcon : "🔒"}
-          </Text>
+          <Ionicons
+            name={badge.earned ? getBadgeIconName(badge) : "lock-closed"}
+            size={16}
+            color={
+              badge.earned
+                ? BADGE_TIERS[getBadgeTier(badge.difficulty)].chipBg
+                : "#9CA3AF"
+            }
+          />
           <Text style={badgeBubbleStyles.name} numberOfLines={1}>
             {badge.badgeName}
           </Text>
@@ -7067,7 +7433,6 @@ const badgeBubbleStyles = StyleSheet.create({
     borderBottomColor: "#1F2937",
   },
   headerRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  icon: { fontSize: 16 },
   name: { flex: 1, color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
   statusChip: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   statusText: { fontSize: 10, fontWeight: "800" },
@@ -7509,36 +7874,9 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
               }
             >
               <View style={pfStyles.medalWrap}>
-                <View
-                  style={[
-                    pfStyles.medalRibbon,
-                    { backgroundColor: item.earned ? "#D97706" : "#CBD5E1" },
-                  ]}
-                />
-                <View
-                  style={[
-                    pfStyles.medalCircle,
-                    item.earned
-                      ? pfStyles.medalCircleUnlocked
-                      : pfStyles.medalCircleLocked,
-                  ]}
-                >
-                  {item.earned ? (
-                    <Text style={{ fontSize: 20 }}>{item.badgeIcon}</Text>
-                  ) : (
-                    <Ionicons name="lock-closed" size={20} color="#94A3B8" />
-                  )}
-                </View>
+                <AchievementMedal badge={item} />
               </View>
-              <View style={pfStyles.levelBadge}>
-                <Text style={pfStyles.levelBadgeText}>
-                  {item.difficulty === "EASY"
-                    ? "초급"
-                    : item.difficulty === "MEDIUM"
-                      ? "중급"
-                      : "고급"}
-                </Text>
-              </View>
+              <BadgeTierChip difficulty={item.difficulty} />
               <Text style={pfStyles.achievementTitle} numberOfLines={2}>
                 {item.badgeName}
               </Text>
@@ -8933,33 +9271,7 @@ const pfStyles = StyleSheet.create({
     gap: 6,
     paddingVertical: 10,
   },
-  medalWrap: { alignItems: "center", justifyContent: "flex-end", marginTop: 8 },
-  medalRibbon: {
-    width: 26,
-    height: 12,
-    borderTopLeftRadius: 5,
-    borderTopRightRadius: 5,
-    marginBottom: -8,
-  },
-  medalCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-  },
-  medalCircleUnlocked: { backgroundColor: "#D97706" },
-  medalCircleLocked: { backgroundColor: "#E2E8F0" },
-  levelBadge: {
-    backgroundColor: "#111827",
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginTop: 2,
-  },
-  levelBadgeText: { color: "#FFFFFF", fontSize: 10, fontWeight: "700" },
+  medalWrap: { alignItems: "center", justifyContent: "flex-end", marginTop: 4 },
   achievementTitle: {
     color: "#374151",
     fontSize: 11,
@@ -9331,7 +9643,39 @@ function ProgressGridLines() {
 }
 
 // 📈 실력 성장 그래프 — 퀴즈 정답률/피드백 비율 두 선을 그리는 듀얼 라인 차트 (react-native-svg)
-function GrowthTrendChart({ data }: { data: GrowthTrendPoint[] }) {
+type MonthlyGrowthPoint = {
+  label: string;
+  quizAccuracy: number | null;
+  feedbackCleanRatio: number | null;
+};
+
+// 주간 추이를 최근 6개월(이번 달 포함) 월별 평균으로 묶습니다. 기록이 없는 달은 null.
+function toMonthlyGrowth(data: GrowthTrendPoint[]): MonthlyGrowthPoint[] {
+  const now = new Date();
+  const months = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+    return { key: formatMonthISO(d), label: `${d.getMonth() + 1}월` };
+  });
+  return months.map(({ key, label }) => {
+    // 퀴즈·피드백 모두 0인 주는 학습 기록이 없는 주로 보고 평균에서 뺍니다.
+    const weeks = data.filter(
+      (w) =>
+        w.weekStart.slice(0, 7) === key &&
+        (w.quizAccuracy > 0 || w.feedbackCleanRatio > 0),
+    );
+    const avg = (pick: (w: GrowthTrendPoint) => number) =>
+      weeks.length > 0
+        ? Math.round(weeks.reduce((s, w) => s + pick(w), 0) / weeks.length)
+        : null;
+    return {
+      label,
+      quizAccuracy: avg((w) => w.quizAccuracy),
+      feedbackCleanRatio: avg((w) => w.feedbackCleanRatio),
+    };
+  });
+}
+
+function GrowthTrendChart({ data }: { data: MonthlyGrowthPoint[] }) {
   // 카드 폭에 맞춰 그래프가 늘어나도록 실제 폭을 측정합니다.
   const [width, setWidth] = useState(280);
   const height = 140;
@@ -9353,14 +9697,14 @@ function GrowthTrendChart({ data }: { data: GrowthTrendPoint[] }) {
     plotTop +
     (1 - Math.max(0, Math.min(100, value)) / 100) * (plotBottom - plotTop);
 
-  const toPoints = (values: number[]) =>
-    values.map((value, index) => `${xAt(index)},${yAt(value)}`).join(" ");
-
-  // "2026-09-07" → "9/7"
-  const weekLabel = (weekStart: string) => {
-    const [, m, d] = weekStart.split("-");
-    return m && d ? `${Number(m)}/${Number(d)}` : weekStart;
-  };
+  // 기록 없는 달(null)은 건너뛰고 있는 달끼리 선으로 잇습니다.
+  const toPoints = (values: (number | null)[]) =>
+    values
+      .map((value, index) =>
+        value === null ? null : `${xAt(index)},${yAt(value)}`,
+      )
+      .filter(Boolean)
+      .join(" ");
 
   const series = [
     { key: "quizAccuracy" as const, color: primary },
@@ -9394,9 +9738,9 @@ function GrowthTrendChart({ data }: { data: GrowthTrendPoint[] }) {
           </Fragment>
         ))}
 
-        {/* 세로 격자 + 주차 라벨 */}
+        {/* 세로 격자 + 월 라벨 */}
         {data.map((point, index) => (
-          <Fragment key={`x-${point.weekStart}`}>
+          <Fragment key={`x-${point.label}`}>
             <Line
               x1={xAt(index)}
               x2={xAt(index)}
@@ -9412,7 +9756,7 @@ function GrowthTrendChart({ data }: { data: GrowthTrendPoint[] }) {
               fill="#9CA3AF"
               textAnchor="middle"
             >
-              {weekLabel(point.weekStart)}
+              {point.label}
             </SvgText>
           </Fragment>
         ))}
@@ -9428,17 +9772,20 @@ function GrowthTrendChart({ data }: { data: GrowthTrendPoint[] }) {
               strokeLinejoin="round"
               strokeLinecap="round"
             />
-            {data.map((d, index) => (
-              <Circle
-                key={`${key}-${index}`}
-                cx={xAt(index)}
-                cy={yAt(d[key])}
-                r={3}
-                fill="#fff"
-                stroke={color}
-                strokeWidth={2}
-              />
-            ))}
+            {data.map((d, index) => {
+              const value = d[key];
+              return value === null ? null : (
+                <Circle
+                  key={`${key}-${index}`}
+                  cx={xAt(index)}
+                  cy={yAt(value)}
+                  r={3}
+                  fill="#fff"
+                  stroke={color}
+                  strokeWidth={2}
+                />
+              );
+            })}
           </Fragment>
         ))}
       </Svg>
@@ -9701,7 +10048,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
     null,
   );
 
-  // 📈 최근 8주 고정 성장 그래프
+  // 📈 최근 6개월 고정 성장 그래프
   const [growthTrend, setGrowthTrend] = useState<GrowthTrendPoint[]>([]);
 
   // 🌱 최근 6개월 고정 학습 활동 히트맵
@@ -9820,7 +10167,15 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         setMonthlyReview(data);
       } catch (error: any) {
         if (error.response?.status === 403) {
-          setMonthlyReviewLocked(true);
+          // 결제 직후엔 서버 권한 반영이 늦을 수 있어, 실제 결제 내역으로 한 번 더 확인하고 잠급니다.
+          const isPremium = await fetchHasActivePremium().catch(() => false);
+          setMonthlyReviewLocked(!isPremium);
+          if (isPremium) {
+            console.error(
+              "🚨 프리미엄 회원인데 AI 월말 총평이 403으로 거절됨:",
+              error.response?.data,
+            );
+          }
         } else {
           console.error(
             "🚨 AI 월말 총평 불러오기 실패:",
@@ -10192,7 +10547,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
           </View>
         </View>
 
-        {/* 실력 성장 그래프 (최근 8주) — GET /api/users/growth-trend */}
+        {/* 실력 성장 그래프 (최근 6개월, 월별 평균) — GET /api/users/growth-trend */}
         <View style={mpStyles.card}>
           <View
             style={{
@@ -10211,7 +10566,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
           </View>
 
           {growthTrend.length > 0 ? (
-            <GrowthTrendChart data={growthTrend} />
+            <GrowthTrendChart data={toMonthlyGrowth(growthTrend)} />
           ) : (
             <Text style={mpStyles.monthlyReviewEmpty}>
               아직 표시할 데이터가 없어요.
@@ -10739,9 +11094,20 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
+  // 👀 다른 리그 구경 — 상단 엠블럼을 누르면 그 티어 랭킹을 불러옵니다. null이면 내 리그.
+  const [viewTier, setViewTier] = useState<LeagueTier | null>(null);
+  const [otherLeague, setOtherLeague] = useState<MyLeague | null>(null);
+  const [otherLoading, setOtherLoading] = useState(false);
+  const [otherError, setOtherError] = useState(false);
+
   // 👇 여기에 안드로이드 뒤로 가기 제어 코드를 추가합니다!
   useEffect(() => {
     const handleBackPress = () => {
+      // 다른 리그를 보고 있으면 먼저 내 리그로 돌아옵니다.
+      if (viewTier) {
+        setViewTier(null);
+        return true;
+      }
       // ⭐️ 화면 상단의 '뒤로 가기' 버튼을 눌렀을 때 가는 화면 이름과 똑같이 맞춰주세요!
       // 예: 마이페이지에서 넘어왔다면 go("profile"), 홈에서 왔다면 go("home")
       go("mode");
@@ -10755,7 +11121,36 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
     );
 
     return () => backHandler.remove();
-  }, [go]);
+  }, [go, viewTier]);
+
+  useEffect(() => {
+    if (!viewTier) return;
+    let cancelled = false;
+    setOtherLeague(null);
+    setOtherError(false);
+    setOtherLoading(true);
+    fetchLeagueByTier(viewTier)
+      .then((fresh) => {
+        if (cancelled) return;
+        // 서버가 tier 파라미터를 무시하고 내 리그를 돌려주면 잘못된 랭킹이 보이므로 막습니다.
+        if (fresh?.league !== viewTier) throw new Error("tier mismatch");
+        setOtherLeague(fresh);
+      })
+      .catch((error: any) => {
+        if (cancelled) return;
+        console.error(
+          "🚨 다른 리그 정보 불러오기 실패:",
+          error.response?.data || error.message,
+        );
+        setOtherError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setOtherLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewTier]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -10841,11 +11236,15 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
 
   if (!data) return null;
 
-  const tierMeta = LEAGUE_TIER_META[data.league];
-  const tierIndex = LEAGUE_TIER_ORDER.indexOf(data.league);
+  const isMine = !viewTier || viewTier === data.league;
+  const shownTier = isMine ? data.league : viewTier;
+  const shown = isMine ? data : otherLeague;
+  const tierMeta = LEAGUE_TIER_META[shownTier];
+  const myTierIndex = LEAGUE_TIER_ORDER.indexOf(data.league);
+  const tierIndex = LEAGUE_TIER_ORDER.indexOf(shownTier);
   const showPromotionLine = tierIndex < LEAGUE_TIER_ORDER.length - 1;
   const showDemotionLine = tierIndex > 0;
-  const cutoff = getLeagueCutoffCount(data.totalMembers);
+  const cutoff = getLeagueCutoffCount(shown?.totalMembers ?? 0);
   const MEDAL_COLORS = ["#F4B400", "#9CA3AF", "#C2703A"];
 
   return (
@@ -10867,22 +11266,35 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
         <View style={lgStyles.carouselRow}>
           {LEAGUE_TIER_ORDER.map((t, i) => {
             const meta = LEAGUE_TIER_META[t];
-            const isCurrent = i === tierIndex;
-            // 모든 리그 엠블럼을 잠금 없이 보여주고, 현재 리그만 크게 강조합니다.
+            const isShown = i === tierIndex;
+            const isMyTier = i === myTierIndex;
+            // 모든 리그 엠블럼을 누를 수 있고, 지금 보고 있는 리그를 크게 강조합니다.
             return (
-              <View key={t} style={lgStyles.carouselItem}>
+              <Pressable
+                key={t}
+                style={lgStyles.carouselItem}
+                onPress={() => setViewTier(isMyTier ? null : t)}
+                hitSlop={4}
+              >
                 <View style={lgStyles.carouselBadge}>
-                  <LeagueEmblem tier={t} size={isCurrent ? 52 : 36} />
+                  <LeagueEmblem tier={t} size={isShown ? 52 : 36} />
                 </View>
                 <Text
                   style={[
                     lgStyles.carouselLabel,
-                    isCurrent && { color: meta.color, fontWeight: "800" },
+                    isShown && { color: meta.color, fontWeight: "800" },
                   ]}
                 >
                   {meta.label}
                 </Text>
-              </View>
+                {/* 내가 속한 리그 표시 점 */}
+                <View
+                  style={[
+                    lgStyles.myTierDot,
+                    { backgroundColor: isMyTier ? primary : "transparent" },
+                  ]}
+                />
+              </Pressable>
             );
           })}
         </View>
@@ -10893,13 +11305,43 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
             <Ionicons name="help-circle-outline" size={16} color="#9CA3AF" />
           </Pressable>
         </View>
-        <Text style={lgStyles.countdown}>
-          {getLeagueResetCountdownText()} 남음
-        </Text>
+        {isMine ? (
+          <Text style={lgStyles.countdown}>
+            {getLeagueResetCountdownText()} 남음
+          </Text>
+        ) : (
+          <Pressable
+            style={lgStyles.backToMine}
+            onPress={() => setViewTier(null)}
+          >
+            <Ionicons name="arrow-undo" size={12} color={primary} />
+            <Text style={lgStyles.backToMineText}>
+              내 리그({LEAGUE_TIER_META[data.league].label})로 돌아가기
+            </Text>
+          </Pressable>
+        )}
+
+        {!isMine && otherLoading && (
+          <ActivityIndicator
+            size="small"
+            color={primary}
+            style={{ marginTop: 24 }}
+          />
+        )}
+        {!isMine && otherError && (
+          <Text style={lgStyles.otherEmpty}>
+            {tierMeta.label} 리그 순위를 불러오지 못했어요.
+          </Text>
+        )}
+        {!isMine && shown && shown.members.length === 0 && (
+          <Text style={lgStyles.otherEmpty}>
+            아직 이 리그에 참가한 사람이 없어요.
+          </Text>
+        )}
 
         <View style={{ marginTop: 8 }}>
-          {data.members.map((member) => {
-            const isMe = member.rank === data.myRank;
+          {(shown?.members ?? []).map((member) => {
+            const isMe = isMine && member.rank === data.myRank;
             const medalColor =
               member.rank <= 3 ? MEDAL_COLORS[member.rank - 1] : undefined;
             return (
@@ -10922,7 +11364,7 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
                     />
                   </View>
                 )}
-                {member.rank === data.totalMembers - cutoff + 1 &&
+                {member.rank === (shown?.totalMembers ?? 0) - cutoff + 1 &&
                   showDemotionLine && (
                     <View style={lgStyles.cutLine}>
                       <View
@@ -10991,6 +11433,26 @@ const lgStyles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   carouselLabel: { fontSize: 10, color: "#9CA3AF", fontWeight: "600" },
+  myTierDot: { width: 4, height: 4, borderRadius: 2, marginTop: -2 },
+  backToMine: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "center",
+    gap: 4,
+    backgroundColor: "#EEF2FF",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  backToMineText: { fontSize: 12, fontWeight: "700", color: primary },
+  otherEmpty: {
+    textAlign: "center",
+    fontSize: 13,
+    color: "#9CA3AF",
+    marginTop: 24,
+  },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -11682,17 +12144,20 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: "#E5E7EB", flex: 1 },
   dividerText: { color: "#9CA3AF", fontSize: 12 },
   socialRow: { flexDirection: "row", gap: 12, marginBottom: 28 },
-  socialButton: {
+  kakaoButton: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: border,
-    borderRadius: 14,
-    paddingVertical: 14,
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: "#FEE500",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
   },
-  kakao: { backgroundColor: "#FEE500", borderColor: "#FEE500" },
-  socialText: { color: "#111827", fontWeight: "700", fontSize: 13 },
+  kakaoSymbol: { position: "absolute", left: 18 },
+  kakaoLabel: {
+    color: "rgba(0, 0, 0, 0.85)",
+    fontSize: 15,
+    fontWeight: "600",
+  },
   centerRow: {
     flexDirection: "row",
     justifyContent: "center",
