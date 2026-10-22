@@ -9728,61 +9728,58 @@ function ProgressGridLines() {
 }
 
 // 📈 실력 성장 그래프 — 퀴즈 정답률/피드백 비율 두 선을 그리는 듀얼 라인 차트 (react-native-svg)
-type MonthlyGrowthPoint = {
-  label: string;
+type GrowthChartPoint = {
+  label: string; // 그 달의 첫 주에만 "n월", 나머지 주는 ""
   quizAccuracy: number | null;
   feedbackCleanRatio: number | null;
 };
 
-// 주간 추이를 최근 6개월(이번 달 포함) 월별 평균으로 묶습니다. 기록이 없는 달은 null.
-function toMonthlyGrowth(data: GrowthTrendPoint[]): MonthlyGrowthPoint[] {
-  const now = new Date();
-  const months = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
-    return { key: formatMonthISO(d), label: `${d.getMonth() + 1}월` };
-  });
-  return months.map(({ key, label }) => {
-    // 퀴즈·피드백 모두 0인 주는 학습 기록이 없는 주로 보고 평균에서 뺍니다.
-    const weeks = data.filter(
-      (w) =>
-        w.weekStart.slice(0, 7) === key &&
-        (w.quizAccuracy > 0 || w.feedbackCleanRatio > 0),
-    );
-    const avg = (pick: (w: GrowthTrendPoint) => number) =>
-      weeks.length > 0
-        ? Math.round(weeks.reduce((s, w) => s + pick(w), 0) / weeks.length)
-        : null;
+// 주간 추이를 그대로 주마다 점 하나로 찍습니다. 퀴즈·피드백 모두 0인 주는 학습 기록이 없는 주로 보고 null.
+function toWeeklyGrowth(data: GrowthTrendPoint[]): GrowthChartPoint[] {
+  const sorted = [...data].sort((x, y) =>
+    x.weekStart.localeCompare(y.weekStart),
+  );
+  return sorted.map((w, i) => {
+    const month = Number(w.weekStart.slice(5, 7));
+    const prevMonth =
+      i > 0 ? Number(sorted[i - 1].weekStart.slice(5, 7)) : null;
+    const empty = !(w.quizAccuracy > 0 || w.feedbackCleanRatio > 0);
     return {
-      label,
-      quizAccuracy: avg((w) => w.quizAccuracy),
-      feedbackCleanRatio: avg((w) => w.feedbackCleanRatio),
+      label: month !== prevMonth ? `${month}월` : "",
+      quizAccuracy: empty ? null : Math.round(w.quizAccuracy),
+      feedbackCleanRatio: empty ? null : Math.round(w.feedbackCleanRatio),
     };
   });
 }
 
-function GrowthTrendChart({ data }: { data: MonthlyGrowthPoint[] }) {
-  // 카드 폭에 맞춰 그래프가 늘어나도록 실제 폭을 측정합니다.
-  const [width, setWidth] = useState(280);
+function GrowthTrendChart({ data }: { data: GrowthChartPoint[] }) {
+  // 왼쪽 % 눈금은 고정하고, 그래프 본문만 가로 스크롤합니다.
+  // 주마다 간격을 고정해서 점·월 라벨이 겹치지 않게 하고, 카드보다 좁으면 카드 폭에 맞춰 늘립니다.
+  const [viewWidth, setViewWidth] = useState(250);
+  const scrollRef = useRef<ScrollView>(null);
   const height = 140;
   const axisWidth = 28; // 왼쪽 % 눈금 영역
+  const step = 30; // 주 사이 간격
+  const sidePad = 14; // 첫/마지막 점과 라벨이 잘리지 않게 두는 여백
   const topPad = 8;
-  const bottomPad = 20; // 아래쪽 주차 라벨 영역
-  const rightPad = 8;
-  const plotLeft = axisWidth;
-  const plotRight = width - rightPad;
+  const bottomPad = 20; // 아래쪽 월 라벨 영역
   const plotTop = topPad;
   const plotBottom = height - bottomPad;
   const yTicks = [0, 25, 50, 75, 100];
 
+  const contentWidth = Math.max(
+    viewWidth,
+    sidePad * 2 + Math.max(data.length - 1, 0) * step,
+  );
   const xAt = (index: number) =>
     data.length > 1
-      ? plotLeft + (index / (data.length - 1)) * (plotRight - plotLeft)
-      : (plotLeft + plotRight) / 2;
+      ? sidePad + (index / (data.length - 1)) * (contentWidth - sidePad * 2)
+      : contentWidth / 2;
   const yAt = (value: number) =>
     plotTop +
     (1 - Math.max(0, Math.min(100, value)) / 100) * (plotBottom - plotTop);
 
-  // 기록 없는 달(null)은 건너뛰고 있는 달끼리 선으로 잇습니다.
+  // 기록 없는 주(null)는 건너뛰고 있는 주끼리 선으로 잇습니다.
   const toPoints = (values: (number | null)[]) =>
     values
       .map((value, index) =>
@@ -9797,22 +9794,14 @@ function GrowthTrendChart({ data }: { data: MonthlyGrowthPoint[] }) {
   ];
 
   return (
-    <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
-      <Svg width={width} height={height}>
-        {/* 가로 격자 + % 눈금 */}
-        {yTicks.map((tick) => (
-          <Fragment key={`y-${tick}`}>
-            <Line
-              x1={plotLeft}
-              x2={plotRight}
-              y1={yAt(tick)}
-              y2={yAt(tick)}
-              stroke={tick === 0 ? "#D1D5DB" : "#EEF0F3"}
-              strokeWidth={1}
-              strokeDasharray={tick === 0 ? undefined : "4 4"}
-            />
+    <View>
+      <View style={{ flexDirection: "row" }}>
+        {/* 고정 % 눈금 */}
+        <Svg width={axisWidth} height={height}>
+          {yTicks.map((tick) => (
             <SvgText
-              x={plotLeft - 6}
+              key={`y-${tick}`}
+              x={axisWidth - 6}
               y={yAt(tick) + 3}
               fontSize={9}
               fill="#9CA3AF"
@@ -9820,60 +9809,90 @@ function GrowthTrendChart({ data }: { data: MonthlyGrowthPoint[] }) {
             >
               {tick}
             </SvgText>
-          </Fragment>
-        ))}
+          ))}
+        </Svg>
 
-        {/* 세로 격자 + 월 라벨 */}
-        {data.map((point, index) => (
-          <Fragment key={`x-${point.label}`}>
-            <Line
-              x1={xAt(index)}
-              x2={xAt(index)}
-              y1={plotTop}
-              y2={plotBottom}
-              stroke="#F3F4F6"
-              strokeWidth={1}
-            />
-            <SvgText
-              x={xAt(index)}
-              y={height - 4}
-              fontSize={9}
-              fill="#9CA3AF"
-              textAnchor="middle"
-            >
-              {point.label}
-            </SvgText>
-          </Fragment>
-        ))}
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flex: 1 }}
+          onLayout={(e) => setViewWidth(e.nativeEvent.layout.width)}
+          // 처음엔 가장 최근 주가 보이도록 오른쪽 끝으로 이동
+          onContentSizeChange={() =>
+            scrollRef.current?.scrollToEnd({ animated: false })
+          }
+        >
+          <Svg width={contentWidth} height={height}>
+            {/* 가로 격자 */}
+            {yTicks.map((tick) => (
+              <Line
+                key={`g-${tick}`}
+                x1={0}
+                x2={contentWidth}
+                y1={yAt(tick)}
+                y2={yAt(tick)}
+                stroke={tick === 0 ? "#D1D5DB" : "#EEF0F3"}
+                strokeWidth={1}
+                strokeDasharray={tick === 0 ? undefined : "4 4"}
+              />
+            ))}
 
-        {/* 데이터 선 + 점 */}
-        {series.map(({ key, color }) => (
-          <Fragment key={key}>
-            <Polyline
-              points={toPoints(data.map((d) => d[key]))}
-              fill="none"
-              stroke={color}
-              strokeWidth={2}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
-            {data.map((d, index) => {
-              const value = d[key];
-              return value === null ? null : (
-                <Circle
-                  key={`${key}-${index}`}
-                  cx={xAt(index)}
-                  cy={yAt(value)}
-                  r={3}
-                  fill="#fff"
+            {/* 세로 격자 + 월 라벨 — 달이 바뀌는 주에만 */}
+            {data.map((point, index) =>
+              !point.label ? null : (
+                <Fragment key={`x-${index}`}>
+                  <Line
+                    x1={xAt(index)}
+                    x2={xAt(index)}
+                    y1={plotTop}
+                    y2={plotBottom}
+                    stroke="#F3F4F6"
+                    strokeWidth={1}
+                  />
+                  <SvgText
+                    x={xAt(index)}
+                    y={height - 4}
+                    fontSize={9}
+                    fill="#9CA3AF"
+                    textAnchor="middle"
+                  >
+                    {point.label}
+                  </SvgText>
+                </Fragment>
+              ),
+            )}
+
+            {/* 데이터 선 + 점 */}
+            {series.map(({ key, color }) => (
+              <Fragment key={key}>
+                <Polyline
+                  points={toPoints(data.map((d) => d[key]))}
+                  fill="none"
                   stroke={color}
                   strokeWidth={2}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
                 />
-              );
-            })}
-          </Fragment>
-        ))}
-      </Svg>
+                {data.map((d, index) => {
+                  const value = d[key];
+                  return value === null ? null : (
+                    <Circle
+                      key={`${key}-${index}`}
+                      cx={xAt(index)}
+                      cy={yAt(value)}
+                      r={2.5}
+                      fill="#fff"
+                      stroke={color}
+                      strokeWidth={1.5}
+                    />
+                  );
+                })}
+              </Fragment>
+            ))}
+          </Svg>
+        </ScrollView>
+      </View>
       <View style={{ flexDirection: "row", gap: 16, marginTop: 8 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           <View
@@ -10632,7 +10651,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
           </View>
         </View>
 
-        {/* 실력 성장 그래프 (최근 6개월, 월별 평균) — GET /api/users/growth-trend */}
+        {/* 실력 성장 그래프 (최근 6개월, 주마다 점 하나) — GET /api/users/growth-trend */}
         <View style={mpStyles.card}>
           <View
             style={{
@@ -10651,7 +10670,7 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
           </View>
 
           {growthTrend.length > 0 ? (
-            <GrowthTrendChart data={toMonthlyGrowth(growthTrend)} />
+            <GrowthTrendChart data={toWeeklyGrowth(growthTrend)} />
           ) : (
             <Text style={mpStyles.monthlyReviewEmpty}>
               아직 표시할 데이터가 없어요.

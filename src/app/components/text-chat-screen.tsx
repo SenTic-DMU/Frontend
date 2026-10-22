@@ -82,7 +82,7 @@ export function TextChatScreen() {
     const requestInitialGreeting = async () => {
       try {
         const accessToken = await AsyncStorage.getItem("accessToken");
-        const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+        const API_URL = "https://api.sentimpro.com";
         const currentRoomId = room.id; // (만약 위에서 useParams로 꺼낸 roomId를 쓰고 있다면 roomId로 적어주세요!)
 
         // 1. 화면(UI)에는 띄우지 않고, 서버로만 몰래 보내는 비밀 지령!
@@ -178,7 +178,7 @@ export function TextChatScreen() {
     // 서버 통신 로직
     try {
       const accessToken = await AsyncStorage.getItem("accessToken");
-      const API_URL = "https://rundown-irrigate-majesty.ngrok-free.dev";
+      const API_URL = "https://api.sentimpro.com";
 
       // ⭐️ 이제 버튼을 누르면 이 로그가 터미널에 무조건 찍힙니다!
       console.log("확인: 지금 서버로 보내는 roomId값은?", roomId);
