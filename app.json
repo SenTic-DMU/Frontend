@@ -22,6 +22,12 @@
     },
     "plugins": [
       [
+        "expo-av",
+        {
+          "microphonePermission": "영어 말하기 연습을 위해 마이크 접근을 허용해주세요."
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "갤러리에서 프로필 사진을 선택할 수 있도록 접근을 허용해주세요."

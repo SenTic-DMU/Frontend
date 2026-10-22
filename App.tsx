@@ -243,264 +243,23 @@ const LEAGUE_TIER_META: Record<
   MASTER: { label: "마스터", color: "#7C3AED", bg: "#F5F3FF" },
 };
 
-// 🛡️ 리그 엠블럼 — 티어가 오를수록 장식이 하나씩 늘어납니다.
-// 브론즈(기본 방패) → 실버(테두리) → 골드(별) → 사파이어(작은 날개+보석)
-// → 다이아몬드(큰 날개+왕관) → 마스터(황금 날개+왕관+후광+반짝이)
-const LEAGUE_EMBLEM_STYLE: Record<
-  LeagueTier,
-  {
-    top: string;
-    bottom: string;
-    rim: string;
-    wing?: { top: string; bottom: string; size: "small" | "large" };
-    crown?: boolean;
-    glow?: string;
-    sparkles?: boolean;
-    center: "dot" | "chevron" | "star" | "gem" | "diamond" | "masterStar";
-  }
-> = {
-  BRONZE: { top: "#E9AD74", bottom: "#9A5A2B", rim: "#7C4420", center: "dot" },
-  SILVER: {
-    top: "#F8FAFC",
-    bottom: "#94A3B8",
-    rim: "#64748B",
-    center: "chevron",
-  },
-  GOLD: { top: "#FDE68A", bottom: "#D97706", rim: "#B45309", center: "star" },
-  SAPPHIRE: {
-    top: "#93C5FD",
-    bottom: "#1D4ED8",
-    rim: "#1E3A8A",
-    wing: { top: "#EFF6FF", bottom: "#93C5FD", size: "small" },
-    center: "gem",
-  },
-  DIAMOND: {
-    top: "#CFFAFE",
-    bottom: "#0891B2",
-    rim: "#155E75",
-    wing: { top: "#ECFEFF", bottom: "#67E8F9", size: "large" },
-    crown: true,
-    center: "diamond",
-  },
-  MASTER: {
-    top: "#DDD6FE",
-    bottom: "#6D28D9",
-    rim: "#4C1D95",
-    wing: { top: "#FEF3C7", bottom: "#F59E0B", size: "large" },
-    crown: true,
-    glow: "#A78BFA",
-    sparkles: true,
-    center: "masterStar",
-  },
+// 🛡️ 리그 엠블럼 이미지 (assets/league). 모두 같은 비율로 잘라서 티어별 크기 차이가 그대로 보입니다.
+const LEAGUE_EMBLEM_IMAGE: Record<LeagueTier, any> = {
+  BRONZE: require("./assets/league/bronze.png"),
+  SILVER: require("./assets/league/silver.png"),
+  GOLD: require("./assets/league/gold.png"),
+  SAPPHIRE: require("./assets/league/sapphire.png"),
+  DIAMOND: require("./assets/league/diamond.png"),
+  MASTER: require("./assets/league/master.png"),
 };
 
-// (cx, cy) 중심의 n각 별 꼭짓점 문자열
-function starPoints(
-  cx: number,
-  cy: number,
-  outer: number,
-  inner: number,
-  n = 5,
-) {
-  return Array.from({ length: n * 2 }, (_, i) => {
-    const r = i % 2 === 0 ? outer : inner;
-    const a = (Math.PI / n) * i - Math.PI / 2;
-    return `${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}`;
-  }).join(" ");
-}
-
 function LeagueEmblem({ tier, size }: { tier: LeagueTier; size: number }) {
-  const s = LEAGUE_EMBLEM_STYLE[tier];
-  const id = `lg-${tier}`;
-  const shield =
-    "M60 22 L92 34 V64 C92 88 78 104 60 112 C42 104 28 88 28 64 V34 Z";
-  const innerRim =
-    "M60 31 L84 40 V64 C84 83 73 96 60 102 C47 96 36 83 36 64 V40 Z";
-  // 왼쪽 날개 깃털 (오른쪽은 좌우 반전해서 재사용)
-  const feathers =
-    s.wing?.size === "large"
-      ? [
-          "M31 44 C17 34 7 22 2 8 C15 16 25 25 33 34 Z",
-          "M30 56 C14 50 4 41 0 30 C12 35 22 41 31 48 Z",
-          "M30 68 C16 66 7 60 3 51 C13 55 22 58 30 61 Z",
-        ]
-      : [
-          "M30 54 C20 50 13 44 10 36 C18 40 24 43 31 47 Z",
-          "M30 66 C20 65 14 61 11 55 C18 58 24 59 30 60 Z",
-        ];
-
   return (
-    <Svg width={size * 1.2} height={size * 1.24} viewBox="0 0 120 124">
-      <Defs>
-        <LinearGradient id={`${id}-body`} x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor={s.top} />
-          <Stop offset="1" stopColor={s.bottom} />
-        </LinearGradient>
-        {s.wing && (
-          <LinearGradient id={`${id}-wing`} x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor={s.wing.top} />
-            <Stop offset="1" stopColor={s.wing.bottom} />
-          </LinearGradient>
-        )}
-        {s.glow && (
-          <RadialGradient id={`${id}-glow`} cx="50%" cy="50%" r="50%">
-            <Stop offset="0" stopColor={s.glow} stopOpacity={0.55} />
-            <Stop offset="1" stopColor={s.glow} stopOpacity={0} />
-          </RadialGradient>
-        )}
-      </Defs>
-
-      {/* 후광 */}
-      {s.glow && <Circle cx={60} cy={66} r={58} fill={`url(#${id}-glow)`} />}
-
-      {/* 날개 */}
-      {s.wing &&
-        [false, true].map((mirror) => (
-          <G
-            key={String(mirror)}
-            transform={mirror ? "translate(120,0) scale(-1,1)" : undefined}
-          >
-            {feathers.map((d) => (
-              <Path
-                key={d}
-                d={d}
-                fill={`url(#${id}-wing)`}
-                stroke={s.wing!.bottom}
-                strokeWidth={1.5}
-                strokeLinejoin="round"
-              />
-            ))}
-          </G>
-        ))}
-
-      {/* 방패 본체 */}
-      <Path
-        d={shield}
-        fill={`url(#${id}-body)`}
-        stroke={s.rim}
-        strokeWidth={4}
-        strokeLinejoin="round"
-      />
-      {tier !== "BRONZE" && (
-        <Path
-          d={innerRim}
-          fill="none"
-          stroke="#FFFFFF"
-          strokeOpacity={0.55}
-          strokeWidth={2.5}
-          strokeLinejoin="round"
-        />
-      )}
-      {/* 왼쪽 위 하이라이트 */}
-      <Path
-        d="M60 31 L84 40 V50 C70 46 52 46 36 52 V40 Z"
-        fill="#FFFFFF"
-        opacity={0.25}
-      />
-
-      {/* 중앙 장식 */}
-      {s.center === "dot" && (
-        <Circle cx={60} cy={68} r={9} fill={s.rim} opacity={0.75} />
-      )}
-      {s.center === "chevron" && (
-        <Path
-          d="M46 64 L60 54 L74 64 M46 78 L60 68 L74 78"
-          fill="none"
-          stroke={s.rim}
-          strokeWidth={6}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      )}
-      {s.center === "star" && (
-        <Polygon
-          points={starPoints(60, 68, 17, 7)}
-          fill="#FFFBEB"
-          stroke={s.rim}
-          strokeWidth={2.5}
-          strokeLinejoin="round"
-        />
-      )}
-      {s.center === "gem" && (
-        <>
-          <Polygon
-            points="60,50 75,60 70,82 50,82 45,60"
-            fill="#DBEAFE"
-            stroke={s.rim}
-            strokeWidth={2.5}
-            strokeLinejoin="round"
-          />
-          <Path
-            d="M45 60 L60 66 L75 60 M60 66 L60 50 M60 66 L50 82 M60 66 L70 82"
-            fill="none"
-            stroke={s.rim}
-            strokeWidth={1.5}
-            strokeOpacity={0.6}
-          />
-        </>
-      )}
-      {(s.center === "diamond" || s.center === "masterStar") && (
-        <>
-          {s.center === "masterStar" && (
-            <Polygon
-              points={starPoints(60, 68, 26, 11)}
-              fill="#FDE68A"
-              stroke="#B45309"
-              strokeWidth={2.5}
-              strokeLinejoin="round"
-            />
-          )}
-          <Polygon
-            points="60,52 74,64 60,84 46,64"
-            fill="#FFFFFF"
-            stroke={s.center === "masterStar" ? "#7C3AED" : s.rim}
-            strokeWidth={2.5}
-            strokeLinejoin="round"
-          />
-          <Path
-            d="M46 64 L74 64 M53 58 L60 84 L67 58"
-            fill="none"
-            stroke={s.center === "masterStar" ? "#7C3AED" : s.rim}
-            strokeWidth={1.5}
-            strokeOpacity={0.6}
-          />
-        </>
-      )}
-
-      {/* 왕관 */}
-      {s.crown && (
-        <G>
-          <Path
-            d="M42 28 L45 8 L54 19 L60 3 L66 19 L75 8 L78 28 Z"
-            fill={tier === "MASTER" ? "#FBBF24" : "#E0F2FE"}
-            stroke={tier === "MASTER" ? "#B45309" : s.rim}
-            strokeWidth={2.5}
-            strokeLinejoin="round"
-          />
-          <Circle
-            cx={60}
-            cy={20}
-            r={3}
-            fill={tier === "MASTER" ? "#EF4444" : "#0EA5E9"}
-          />
-        </G>
-      )}
-
-      {/* 반짝이 */}
-      {s.sparkles &&
-        [
-          [14, 92, 6],
-          [106, 92, 6],
-          [100, 14, 4.5],
-          [20, 16, 4.5],
-        ].map(([x, y, r]) => (
-          <Polygon
-            key={`${x}-${y}`}
-            points={starPoints(x, y, r, r * 0.35, 4)}
-            fill="#FDE68A"
-          />
-        ))}
-    </Svg>
+    <Image
+      source={LEAGUE_EMBLEM_IMAGE[tier]}
+      style={{ width: size * 1.24, height: size * 1.24 }}
+      resizeMode="contain"
+    />
   );
 }
 
@@ -3173,11 +2932,14 @@ function SituationScreen({
         return;
       }
 
+      // 🎚️ 마이페이지에서 고른 학습 레벨 (없으면 초급)
+      const savedLevel = await AsyncStorage.getItem("learningLevel");
+
       const requestBody = {
         // ⭐️ 백엔드 변수명에 맞춰서 왼쪽 이름표들을 모두 수정했습니다!
         roomName: title.trim(),
         situation: desc.trim(),
-        difficulty: "BEGINNER",
+        difficulty: savedLevel || "BEGINNER",
         roomType: mode === "voice" ? "VOICE" : "CHAT",
 
         characters: characters.map((c) => ({
@@ -4071,10 +3833,16 @@ export function VoiceChatScreen({
         await playAudio(audioUrl);
       }
     } catch (error: any) {
-      console.error(
-        "🚨 통화 시작(입장) 실패:",
-        error.response?.data || error.message,
-      );
+      // 백엔드가 서버 로그를 찾을 수 있도록 시각·roomId·난이도를 같이 남깁니다.
+      const savedLevel = await AsyncStorage.getItem("learningLevel");
+      console.error("🚨 통화 시작(입장) 실패:", {
+        time: new Date().toISOString(),
+        roomId: room.id,
+        difficulty: savedLevel || "BEGINNER",
+        status: error.response?.status,
+        response: error.response?.data || error.message,
+      });
+      Alert.alert("통화 시작 실패", "잠시 후 다시 시도해 주세요.");
       setInCall(false); // 실패 시 다시 버튼 원복
     }
   };
@@ -4082,7 +3850,12 @@ export function VoiceChatScreen({
   const playAudio = async (url: string) => {
     try {
       setIsPlaying(true);
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      // 녹음 모드가 켜져 있으면 iOS가 수화부(귀 대는 곳)로 재생해서 소리가 작아지므로, 재생 전에 꺼서 스피커로 내보냅니다.
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        playThroughEarpieceAndroid: false,
+      });
 
       const { sound } = await Audio.Sound.createAsync(
         { uri: url },
@@ -7040,26 +6813,24 @@ const BADGE_TIERS: Record<
     fill: ["#E4A36C", "#B8693A"],
     rim: "#F3D2B3",
     icon: "#FFF7ED",
-    chipBg: "#B8693A",
-    chipText: "#FFFFFF",
+    chipBg: "#FED6BF",
+    chipText: "#9A3412",
   },
   MEDIUM: {
     label: "중급",
     fill: ["#F1F5F9", "#CBD5E1", "#94A3B8"],
     rim: "#FFFFFF",
     icon: "#334155",
-    chipBg: "#E2E8F0",
-    chipText: "#334155",
-    chipBorder: "#94A3B8",
+    chipBg: "#CEE0FF",
+    chipText: "#1D4ED8",
   },
   HARD: {
     label: "고급",
     fill: ["#FEF3C7", "#FBBF24", "#D97706"],
     rim: "#FFFBEB",
     icon: "#FFFFFF",
-    chipBg: "#F59E0B",
+    chipBg: "#B99CFA",
     chipText: "#FFFFFF",
-    chipBorder: "#FDE68A",
   },
 };
 
@@ -7151,7 +6922,77 @@ function getBadgeIconName(badge: any): keyof typeof Ionicons.glyphMap {
 const sparklePath = (x: number, y: number, s: number) =>
   `M ${x} ${y - s} L ${x + s * 0.28} ${y - s * 0.28} L ${x + s} ${y} L ${x + s * 0.28} ${y + s * 0.28} L ${x} ${y + s} L ${x - s * 0.28} ${y + s * 0.28} L ${x - s} ${y} L ${x - s * 0.28} ${y - s * 0.28} Z`;
 
+// 🖼️ 업적 뱃지 이미지 (assets/badges) — 뱃지 이름으로 찾고, 없는 뱃지는 아래 SVG 메달로 그립니다.
+const BADGE_IMAGES: Record<string, { locked: any; unlocked: any }> = {
+  수다쟁이: {
+    locked: require("./assets/badges/chatterbox_locked.png"),
+    unlocked: require("./assets/badges/chatterbox_unlocked.png"),
+  },
+  "퀴즈 사냥꾼": {
+    locked: require("./assets/badges/quiz-hunter_locked.png"),
+    unlocked: require("./assets/badges/quiz-hunter_unlocked.png"),
+  },
+  "일주일 불꽃": {
+    locked: require("./assets/badges/week-fire_locked.png"),
+    unlocked: require("./assets/badges/week-fire_unlocked.png"),
+  },
+  "대화의 달인": {
+    locked: require("./assets/badges/conversation-master_locked.png"),
+    unlocked: require("./assets/badges/conversation-master_unlocked.png"),
+  },
+  "퀴즈 마스터": {
+    locked: require("./assets/badges/quiz-master_locked.png"),
+    unlocked: require("./assets/badges/quiz-master_unlocked.png"),
+  },
+  "꾸준한 학습자": {
+    locked: require("./assets/badges/steady-learner_locked.png"),
+    unlocked: require("./assets/badges/steady-learner_unlocked.png"),
+  },
+  "이번 주의 왕": {
+    locked: require("./assets/badges/weekly-king_locked.png"),
+    unlocked: require("./assets/badges/weekly-king_unlocked.png"),
+  },
+  "뱃지 수집가": {
+    locked: require("./assets/badges/badge-collector_locked.png"),
+    unlocked: require("./assets/badges/badge-collector_unlocked.png"),
+  },
+  "한 달의 기적": {
+    locked: require("./assets/badges/month-miracle_locked.png"),
+    unlocked: require("./assets/badges/month-miracle_unlocked.png"),
+  },
+  "학습 철인": {
+    locked: require("./assets/badges/study-ironman_locked.png"),
+    unlocked: require("./assets/badges/study-ironman_unlocked.png"),
+  },
+  "연속 챔피언": {
+    locked: require("./assets/badges/streak-champion_locked.png"),
+    unlocked: require("./assets/badges/streak-champion_unlocked.png"),
+  },
+  "전설의 챔피언": {
+    locked: require("./assets/badges/legend-champion_locked.png"),
+    unlocked: require("./assets/badges/legend-champion_unlocked.png"),
+  },
+  "뱃지 마스터": {
+    locked: require("./assets/badges/badge-master_locked.png"),
+    unlocked: require("./assets/badges/badge-master_unlocked.png"),
+  },
+};
+
+const BADGE_MASTER_NAME = "뱃지 마스터";
+
 function AchievementMedal({ badge }: { badge: any }) {
+  const image = BADGE_IMAGES[String(badge.badgeName ?? "").trim()];
+  if (image) {
+    return (
+      <Image
+        source={badge.earned ? image.unlocked : image.locked}
+        // 이미지 위아래 투명 여백만큼 당겨서 칩·이름과 붙여 보이게 합니다.
+        style={{ width: 92, height: 92, marginTop: -6, marginBottom: -12 }}
+        resizeMode="contain"
+      />
+    );
+  }
+
   const tier = getBadgeTier(badge.difficulty);
   const t = BADGE_TIERS[tier];
   const earned = !!badge.earned;
@@ -7302,26 +7143,31 @@ function AchievementMedal({ badge }: { badge: any }) {
   );
 }
 
-function BadgeTierChip({ difficulty }: { difficulty: string | undefined }) {
-  const tier = getBadgeTier(difficulty);
-  const t = BADGE_TIERS[tier];
+function BadgeTierChip({
+  difficulty,
+  badgeName,
+}: {
+  difficulty: string | undefined;
+  badgeName?: string;
+}) {
+  const t = BADGE_TIERS[getBadgeTier(difficulty)];
+  // 뱃지 마스터는 등급 대신 전용 칩을 붙입니다.
+  const isMaster = badgeName?.trim() === BADGE_MASTER_NAME;
+  const bg = isMaster ? "#8666F5" : t.chipBg;
+  const color = isMaster ? "#FFFFFF" : t.chipText;
   return (
     <View
       style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 3,
-        backgroundColor: t.chipBg,
-        borderRadius: 6,
-        paddingHorizontal: 8,
+        backgroundColor: bg,
+        borderRadius: 999,
+        paddingHorizontal: 10,
         paddingVertical: 2,
-        borderWidth: t.chipBorder ? 1 : 0,
+        borderWidth: t.chipBorder && !isMaster ? 1 : 0,
         borderColor: t.chipBorder,
       }}
     >
-      {tier === "HARD" && <Ionicons name="star" size={9} color={t.chipText} />}
-      <Text style={{ color: t.chipText, fontSize: 10, fontWeight: "700" }}>
-        {t.label}
+      <Text style={{ color, fontSize: 10, fontWeight: "700" }}>
+        {isMaster ? BADGE_MASTER_NAME : t.label}
       </Text>
     </View>
   );
@@ -7447,6 +7293,238 @@ const badgeBubbleStyles = StyleSheet.create({
   },
   conditionText: { flex: 1, color: "#1F2937", fontSize: 12, lineHeight: 17 },
 });
+
+type LearningLevel = "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
+
+const LEARNING_LEVELS: {
+  id: LearningLevel;
+  label: string;
+  eng: string;
+  desc: string;
+  detail: string[];
+  color: string;
+  bg: string;
+  borderColor: string;
+  dot: string;
+}[] = [
+  {
+    id: "BEGINNER",
+    label: "초급",
+    eng: "Beginner",
+    desc: "기초 단어/문장 구사 가능",
+    detail: ["짧고 쉬운 문장", "천천히", "모르는 단어 설명"],
+    color: "#059669",
+    bg: "#ECFDF5",
+    borderColor: "#34D399",
+    dot: "#34D399",
+  },
+  {
+    id: "INTERMEDIATE",
+    label: "중급",
+    eng: "Intermediate",
+    desc: "일상 대화 가능",
+    detail: ["일반 속도로 대화", "일상 표현 학습", "다양한 주제 토론"],
+    color: "#D97706",
+    bg: "#FFFBEB",
+    borderColor: "#FBBF24",
+    dot: "#FBBF24",
+  },
+  {
+    id: "ADVANCED",
+    label: "고급",
+    eng: "Advanced",
+    desc: "자유롭게 대화 가능",
+    detail: ["빠른 속도 대화", "관용어/슬랭 사용", "복잡한 문장 구사"],
+    color: "#4338CA",
+    bg: "#EEF2FF",
+    borderColor: "#818CF8",
+    dot: "#818CF8",
+  },
+];
+
+// 🎚️ 마이페이지 학습 레벨 설정 — PUT /api/users/me/level?difficulty=...
+// 서버에 현재 레벨 조회 API가 없어서, 마지막으로 저장한 값을 기기에도 같이 저장해 둡니다.
+function LearningLevelCard() {
+  const [userLevel, setUserLevel] = useState<LearningLevel>("BEGINNER");
+  const [pendingLevel, setPendingLevel] = useState<LearningLevel>("BEGINNER");
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem("learningLevel").then((saved) => {
+      if (saved && LEARNING_LEVELS.some((l) => l.id === saved)) {
+        setUserLevel(saved as LearningLevel);
+      }
+    });
+  }, []);
+
+  const handleButtonPress = async () => {
+    if (!editing) {
+      // '변경' → 선택 모드로 진입
+      setPendingLevel(userLevel);
+      setEditing(true);
+      return;
+    }
+
+    // '결정' → 서버로 변경된 레벨 전송
+    setSaving(true);
+    try {
+      const accessToken = await AsyncStorage.getItem("accessToken");
+      const API_URL = "https://api.sentimpro.com";
+      await axios.put(
+        `${API_URL}/api/users/me/level`,
+        {},
+        {
+          params: { difficulty: pendingLevel },
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+      );
+      await AsyncStorage.setItem("learningLevel", pendingLevel);
+      setUserLevel(pendingLevel);
+      setEditing(false);
+    } catch (error: any) {
+      console.error("🚨 레벨 변경 실패:", error.response?.data || error.message);
+      Alert.alert("오류", "학습 레벨 변경에 실패했습니다. 다시 시도해 주세요.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const visibleLevels = editing
+    ? LEARNING_LEVELS
+    : LEARNING_LEVELS.filter((l) => l.id === userLevel);
+
+  return (
+    <View style={[mpStyles.card, { borderRadius: 16 }]}>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 12,
+        }}
+      >
+        <Text style={mpStyles.cardTitle}>학습 레벨 설정</Text>
+        <Pressable
+          onPress={handleButtonPress}
+          disabled={saving}
+          style={[
+            mpStyles.levelBtn,
+            { backgroundColor: editing ? primary : "#F3F4F6" },
+          ]}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text
+              style={[
+                mpStyles.levelBtnText,
+                { color: editing ? "#FFFFFF" : "#4B5563" },
+              ]}
+            >
+              {editing ? "결정" : "변경"}
+            </Text>
+          )}
+        </Pressable>
+      </View>
+
+      <View style={{ gap: 8 }}>
+        {visibleLevels.map((level) => {
+          const active = editing ? pendingLevel === level.id : true;
+          return (
+            <Pressable
+              key={level.id}
+              disabled={!editing}
+              onPress={() => setPendingLevel(level.id)}
+              style={[
+                mpStyles.levelCard,
+                active
+                  ? { borderColor: level.borderColor, backgroundColor: level.bg }
+                  : { borderColor: "#F3F4F6", backgroundColor: "#FFFFFF" },
+              ]}
+            >
+              <View style={{ flex: 1 }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "baseline",
+                    gap: 6,
+                    marginBottom: 4,
+                  }}
+                >
+                  <Text
+                    style={[
+                      mpStyles.levelLabel,
+                      { color: active ? level.color : "#1F2937" },
+                    ]}
+                  >
+                    {level.label}
+                  </Text>
+                  <Text
+                    style={[
+                      mpStyles.levelEng,
+                      { color: active ? level.color : "#9CA3AF" },
+                    ]}
+                  >
+                    {level.eng}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    mpStyles.levelDesc,
+                    { color: active ? level.color : "#6B7280" },
+                  ]}
+                >
+                  {level.desc}
+                </Text>
+                <View style={mpStyles.tagRow}>
+                  {level.detail.map((tag) => (
+                    <View
+                      key={tag}
+                      style={[
+                        mpStyles.tag,
+                        active
+                          ? {
+                              backgroundColor: level.bg,
+                              borderColor: level.borderColor + "66",
+                            }
+                          : {
+                              backgroundColor: "#F3F4F6",
+                              borderColor: "transparent",
+                            },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          mpStyles.tagText,
+                          { color: active ? level.color : "#6B7280" },
+                        ]}
+                      >
+                        {tag}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+              <View
+                style={[
+                  mpStyles.radio,
+                  { borderColor: active ? level.borderColor : "#D1D5DB" },
+                ]}
+              >
+                {active && (
+                  <View
+                    style={[mpStyles.radioInner, { backgroundColor: level.dot }]}
+                  />
+                )}
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
   const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
@@ -7876,7 +7954,10 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
               <View style={pfStyles.medalWrap}>
                 <AchievementMedal badge={item} />
               </View>
-              <BadgeTierChip difficulty={item.difficulty} />
+              <BadgeTierChip
+                difficulty={item.difficulty}
+                badgeName={item.badgeName}
+              />
               <Text style={pfStyles.achievementTitle} numberOfLines={2}>
                 {item.badgeName}
               </Text>
@@ -7897,6 +7978,10 @@ function ProfileScreen({ go }: { go: (screen: Screen) => void }) {
             </Pressable>
           ))}
         </View>
+
+        {/* 학습 레벨 설정 */}
+        <Text style={pfStyles.sectionLabel}>학습 레벨</Text>
+        <LearningLevelCard />
 
         {/* 계정 */}
         <Text style={pfStyles.sectionLabel}>계정</Text>
@@ -9268,8 +9353,8 @@ const pfStyles = StyleSheet.create({
   achievementItem: {
     width: "31%",
     alignItems: "center",
-    gap: 6,
-    paddingVertical: 10,
+    gap: 4,
+    paddingVertical: 6,
   },
   medalWrap: { alignItems: "center", justifyContent: "flex-end", marginTop: 4 },
   achievementTitle: {
@@ -10284,6 +10369,48 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
         style={{ backgroundColor: "#F9FAFB" }}
         contentContainerStyle={mpStyles.content}
       >
+        {/* 📅 오늘 날짜 → 캘린더 펼치기 (화면 맨 위 가운데) */}
+        <Pressable
+          onPress={() => setCalendarOpen((v) => !v)}
+          style={mpStyles.dateRow}
+        >
+          <Ionicons name="calendar-outline" size={16} color={primary} />
+          <Text style={mpStyles.dateRowText}>
+            {formatDateLabelKo(selectedDate)}
+          </Text>
+          <Ionicons
+            name={calendarOpen ? "chevron-up" : "chevron-down"}
+            size={16}
+            color="#9CA3AF"
+          />
+        </Pressable>
+
+        {calendarOpen && (
+          <View style={mpStyles.card}>
+            <Calendar
+              current={`${visibleMonthISO}-01`}
+              onDayPress={(day: DateData) => {
+                setSelectedDate(new Date(day.year, day.month - 1, day.day));
+                setCalendarOpen(false);
+              }}
+              onMonthChange={(month: DateData) =>
+                setVisibleMonth(new Date(month.year, month.month - 1, 1))
+              }
+              markedDates={{
+                [selectedDateISO]: {
+                  selected: true,
+                  selectedColor: primary,
+                },
+              }}
+              theme={{
+                todayTextColor: primary,
+                selectedDayBackgroundColor: primary,
+                arrowColor: primary,
+              }}
+            />
+          </View>
+        )}
+
         {/* ✨ AI 월간 총평 — 화면 맨 위에 강조 카드로 노출. 지난 달부터 보여주고 화살표로 이전 달 이동 */}
         <View style={mpStyles.reviewCard}>
           <View style={mpStyles.reviewGlow} />
@@ -10338,48 +10465,6 @@ function LearningDataScreen({ go }: { go: (screen: Screen) => void }) {
             </Text>
           )}
         </View>
-
-        {/* 📅 오늘 날짜 → 캘린더 펼치기 */}
-        <Pressable
-          onPress={() => setCalendarOpen((v) => !v)}
-          style={mpStyles.dateRow}
-        >
-          <Ionicons name="calendar-outline" size={16} color={primary} />
-          <Text style={mpStyles.dateRowText}>
-            {formatDateLabelKo(selectedDate)}
-          </Text>
-          <Ionicons
-            name={calendarOpen ? "chevron-up" : "chevron-down"}
-            size={16}
-            color="#9CA3AF"
-          />
-        </Pressable>
-
-        {calendarOpen && (
-          <View style={mpStyles.card}>
-            <Calendar
-              current={`${visibleMonthISO}-01`}
-              onDayPress={(day: DateData) => {
-                setSelectedDate(new Date(day.year, day.month - 1, day.day));
-                setCalendarOpen(false);
-              }}
-              onMonthChange={(month: DateData) =>
-                setVisibleMonth(new Date(month.year, month.month - 1, 1))
-              }
-              markedDates={{
-                [selectedDateISO]: {
-                  selected: true,
-                  selectedColor: primary,
-                },
-              }}
-              theme={{
-                todayTextColor: primary,
-                selectedDayBackgroundColor: primary,
-                arrowColor: primary,
-              }}
-            />
-          </View>
-        )}
 
         {/* 🌱 학습 활동 히트맵 (최근 6개월) — GET /api/users/study-heatmap, 기록 없으면 빈 잔디로 채워둠 */}
         <View style={mpStyles.card}>
@@ -10791,7 +10876,7 @@ const mpStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    alignSelf: "flex-start",
+    alignSelf: "center",
     paddingVertical: 4,
   },
   dateRowText: { fontSize: 14, fontWeight: "700", color: "#111827" },
@@ -11100,6 +11185,19 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
   const [otherLoading, setOtherLoading] = useState(false);
   const [otherError, setOtherError] = useState(false);
 
+  // 상단 리그 엠블럼 가로 스크롤 — 처음 열 때 내 리그가 화면 가운데 오도록 맞춥니다.
+  // 스크롤 영역 너비와 내 리그 엠블럼 중심 x는 onLayout 순서가 보장되지 않아 둘 다 기록해 두고, 둘 다 생기면 스크롤합니다.
+  const tierScrollRef = useRef<ScrollView>(null);
+  const tierScrollLayout = useRef({ width: 0, myCenter: -1 });
+  const scrollToMyTier = () => {
+    const { width, myCenter } = tierScrollLayout.current;
+    if (!width || myCenter < 0) return;
+    tierScrollRef.current?.scrollTo({
+      x: Math.max(0, myCenter - width / 2),
+      animated: false,
+    });
+  };
+
   // 👇 여기에 안드로이드 뒤로 가기 제어 코드를 추가합니다!
   useEffect(() => {
     const handleBackPress = () => {
@@ -11263,7 +11361,18 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
         style={{ backgroundColor: "#fff" }}
         contentContainerStyle={{ padding: 16, paddingBottom: 36 }}
       >
-        <View style={lgStyles.carouselRow}>
+        {/* 엠블럼이 한 화면에 다 안 들어가면 양옆으로 스크롤 */}
+        <ScrollView
+          ref={tierScrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={lgStyles.carouselScroll}
+          contentContainerStyle={lgStyles.carouselRow}
+          onLayout={(e) => {
+            tierScrollLayout.current.width = e.nativeEvent.layout.width;
+            scrollToMyTier();
+          }}
+        >
           {LEAGUE_TIER_ORDER.map((t, i) => {
             const meta = LEAGUE_TIER_META[t];
             const isShown = i === tierIndex;
@@ -11274,10 +11383,16 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
                 key={t}
                 style={lgStyles.carouselItem}
                 onPress={() => setViewTier(isMyTier ? null : t)}
+                onLayout={(e) => {
+                  if (!isMyTier) return;
+                  const { x, width } = e.nativeEvent.layout;
+                  tierScrollLayout.current.myCenter = x + width / 2;
+                  scrollToMyTier();
+                }}
                 hitSlop={4}
               >
                 <View style={lgStyles.carouselBadge}>
-                  <LeagueEmblem tier={t} size={isShown ? 52 : 36} />
+                  <LeagueEmblem tier={t} size={isShown ? 72 : 52} />
                 </View>
                 <Text
                   style={[
@@ -11297,7 +11412,7 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
 
         <View style={lgStyles.titleRow}>
           <Text style={lgStyles.title}>{tierMeta.label} 리그</Text>
@@ -11420,19 +11535,21 @@ function LeagueScreen({ go }: { go: (screen: Screen) => void }) {
 }
 
 const lgStyles = StyleSheet.create({
+  // 화면 좌우 여백(16)까지 스크롤이 닿도록 음수 마진으로 넓힙니다.
+  carouselScroll: { marginHorizontal: -16, marginBottom: 18 },
   carouselRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 18,
+    gap: 4,
+    paddingHorizontal: 16,
   },
-  carouselItem: { alignItems: "center", flex: 1, gap: 6 },
+  carouselItem: { alignItems: "center", width: 92, gap: 6 },
   // 엠블럼 크기가 달라도 라벨 높이가 맞도록 고정 높이 + 아래 정렬
   carouselBadge: {
-    height: 66,
+    height: 92,
     alignItems: "center",
     justifyContent: "flex-end",
   },
-  carouselLabel: { fontSize: 10, color: "#9CA3AF", fontWeight: "600" },
+  carouselLabel: { fontSize: 12, color: "#9CA3AF", fontWeight: "600" },
   myTierDot: { width: 4, height: 4, borderRadius: 2, marginTop: -2 },
   backToMine: {
     flexDirection: "row",
